@@ -1,5 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  Banknote,
+  Check,
+  Clock,
+  CreditCard,
+  Minus,
+  Plus,
+  Printer,
+  Receipt,
+  Search,
+  ShoppingBag,
+  Smartphone,
+  Trash2,
+} from 'lucide-react';
+import {
   api,
   CartItem,
   Category,
@@ -10,10 +25,32 @@ import {
   getUploadsBase,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import Modal from '../components/Modal';
-import PaymentPad from '../components/PaymentPad';
 import CustomerSelect from '../components/CustomerSelect';
 import Invoice from '../components/Invoice';
+import PaymentPad from '../components/PaymentPad';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader } from '../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { ScrollArea } from '../components/ui/scroll-area';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 
 type Props = {
   products: Product[];
@@ -23,6 +60,12 @@ type Props = {
   onRefresh: () => Promise<void>;
   holdCount: number;
   onHoldCount: (n: number) => void;
+};
+
+type PaymentLine = {
+  method: 'cash' | 'card' | 'mobile';
+  amount: number;
+  tendered?: number;
 };
 
 export default function TillView({
@@ -45,8 +88,13 @@ export default function TillView({
   const [error, setError] = useState<string | null>(null);
   const [showHolds, setShowHolds] = useState(false);
   const [holds, setHolds] = useState<Transaction[]>([]);
+
+  // Payment State
   const [showPay, setShowPay] = useState(false);
-  const [paid, setPaid] = useState('');
+  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'card' | 'mobile'>('cash');
+  const [amountInput, setAmountInput] = useState('');
+  const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([]);
+
   const [invoice, setInvoice] = useState<Transaction | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
 
@@ -55,13 +103,17 @@ export default function TillView({
   const uploads = getUploadsBase();
 
   const refreshHolds = async () => {
-    const list = await api.getOnHold();
-    setHolds(list);
-    onHoldCount(list.length);
+    try {
+      const list = await api.getOnHold();
+      setHolds(list);
+      onHoldCount(list.length);
+    } catch {
+      /* ignore */
+    }
   };
 
   useEffect(() => {
-    refreshHolds().catch(() => undefined);
+    refreshHolds();
     scanRef.current?.focus();
   }, []);
 
@@ -85,28 +137,47 @@ export default function TillView({
 
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
-    // While typing a barcode, keep the grid browsable by category only if empty query feels better
     return products.filter((p) => {
       const catOk = categoryFilter === 'all' || p.category === categoryFilter;
       if (!q) return catOk;
-      return (
-        catOk &&
-        (p.name.toLowerCase().includes(q) || String(p.id).includes(q))
-      );
+      return catOk && (p.name.toLowerCase().includes(q) || String(p.id).includes(q));
     });
   }, [products, query, categoryFilter]);
 
-  const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const afterDiscount = Math.max(0, subtotal - (Number(discount) || 0));
-  const tax = afterDiscount * (taxRate / 100);
-  const total = afterDiscount + tax;
+  const getLineTotal = (item: CartItem) => {
+    const base = item.price * item.quantity;
+    if (!item.discountValue || item.discountValue <= 0) return base;
+    if (item.discountType === 'percent') {
+      return Math.max(0, base * (1 - item.discountValue / 100));
+    }
+    return Math.max(0, base - item.discountValue);
+  };
+
+  const lineSubtotal = cart.reduce((sum, item) => sum + getLineTotal(item), 0);
+  const afterOrderDiscount = Math.max(0, lineSubtotal - (Number(discount) || 0));
+  const tax = afterOrderDiscount * (taxRate / 100);
+  const total = afterOrderDiscount + tax;
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
-  const stockLabel = (p: Product) => {
-    if (!p.stock) return { text: 'No stock limit', className: 'stock-badge' };
-    if (p.quantity <= 0) return { text: 'Out of stock', className: 'stock-badge out' };
-    if (p.quantity <= 5) return { text: `${p.quantity} left`, className: 'stock-badge low' };
-    return { text: `${p.quantity} in stock`, className: 'stock-badge' };
+  // Payment Calculations
+  const totalPaid = paymentLines.reduce((sum, line) => sum + line.amount, 0);
+  const remainingDue = Math.max(0, total - totalPaid);
+  const totalChange = paymentLines.reduce((sum, line) => {
+    if (line.method === 'cash' && line.tendered && line.tendered > line.amount) {
+      return sum + (line.tendered - line.amount);
+    }
+    return sum;
+  }, 0);
+
+  const stockBadge = (p: Product) => {
+    if (!p.stock) return null;
+    if (p.quantity <= 0) {
+      return <Badge variant="destructive">Out of stock</Badge>;
+    }
+    if (p.quantity <= 5) {
+      return <Badge variant="secondary" className="bg-amber-100 text-amber-800">{p.quantity} left</Badge>;
+    }
+    return <Badge variant="outline" className="text-muted-foreground">{p.quantity} in stock</Badge>;
   };
 
   const addToCart = (product: Product) => {
@@ -122,9 +193,7 @@ export default function TillView({
           setError(`Only ${product.quantity} available for ${product.name}`);
           return prev;
         }
-        return prev.map((i) =>
-          i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
-        );
+        return prev.map((i) => (i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
       return [
         ...prev,
@@ -147,6 +216,14 @@ export default function TillView({
     );
   };
 
+  const setItemNote = (id: number, note: string) => {
+    setCart((prev) => prev.map((i) => (i.id === id ? { ...i, note } : i)));
+  };
+
+  const setItemDiscount = (id: number, discountType: 'flat' | 'percent', discountValue: number) => {
+    setCart((prev) => prev.map((i) => (i.id === id ? { ...i, discountType, discountValue } : i)));
+  };
+
   const clearCart = () => {
     setCart([]);
     setDiscount(0);
@@ -167,7 +244,6 @@ export default function TillView({
         scanRef.current?.focus();
         return;
       }
-      // fallback local match by id or exact name
       const local =
         products.find((p) => String(p.id) === code) ||
         products.find((p) => p.name.toLowerCase() === code.toLowerCase());
@@ -176,39 +252,75 @@ export default function TillView({
         setQuery('');
         scanRef.current?.focus();
       } else {
-        setError(`No product for “${code}”`);
+        setError(`No product found for "${code}"`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Scan failed');
     }
   };
 
-  const buildTransaction = (status: number, paidAmount: number, changeAmt: number) => {
+  const openPay = () => {
+    setPaymentLines([]);
+    setSelectedMethod('cash');
+    setAmountInput('');
+    setShowPay(true);
+  };
+
+  const addPaymentLine = () => {
+    const val = parseFloat(amountInput) || remainingDue;
+    if (val <= 0) return;
+
+    if (selectedMethod === 'cash') {
+      const tendered = val;
+      const amount = Math.min(tendered, remainingDue > 0 ? remainingDue : tendered);
+      setPaymentLines((prev) => [
+        ...prev,
+        { method: 'cash', amount, tendered },
+      ]);
+    } else {
+      const amount = Math.min(val, remainingDue > 0 ? remainingDue : val);
+      setPaymentLines((prev) => [
+        ...prev,
+        { method: selectedMethod, amount },
+      ]);
+    }
+    setAmountInput('');
+  };
+
+  const removePaymentLine = (index: number) => {
+    setPaymentLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const buildOrderPayload = (status: number) => {
     const customer = customers.find((c) => String(c.id) === customerId);
+    const finalPaid = paymentLines.reduce((sum, l) => sum + (l.tendered || l.amount), 0);
+    const finalChange = totalChange;
+
     return {
       ref_number: status === 0 ? `H-${Date.now().toString().slice(-6)}` : '',
       customer: customerId,
-      customer_name: customer?.name || 'Walk-in',
+      customer_name: customer?.name || 'Walk-in Customer',
       status,
       user_id: user?._id || 0,
       user: user?.fullname || '',
       till: apiInfo?.till || settings?.till || 1,
       discount: Number(discount) || 0,
-      subtotal,
+      subtotal: lineSubtotal,
       tax,
       total,
-      paid: paidAmount,
-      change: changeAmt,
-      payment_type: 1,
+      paid: finalPaid || total,
+      change: finalChange,
+      payment_type: selectedMethod === 'cash' ? 1 : selectedMethod === 'card' ? 2 : 3,
+      payment_breakdown: paymentLines.length > 0 ? paymentLines : [{ method: selectedMethod, amount: total }],
       items: cart,
       date: new Date().toISOString(),
     };
   };
 
-  const holdSale = async () => {
+  const holdOrder = async () => {
     if (!cart.length) return;
     try {
-      const body = buildTransaction(0, 0, 0);
+      const body = buildOrderPayload(0);
       if (activeHoldId) {
         await api.updateTransaction({ ...body, _id: activeHoldId });
       } else {
@@ -217,36 +329,58 @@ export default function TillView({
       clearCart();
       await refreshHolds();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not hold sale');
+      setError(err instanceof Error ? err.message : 'Could not hold order');
     }
-  };
-
-  const openPay = () => {
-    // Cash starts empty so the numpad builds the tendered amount.
-    setPaid('');
-    setShowPay(true);
-  };
-
-  const sanitizeTendered = (raw: string) => {
-    let next = raw.replace(/[^\d.]/g, '');
-    const firstDot = next.indexOf('.');
-    if (firstDot !== -1) {
-      next =
-        next.slice(0, firstDot + 1) + next.slice(firstDot + 1).replace(/\./g, '');
-      const [whole, dec = ''] = next.split('.');
-      next = `${whole}.${dec.slice(0, 2)}`;
-    }
-    return next;
   };
 
   const completeSale = async () => {
-    const paidNum = parseFloat(paid) || 0;
-    if (paidNum + 0.0001 < total) {
-      setError('Amount tendered is less than total');
+    let currentLines = [...paymentLines];
+    if (currentLines.length === 0) {
+      const val = parseFloat(amountInput) || total;
+      if (selectedMethod === 'cash') {
+        const tendered = val;
+        const amount = Math.min(tendered, total);
+        currentLines = [{ method: 'cash', amount, tendered }];
+      } else {
+        currentLines = [{ method: selectedMethod, amount: total }];
+      }
+    }
+
+    const linesTotal = currentLines.reduce((sum, l) => sum + l.amount, 0);
+    if (linesTotal + 0.0001 < total) {
+      setError('Payment lines do not cover full order amount');
       return;
     }
-    const changeAmt = Math.max(0, paidNum - total);
-    const body = buildTransaction(1, paidNum, changeAmt);
+
+    const customer = customers.find((c) => String(c.id) === customerId);
+    const finalPaid = currentLines.reduce((sum, l) => sum + (l.tendered || l.amount), 0);
+    const finalChange = currentLines.reduce((sum, line) => {
+      if (line.method === 'cash' && line.tendered && line.tendered > line.amount) {
+        return sum + (line.tendered - line.amount);
+      }
+      return sum;
+    }, 0);
+
+    const body = {
+      ref_number: '',
+      customer: customerId,
+      customer_name: customer?.name || 'Walk-in Customer',
+      status: 1,
+      user_id: user?._id || 0,
+      user: user?.fullname || '',
+      till: apiInfo?.till || settings?.till || 1,
+      discount: Number(discount) || 0,
+      subtotal: lineSubtotal,
+      tax,
+      total,
+      paid: finalPaid,
+      change: finalChange,
+      payment_type: currentLines[0]?.method === 'card' ? 2 : currentLines[0]?.method === 'mobile' ? 3 : 1,
+      payment_breakdown: currentLines,
+      items: cart,
+      date: new Date().toISOString(),
+    };
+
     try {
       let savedId = 0;
       let savedRef = '';
@@ -276,7 +410,7 @@ export default function TillView({
       await refreshHolds();
       setTimeout(() => window.print(), 150);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sale failed');
+      setError(err instanceof Error ? err.message : 'Sale completion failed');
     }
   };
 
@@ -295,312 +429,573 @@ export default function TillView({
   };
 
   const discardHold = async (id: number) => {
-    if (!confirm('Delete this held sale?')) return;
-    await api.deleteTransaction(id);
-    await refreshHolds();
+    try {
+      await api.deleteTransaction(id);
+      await refreshHolds();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not discard order');
+    }
   };
 
   return (
-    <>
+    <div className="flex h-full flex-col lg:flex-row gap-4 p-4 bg-muted/20">
       {error && (
-        <div className="error">
-          {error}{' '}
-          <button type="button" className="btn btn-ghost" onClick={() => setError(null)}>
-            dismiss
-          </button>
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-md bg-destructive px-4 py-3 text-destructive-foreground shadow-md">
+          <AlertCircle className="size-5 shrink-0" />
+          <span className="text-sm font-medium">{error}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-destructive-foreground hover:bg-destructive/80"
+            onClick={() => setError(null)}
+          >
+            Dismiss
+          </Button>
         </div>
       )}
 
-      <div className="till">
-        <section className="panel till-left">
-          <div className="scan-bar">
-            <input
-              ref={scanRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onScan();
-              }}
-              placeholder="Scan barcode or search — Enter to add"
-              autoFocus
-            />
-            <button type="button" className="btn btn-primary" onClick={onScan}>
+      {/* Left Panel: Product Grid & Search */}
+      <div className="flex flex-1 flex-col gap-4 overflow-hidden">
+        {/* Search Bar & Category Chips */}
+        <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={scanRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onScan();
+                }}
+                placeholder="Scan barcode or search product — Enter to add"
+                className="pl-9 h-11 text-base"
+                autoFocus
+              />
+            </div>
+            <Button onClick={onScan} className="h-11 px-6 text-base">
               Add
-            </button>
+            </Button>
           </div>
-          <div className="chips">
-            <button
-              type="button"
-              className={`chip ${categoryFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setCategoryFilter('all')}
-            >
-              All
-            </button>
-            {categories.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className={`chip ${categoryFilter === c.name ? 'active' : ''}`}
-                onClick={() => setCategoryFilter(c.name)}
+
+          <ScrollArea className="w-full whitespace-nowrap">
+            <div className="flex gap-2 pb-1">
+              <Button
+                variant={categoryFilter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                className="h-9 px-4 text-sm rounded-full"
+                onClick={() => setCategoryFilter('all')}
               >
-                {c.name}
-              </button>
-            ))}
-          </div>
-          <div className="product-grid">
+                All Categories
+              </Button>
+              {categories.map((c) => (
+                <Button
+                  key={c.id}
+                  variant={categoryFilter === c.name ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-9 px-4 text-sm rounded-full"
+                  onClick={() => setCategoryFilter(c.name)}
+                >
+                  {c.name}
+                </Button>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Product Grid */}
+        <ScrollArea className="flex-1 rounded-lg border bg-card p-4 shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
             {filteredProducts.map((p) => {
-              const stock = stockLabel(p);
+              const isOut = !!p.stock && p.quantity <= 0;
               return (
                 <button
                   key={p.id}
                   type="button"
-                  className="product-tile"
                   onClick={() => addToCart(p)}
-                  disabled={!!p.stock && p.quantity <= 0}
+                  disabled={isOut}
+                  className={`group relative flex flex-col justify-between rounded-lg border p-3 text-left transition-all hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary ${
+                    isOut ? 'opacity-50 cursor-not-allowed bg-muted/30' : 'bg-card'
+                  }`}
                 >
-                  {p.img ? (
-                    <div className="product-thumb-wrap">
-                      <img className="product-thumb" src={`${uploads}/${p.img}`} alt="" />
+                  <div className="aspect-square w-full overflow-hidden rounded-md bg-muted mb-2 flex items-center justify-center">
+                    {p.img ? (
+                      <img
+                        src={`${uploads}/${p.img}`}
+                        alt={p.name}
+                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                      />
+                    ) : (
+                      <ShoppingBag className="size-10 text-muted-foreground/40" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm line-clamp-2 leading-tight mb-1">{p.name}</h3>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="font-bold text-base text-primary">
+                        {symbol}
+                        {Number(p.price).toFixed(2)}
+                      </span>
+                      {stockBadge(p)}
                     </div>
-                  ) : (
-                    <div className="product-thumb-wrap">
-                      <div className="product-thumb placeholder" />
-                    </div>
-                  )}
-                  <div className="product-tile-body">
-                    <strong>{p.name}</strong>
-                    <span className="price">
-                      {symbol}
-                      {Number(p.price).toFixed(2)}
-                    </span>
-                    <span className={stock.className}>{stock.text}</span>
                   </div>
                 </button>
               );
             })}
             {!filteredProducts.length && (
-              <div className="empty">No products here. Add items in Catalog.</div>
+              <div className="col-span-full py-16 text-center text-muted-foreground">
+                No products found matching your search.
+              </div>
             )}
           </div>
-        </section>
+        </ScrollArea>
+      </div>
 
-        <section className="panel till-right">
-          <div className="cart-head">
+      {/* Right Panel: Cart Card */}
+      <Card className="flex flex-col w-full lg:w-[420px] shrink-0 h-full shadow-sm">
+        <CardHeader className="pb-3 border-b space-y-3">
+          <div className="flex items-center justify-between gap-2">
             <CustomerSelect
               customers={customers}
               value={customerId}
               onChange={setCustomerId}
               onCustomersChanged={onRefresh}
             />
-            <button type="button" className="btn" onClick={openHolds}>
-              Held {holdCount ? `(${holdCount})` : ''}
-              <span className="kbd">F4</span>
-            </button>
-            {invoice ? (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowInvoice(true)}
-                title="Print last invoice"
-              >
-                Invoice
-              </button>
-            ) : null}
-          </div>
-
-          <div className="cart-list">
-            {cart.map((item) => (
-              <div className="cart-row" key={item.id}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <div className="muted">
-                    {symbol}
-                    {item.price.toFixed(2)} each
-                  </div>
-                </div>
-                <div className="qty">
-                  <button type="button" onClick={() => setQty(item.id, item.quantity - 1)}>
-                    −
-                  </button>
-                  <span>{item.quantity}</span>
-                  <button type="button" onClick={() => setQty(item.id, item.quantity + 1)}>
-                    +
-                  </button>
-                </div>
-                <strong>
-                  {symbol}
-                  {(item.price * item.quantity).toFixed(2)}
-                </strong>
-              </div>
-            ))}
-            {!cart.length && (
-              <div className="empty">Cart empty — scan or tap a product</div>
+            <Button variant="outline" size="sm" onClick={openHolds} className="relative gap-1.5 h-10">
+              <Clock className="size-4" />
+              <span>Held</span>
+              {holdCount > 0 && (
+                <Badge variant="default" className="ml-1 px-1.5 py-0.5 text-xs">
+                  {holdCount}
+                </Badge>
+              )}
+            </Button>
+            {invoice && (
+              <Button variant="ghost" size="icon" onClick={() => setShowInvoice(true)} title="Last Receipt">
+                <Receipt className="size-4" />
+              </Button>
             )}
           </div>
+        </CardHeader>
 
-          <div className="totals">
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>Discount ({symbol})</label>
-              <input
+        {/* Cart Item List */}
+        <CardContent className="flex-1 p-0 overflow-hidden">
+          <ScrollArea className="h-full p-4">
+            <div className="flex flex-col gap-3">
+              {cart.map((item) => {
+                const lineTotal = getLineTotal(item);
+                const hasDiscount = item.discountValue && item.discountValue > 0;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-col gap-2 rounded-lg border p-3 bg-card/60 hover:bg-accent/10 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <span className="font-medium text-sm block leading-tight">{item.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {symbol}
+                          {item.price.toFixed(2)} each
+                        </span>
+                      </div>
+                      <span className="font-bold text-sm">
+                        {symbol}
+                        {lineTotal.toFixed(2)}
+                      </span>
+                    </div>
+
+                    {(item.note || hasDiscount) && (
+                      <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
+                        {item.note && (
+                          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-900 border-amber-200">
+                            Note: {item.note}
+                          </Badge>
+                        )}
+                        {hasDiscount && (
+                          <Badge variant="outline" className="text-xs bg-green-50 text-green-900 border-green-200">
+                            Discount: {item.discountType === 'percent' ? `${item.discountValue}%` : `${symbol}${item.discountValue}`}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                      <div className="flex items-center gap-1">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="xs" className="h-7 px-2 text-xs text-muted-foreground">
+                              + Note
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-3" align="start">
+                            <div className="space-y-2">
+                              <Label className="text-xs font-semibold">Item Note</Label>
+                              <Input
+                                value={item.note || ''}
+                                onChange={(e) => setItemNote(item.id, e.target.value)}
+                                placeholder="e.g. Extra sauce, no onion"
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="xs" className="h-7 px-2 text-xs text-muted-foreground">
+                              + Discount
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-3" align="start">
+                            <div className="space-y-3">
+                              <Label className="text-xs font-semibold">Line Discount</Label>
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={item.discountType === 'flat' ? 'default' : 'outline'}
+                                  onClick={() => setItemDiscount(item.id, 'flat', item.discountValue || 0)}
+                                  className="flex-1 h-8 text-xs"
+                                >
+                                  Flat ({symbol})
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={item.discountType === 'percent' ? 'default' : 'outline'}
+                                  onClick={() => setItemDiscount(item.id, 'percent', item.discountValue || 0)}
+                                  className="flex-1 h-8 text-xs"
+                                >
+                                  Percent (%)
+                                </Button>
+                              </div>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={item.discountValue || ''}
+                                onChange={(e) =>
+                                  setItemDiscount(
+                                    item.id,
+                                    item.discountType || 'flat',
+                                    Number(e.target.value) || 0
+                                  )
+                                }
+                                placeholder="Discount amount"
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="size-7"
+                          onClick={() => setQty(item.id, item.quantity - 1)}
+                        >
+                          <Minus className="size-3" />
+                        </Button>
+                        <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="size-7"
+                          onClick={() => setQty(item.id, item.quantity + 1)}
+                        >
+                          <Plus className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!cart.length && (
+                <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-2">
+                  <ShoppingBag className="size-10 text-muted-foreground/30" />
+                  <p className="text-sm font-medium">Cart is empty</p>
+                  <p className="text-xs text-muted-foreground">Scan a barcode or select products to start an order</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+
+        {/* Totals & Action Footer */}
+        <CardFooter className="flex-col gap-3 border-t p-4 bg-muted/10">
+          <div className="w-full space-y-2 text-sm">
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span>Order Discount ({symbol})</span>
+              <Input
                 type="number"
                 min={0}
                 step="0.01"
-                value={discount}
+                value={discount || ''}
                 onChange={(e) => setDiscount(Number(e.target.value))}
+                className="w-24 h-8 text-right text-xs"
+                placeholder="0.00"
               />
             </div>
-            <div className="row">
-              <span>
-                {itemCount} item{itemCount === 1 ? '' : 's'}
-              </span>
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span>Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'})</span>
               <span>
                 {symbol}
-                {subtotal.toFixed(2)}
+                {lineSubtotal.toFixed(2)}
               </span>
             </div>
             {!!taxRate && (
-              <div className="row">
-                <span>Tax {taxRate}%</span>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Tax ({taxRate}%)</span>
                 <span>
                   {symbol}
                   {tax.toFixed(2)}
                 </span>
               </div>
             )}
-            <div className="row grand">
+            <div className="flex items-center justify-between text-lg font-bold pt-2 border-t text-foreground">
               <span>Total</span>
-              <span>
+              <span className="text-primary text-xl">
                 {symbol}
                 {total.toFixed(2)}
               </span>
             </div>
           </div>
 
-          <div className="cart-actions">
-            <button type="button" className="btn" onClick={clearCart} disabled={!cart.length}>
+          <div className="grid grid-cols-3 gap-2 w-full pt-1">
+            <Button
+              variant="outline"
+              onClick={clearCart}
+              disabled={!cart.length}
+              className="h-12"
+            >
               Clear
-            </button>
-            <button type="button" className="btn" onClick={holdSale} disabled={!cart.length}>
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={holdOrder}
+              disabled={!cart.length}
+              className="h-12"
+            >
               Hold
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-lg pay"
+            </Button>
+            <Button
               onClick={openPay}
               disabled={!cart.length}
+              className="h-12 text-base font-semibold"
             >
-              Charge {symbol}
-              {total.toFixed(2)}
-              <span className="kbd">F2</span>
-            </button>
-          </div>
-        </section>
-      </div>
-
-      <div
-        id="receipt-print"
-        className="receipt-print"
-        style={{ display: invoice ? 'block' : 'none' }}
-      >
-        {invoice ? <Invoice tx={invoice} settings={settings} symbol={symbol} /> : null}
-      </div>
-
-      <Modal
-        title="Payment"
-        open={showPay}
-        onClose={() => setShowPay(false)}
-        compact
-        footer={
-          <>
-            <button type="button" className="btn" onClick={() => setShowPay(false)}>
-              Cancel
-            </button>
-            <button type="button" className="btn btn-primary" onClick={completeSale}>
               Pay
-            </button>
-          </>
-        }
-      >
-        <div className="pay-due">
-          Due {symbol}
-          {total.toFixed(2)}
-        </div>
-        <div className="field">
-          <label>Tendered</label>
-          <input
-            value={paid}
-            onChange={(e) => setPaid(sanitizeTendered(e.target.value))}
-            placeholder="Enter amount received"
-            inputMode="decimal"
-            autoFocus
-          />
-        </div>
-        <PaymentPad value={paid} onChange={setPaid} due={total} symbol={symbol} />
-        <p className="pay-change">
-          {(parseFloat(paid) || 0) + 0.0001 < total ? 'Still due' : 'Change'}{' '}
-          <strong>
-            {symbol}
-            {Math.abs((parseFloat(paid) || 0) - total).toFixed(2)}
-          </strong>
-        </p>
-      </Modal>
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
 
-      <Modal
-        title="Invoice"
-        open={showInvoice}
-        onClose={() => setShowInvoice(false)}
-        compact
-        footer={
-          <>
-            <button type="button" className="btn" onClick={() => setShowInvoice(false)}>
-              Done
-            </button>
-            <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-              Print
-            </button>
-          </>
-        }
-      >
-        {invoice ? <Invoice tx={invoice} settings={settings} symbol={symbol} /> : null}
-      </Modal>
+      {/* Held Orders Dialog */}
+      <Dialog open={showHolds} onOpenChange={setShowHolds}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Held Orders</DialogTitle>
+            <DialogDescription>
+              Select a parked order to resume or discard it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[380px] overflow-auto border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ref</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Items</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {holds.map((h) => (
+                  <TableRow key={h.id}>
+                    <TableCell className="font-mono text-xs">{h.ref_number || h.id}</TableCell>
+                    <TableCell>{h.customer_name}</TableCell>
+                    <TableCell>{(h.items || []).reduce((n, i) => n + i.quantity, 0)}</TableCell>
+                    <TableCell className="font-semibold">
+                      {symbol}
+                      {Number(h.total).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(h.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button size="sm" onClick={() => restoreHold(h)}>
+                        Resume
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => discardHold(h.id)}>
+                        Discard
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!holds.length && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      No held orders found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowHolds(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal title="Held sales" open={showHolds} onClose={() => setShowHolds(false)} wide>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Ref</th>
-              <th>Customer</th>
-              <th>Items</th>
-              <th>Total</th>
-              <th>When</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {holds.map((h) => (
-              <tr key={h.id}>
-                <td>{h.ref_number || h.id}</td>
-                <td>{h.customer_name}</td>
-                <td>{(h.items || []).reduce((n, i) => n + i.quantity, 0)}</td>
-                <td>
-                  {symbol}
-                  {Number(h.total).toFixed(2)}
-                </td>
-                <td>{new Date(h.date).toLocaleString()}</td>
-                <td>
-                  <button type="button" className="btn btn-primary" onClick={() => restoreHold(h)}>
-                    Resume
-                  </button>{' '}
-                  <button type="button" className="btn btn-danger" onClick={() => discardHold(h.id)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!holds.length && <div className="empty">No held sales</div>}
-      </Modal>
-    </>
+      {/* Multi-method Split Checkout Dialog */}
+      <Dialog open={showPay} onOpenChange={setShowPay}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Checkout</DialogTitle>
+            <DialogDescription>
+              Total Due: <span className="font-bold text-foreground">{symbol}{total.toFixed(2)}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Payment Method Tabs */}
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant={selectedMethod === 'cash' ? 'default' : 'outline'}
+                onClick={() => setSelectedMethod('cash')}
+                className="flex flex-col gap-1 h-14"
+              >
+                <Banknote className="size-5" />
+                <span className="text-xs">Cash</span>
+              </Button>
+              <Button
+                type="button"
+                variant={selectedMethod === 'card' ? 'default' : 'outline'}
+                onClick={() => setSelectedMethod('card')}
+                className="flex flex-col gap-1 h-14"
+              >
+                <CreditCard className="size-5" />
+                <span className="text-xs">Card</span>
+              </Button>
+              <Button
+                type="button"
+                variant={selectedMethod === 'mobile' ? 'default' : 'outline'}
+                onClick={() => setSelectedMethod('mobile')}
+                className="flex flex-col gap-1 h-14"
+              >
+                <Smartphone className="size-5" />
+                <span className="text-xs">Mobile Wallet</span>
+              </Button>
+            </div>
+
+            {/* Input & Add Line */}
+            <div className="grid gap-2">
+              <Label>Tendered / Line Amount ({symbol})</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d.]/g, ''))}
+                  placeholder={`Remaining due: ${symbol}${remainingDue.toFixed(2)}`}
+                  className="h-11 font-mono text-base text-right"
+                  autoFocus
+                />
+                <Button type="button" onClick={addPaymentLine} className="h-11 px-4">
+                  + Add Line
+                </Button>
+              </div>
+            </div>
+
+            {selectedMethod === 'cash' && (
+              <PaymentPad
+                value={amountInput}
+                onChange={setAmountInput}
+                due={remainingDue}
+                symbol={symbol}
+              />
+            )}
+
+            {/* Added Payment Lines */}
+            {paymentLines.length > 0 && (
+              <div className="space-y-2 border rounded-md p-3 bg-muted/20">
+                <Label className="text-xs font-semibold text-muted-foreground">Payment Breakdown</Label>
+                {paymentLines.map((line, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-sm py-1 border-b last:border-b-0">
+                    <span className="capitalize font-medium">{line.method}</span>
+                    <div className="flex items-center gap-2">
+                      <span>
+                        {symbol}{line.amount.toFixed(2)}
+                        {line.tendered && line.tendered > line.amount ? ` (Tendered: ${symbol}${line.tendered.toFixed(2)})` : ''}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 text-muted-foreground hover:text-destructive"
+                        onClick={() => removePaymentLine(idx)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Summary */}
+            <div className="flex flex-col gap-1 rounded-lg border p-3 bg-muted/40 text-sm">
+              <div className="flex justify-between">
+                <span>Remaining Due:</span>
+                <span className={`font-bold ${remainingDue > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                  {symbol}{remainingDue.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Change (Cash lines only):</span>
+                <span>{symbol}{totalChange.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowPay(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={completeSale}
+              disabled={paymentLines.length === 0 && remainingDue > 0 && !(parseFloat(amountInput) >= total)}
+              className="px-8 font-semibold"
+            >
+              Complete Sale
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Printable Receipt / Invoice Dialog */}
+      <Dialog open={showInvoice} onOpenChange={setShowInvoice}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Sale Complete &amp; Receipt</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[420px] overflow-auto border p-4 rounded-md bg-white text-black">
+            {invoice && <Invoice tx={invoice} settings={settings} symbol={symbol} />}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowInvoice(false)}>
+              Close
+            </Button>
+            <Button onClick={() => window.print()} className="gap-2">
+              <Printer className="size-4" />
+              Print Receipt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

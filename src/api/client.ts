@@ -72,6 +72,9 @@ export type CartItem = {
   price: number;
   quantity: number;
   stock: number;
+  note?: string;
+  discountType?: 'flat' | 'percent';
+  discountValue?: number;
 };
 
 export type Transaction = {
@@ -91,6 +94,7 @@ export type Transaction = {
   paid: number;
   change: number;
   payment_type: number;
+  payment_breakdown?: { method: string; amount: number; tendered?: number }[];
   items: CartItem[];
   date: string;
 };

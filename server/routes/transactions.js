@@ -121,12 +121,13 @@ router.post('/new', (req, res) => {
     }
     invoiceRef = ref;
 
+    const paymentBreakdown = body.payment_breakdown || [];
     const result = db
       .prepare(
         `INSERT INTO transactions (
           ref_number, customer, customer_name, status, user_id, user_name, till,
-          discount, subtotal, tax, total, paid, change, payment_type, items_json, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          discount, subtotal, tax, total, paid, change, payment_type, payment_breakdown_json, items_json, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         ref,
@@ -143,6 +144,7 @@ router.post('/new', (req, res) => {
         paid,
         parseFloat(body.change) || 0,
         parseInt(body.payment_type, 10) || 1,
+        JSON.stringify(paymentBreakdown),
         JSON.stringify(items),
         saleDate
       );
@@ -162,6 +164,7 @@ router.put('/new/:id', (req, res) => {
   const body = req.body || {};
   const id = parseInt(req.params.id ?? body._id ?? body.id, 10);
   const items = body.items || [];
+  const paymentBreakdown = body.payment_breakdown || [];
   const paid = parseFloat(body.paid) || 0;
   const total = parseFloat(body.total) || 0;
   const status = parseInt(body.status, 10) ?? 1;
@@ -182,7 +185,7 @@ router.put('/new/:id', (req, res) => {
     db.prepare(
       `UPDATE transactions SET
         ref_number = ?, customer = ?, customer_name = ?, status = ?, user_id = ?, user_name = ?, till = ?,
-        discount = ?, subtotal = ?, tax = ?, total = ?, paid = ?, change = ?, payment_type = ?, items_json = ?, date = ?
+        discount = ?, subtotal = ?, tax = ?, total = ?, paid = ?, change = ?, payment_type = ?, payment_breakdown_json = ?, items_json = ?, date = ?
        WHERE id = ?`
     ).run(
       ref,
@@ -199,6 +202,7 @@ router.put('/new/:id', (req, res) => {
       paid,
       parseFloat(body.change) || 0,
       parseInt(body.payment_type, 10) || 1,
+      JSON.stringify(paymentBreakdown),
       JSON.stringify(items),
       saleDate,
       id

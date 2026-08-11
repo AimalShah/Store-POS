@@ -108,13 +108,25 @@ export default function Invoice({ tx, settings, symbol }: Props) {
             {total.toFixed(2)}
           </span>
         </div>
-        <div className="invoice-total-row">
-          <span>Paid</span>
-          <span>
-            {symbol}
-            {paid.toFixed(2)}
-          </span>
-        </div>
+        {tx.payment_breakdown && tx.payment_breakdown.length > 0 ? (
+          tx.payment_breakdown.map((pb, idx) => (
+            <div key={idx} className="invoice-total-row">
+              <span className="capitalize">{pb.method}</span>
+              <span>
+                {symbol}
+                {Number(pb.amount).toFixed(2)}
+              </span>
+            </div>
+          ))
+        ) : (
+          <div className="invoice-total-row">
+            <span>Paid</span>
+            <span>
+              {symbol}
+              {paid.toFixed(2)}
+            </span>
+          </div>
+        )}
         <div className="invoice-total-row">
           <span>Change</span>
           <span>

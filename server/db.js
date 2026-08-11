@@ -112,9 +112,19 @@ export async function initDatabase(filePath) {
       paid REAL NOT NULL DEFAULT 0,
       change REAL NOT NULL DEFAULT 0,
       payment_type INTEGER NOT NULL DEFAULT 1,
+      payment_breakdown_json TEXT NOT NULL DEFAULT '[]',
       items_json TEXT NOT NULL DEFAULT '[]',
       date TEXT NOT NULL
     );
+
+    try {
+      const cols = db.prepare("PRAGMA table_info(transactions)").all();
+      if (!cols.some((c) => c.name === 'payment_breakdown_json')) {
+        db.prepare("ALTER TABLE transactions ADD COLUMN payment_breakdown_json TEXT NOT NULL DEFAULT '[]'").run();
+      }
+    } catch {
+      /* ignore */
+    }
 
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
@@ -227,6 +237,12 @@ export function mapTransaction(row) {
   } catch {
     items = [];
   }
+  let payment_breakdown = [];
+  try {
+    payment_breakdown = JSON.parse(row.payment_breakdown_json || '[]');
+  } catch {
+    payment_breakdown = [];
+  }
   return {
     _id: row.id,
     id: row.id,
@@ -244,6 +260,7 @@ export function mapTransaction(row) {
     paid: row.paid,
     change: row.change,
     payment_type: row.payment_type,
+    payment_breakdown,
     items,
     date: row.date,
   };
