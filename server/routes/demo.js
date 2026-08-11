@@ -117,7 +117,6 @@ router.post('/clear', requireAnyPerm('perm_products', 'perm_settings'), (req, re
     return out;
   })();
 
-  // sql.js wrapper may not expose changes reliably — recount deleted via before if needed
   res.json({
     ok: true,
     deleted: counts,

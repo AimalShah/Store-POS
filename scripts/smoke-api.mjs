@@ -6,7 +6,7 @@ import { createServer } from '../server/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tmp = path.join(os.tmpdir(), `pos-smoke-${Date.now()}`);
-const dbPath = path.join(tmp, 'pos.sqlite');
+const dbPath = path.join(tmp, 'pos-v3.sqlite');
 const uploadsPath = path.join(tmp, 'uploads');
 
 fs.mkdirSync(uploadsPath, { recursive: true });

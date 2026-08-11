@@ -1,130 +1,41 @@
-import initSqlJs from 'sql.js';
+import Database from 'better-sqlite3';
 import fs from 'fs';
-import path from 'path';
-import { createRequire } from 'module';
 import bcrypt from 'bcryptjs';
 
-const require = createRequire(import.meta.url);
+const SCHEMA_VERSION = 1;
 
-let SQL = null;
 let db = null;
-let rawDb = null;
 let dbPath = null;
-let persistTimer = null;
-
-function persist() {
-  if (!rawDb || !dbPath) return;
-  const data = rawDb.export();
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  fs.writeFileSync(dbPath, Buffer.from(data));
-}
-
-function schedulePersist() {
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persist();
-    persistTimer = null;
-  }, 50);
-}
-
-function wrapDb(raw) {
-  return {
-    exec(sql) {
-      raw.exec(sql);
-      schedulePersist();
-    },
-    prepare(sql) {
-      return {
-        run(...params) {
-          raw.run(sql, params);
-          schedulePersist();
-          const changes = raw.getRowsModified();
-          let lastInsertRowid = 0;
-          try {
-            const stmt = raw.prepare('SELECT last_insert_rowid() AS id');
-            if (stmt.step()) {
-              lastInsertRowid = stmt.getAsObject().id;
-            }
-            stmt.free();
-          } catch {
-            /* ignore */
-          }
-          return { changes, lastInsertRowid };
-        },
-        get(...params) {
-          const stmt = raw.prepare(sql);
-          stmt.bind(params);
-          let row = null;
-          if (stmt.step()) {
-            row = stmt.getAsObject();
-          }
-          stmt.free();
-          return row || undefined;
-        },
-        all(...params) {
-          const stmt = raw.prepare(sql);
-          stmt.bind(params);
-          const rows = [];
-          while (stmt.step()) {
-            rows.push(stmt.getAsObject());
-          }
-          stmt.free();
-          return rows;
-        },
-      };
-    },
-    transaction(fn) {
-      return (...args) => {
-        raw.run('BEGIN');
-        try {
-          const result = fn(...args);
-          raw.run('COMMIT');
-          schedulePersist();
-          return result;
-        } catch (err) {
-          raw.run('ROLLBACK');
-          throw err;
-        }
-      };
-    },
-    pragma() {
-      /* no-op for sql.js compatibility */
-    },
-  };
-}
 
 export function getDb() {
   if (!db) throw new Error('Database not initialized');
   return db;
 }
 
+export function getDbPath() {
+  return dbPath;
+}
+
 export async function initDatabase(filePath) {
   dbPath = filePath;
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.mkdirSync(dirname(filePath), { recursive: true });
 
-  if (!SQL) {
-    const wasmPath = path.join(
-      path.dirname(require.resolve('sql.js')),
-      'sql-wasm.wasm'
-    );
-    SQL = await initSqlJs({
-      locateFile: () => wasmPath,
-    });
-  }
-
-  if (fs.existsSync(filePath)) {
-    const fileBuffer = fs.readFileSync(filePath);
-    rawDb = new SQL.Database(fileBuffer);
-  } else {
-    rawDb = new SQL.Database();
-  }
-  db = wrapDb(rawDb);
+  db = new Database(filePath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = FULL');
+  db.pragma('foreign_keys = ON');
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
+      pin TEXT NOT NULL DEFAULT '',
       fullname TEXT NOT NULL DEFAULT '',
       perm_products INTEGER NOT NULL DEFAULT 0,
       perm_categories INTEGER NOT NULL DEFAULT 0,
@@ -171,8 +82,7 @@ export async function initDatabase(filePath) {
       footer TEXT NOT NULL DEFAULT '',
       img TEXT NOT NULL DEFAULT '',
       till INTEGER NOT NULL DEFAULT 1,
-      server_ip TEXT NOT NULL DEFAULT '',
-      pexels_api_key TEXT NOT NULL DEFAULT ''
+      server_ip TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS media_library (
@@ -212,18 +122,22 @@ export async function initDatabase(filePath) {
     CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
   `);
 
-  migrateSchema();
+  const versionRow = db.prepare('SELECT version FROM schema_version WHERE id = 1').get();
+  if (!versionRow) {
+    db.prepare('INSERT INTO schema_version (id, version) VALUES (1, ?)').run(SCHEMA_VERSION);
+    console.log(`Fresh database created at ${filePath} (schema v${SCHEMA_VERSION})`);
+  } else if (versionRow.version !== SCHEMA_VERSION) {
+    console.warn(
+      `Schema version mismatch: database is v${versionRow.version}, app expects v${SCHEMA_VERSION}`
+    );
+  }
+
   seedDefaults();
-  persist();
   return db;
 }
 
-function migrateSchema() {
-  const cols = db.prepare('PRAGMA table_info(settings)').all();
-  const names = new Set(cols.map((c) => c.name));
-  if (!names.has('pexels_api_key')) {
-    db.exec(`ALTER TABLE settings ADD COLUMN pexels_api_key TEXT NOT NULL DEFAULT ''`);
-  }
+function dirname(filePath) {
+  return filePath.replace(/\/[^/]*$/, '') || '.';
 }
 
 function seedDefaults() {
@@ -350,7 +264,6 @@ export function mapSettings(row) {
       footer: row.footer,
       img: row.img,
       till: row.till,
-      app: 'Standalone Point of Sale',
     },
   };
 }

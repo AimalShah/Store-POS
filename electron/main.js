@@ -17,7 +17,7 @@ function getUserDataPaths() {
   return {
     root,
     dbDir: path.join(root, 'server', 'databases'),
-    dbFile: path.join(root, 'server', 'databases', 'pos.sqlite'),
+    dbFile: path.join(root, 'server', 'databases', 'pos-v3.sqlite'),
     uploads: path.join(root, 'uploads'),
   };
 }
