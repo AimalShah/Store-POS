@@ -80,6 +80,19 @@ export function loginUser(username, password) {
   return mapUser(row);
 }
 
+export function loginByPin(pin) {
+  const users = getDb().prepare("SELECT * FROM users WHERE pin != ''").all();
+  for (const row of users) {
+    if (bcrypt.compareSync(String(pin), row.pin)) {
+      getDb()
+        .prepare('UPDATE users SET status = ? WHERE id = ?')
+        .run(`Logged In_${new Date().toISOString()}`, row.id);
+      return mapUser(row);
+    }
+  }
+  return null;
+}
+
 export function hashPassword(password) {
   return bcrypt.hashSync(password, 10);
 }

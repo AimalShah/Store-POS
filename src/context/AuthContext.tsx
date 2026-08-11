@@ -18,7 +18,10 @@ type AuthState = {
   token: string | null;
   apiInfo: ApiInfo | null;
   serverError: string | null;
+  firstRun: boolean;
   login: (username: string, password: string) => Promise<void>;
+  loginByPin: (pin: string) => Promise<void>;
+  completeFirstRun: (store: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshApiInfo: () => Promise<ApiInfo>;
   hasPerm: (perm: keyof User) => boolean;
@@ -32,6 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(getStoredToken());
   const [apiInfo, setApiInfo] = useState<ApiInfo | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [firstRun, setFirstRun] = useState(false);
 
   const refreshApiInfo = async () => {
     const bridge = getPosBridge();
@@ -53,16 +57,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         await refreshApiInfo();
-        if (getStoredToken() && getStoredUser()) {
-          try {
-            const fresh = await api.getUser(getStoredUser()!._id);
-            setUser(fresh);
-            storeSession(getStoredToken()!, fresh);
-          } catch {
-            clearSession();
-            setUser(null);
-            setToken(null);
-          }
+        try {
+          const status = await api.getFirstRun();
+          setFirstRun(status.firstRun);
+        } catch {
+          setFirstRun(false);
+        }
+        if (!getStoredToken() || !getStoredUser()) {
+          return;
+        }
+        try {
+          const fresh = await api.getUser(getStoredUser()!._id);
+          setUser(fresh);
+          storeSession(getStoredToken()!, fresh);
+        } catch {
+          clearSession();
+          setUser(null);
+          setToken(null);
         }
       } finally {
         setReady(true);
@@ -76,6 +87,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     storeSession(result.token, result.user);
     setToken(result.token);
     setUser(result.user);
+    setFirstRun(false);
+  };
+
+  const loginByPin = async (pin: string) => {
+    await refreshApiInfo();
+    const result = await api.loginByPin(pin);
+    storeSession(result.token, result.user);
+    setToken(result.token);
+    setUser(result.user);
+    setFirstRun(false);
+  };
+
+  const completeFirstRun = async (store: string, pin: string) => {
+    await refreshApiInfo();
+    await api.completeFirstRun(store, pin);
+    setFirstRun(false);
   };
 
   const logout = async () => {
@@ -104,12 +131,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       apiInfo,
       serverError,
+      firstRun,
       login,
+      loginByPin,
+      completeFirstRun,
       logout,
       refreshApiInfo,
       hasPerm,
     }),
-    [ready, user, token, apiInfo, serverError]
+    [ready, user, token, apiInfo, serverError, firstRun]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

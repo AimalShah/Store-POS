@@ -82,7 +82,8 @@ export async function initDatabase(filePath) {
       footer TEXT NOT NULL DEFAULT '',
       img TEXT NOT NULL DEFAULT '',
       till INTEGER NOT NULL DEFAULT 1,
-      server_ip TEXT NOT NULL DEFAULT ''
+      server_ip TEXT NOT NULL DEFAULT '',
+      first_run INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS media_library (
@@ -173,6 +174,7 @@ export function mapUser(row) {
     id: row.id,
     username: row.username,
     fullname: row.fullname,
+    has_pin: !!row.pin,
     perm_products: row.perm_products,
     perm_categories: row.perm_categories,
     perm_transactions: row.perm_transactions,

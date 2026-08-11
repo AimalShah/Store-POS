@@ -4,6 +4,7 @@ import {
   authenticate,
   requirePerm,
   loginUser,
+  loginByPin,
   signToken,
   hashPassword,
 } from '../auth.js';
@@ -18,6 +19,19 @@ router.post('/login', (req, res) => {
   const user = loginUser(username, password);
   if (!user) {
     return res.status(401).json({ error: 'Incorrect username or password' });
+  }
+  const token = signToken(user);
+  res.json({ user, token });
+});
+
+router.post('/login-pin', (req, res) => {
+  const { pin } = req.body || {};
+  if (!pin) {
+    return res.status(400).json({ error: 'PIN required' });
+  }
+  const user = loginByPin(String(pin));
+  if (!user) {
+    return res.status(401).json({ error: 'Incorrect PIN' });
   }
   const token = signToken(user);
   res.json({ user, token });
@@ -75,12 +89,13 @@ router.post('/post', requirePerm('perm_users'), (req, res) => {
   if (!body.id) {
     const result = getDb()
       .prepare(
-        `INSERT INTO users (username, password, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO users (username, password, pin, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         body.username,
         hashPassword(body.password || 'password'),
+        body.pin ? hashPassword(String(body.pin)) : '',
         body.fullname || '',
         perms.perm_products,
         perms.perm_categories,
@@ -93,42 +108,34 @@ router.post('/post', requirePerm('perm_users'), (req, res) => {
   }
 
   const id = parseInt(body.id, 10);
+  const updates = [
+    'username = ?',
+    'fullname = ?',
+    'perm_products = ?',
+    'perm_categories = ?',
+    'perm_transactions = ?',
+    'perm_users = ?',
+    'perm_settings = ?',
+  ];
+  const params = [
+    body.username,
+    body.fullname || '',
+    perms.perm_products,
+    perms.perm_categories,
+    perms.perm_transactions,
+    perms.perm_users,
+    perms.perm_settings,
+  ];
   if (body.password) {
-    getDb()
-      .prepare(
-        `UPDATE users SET username = ?, password = ?, fullname = ?,
-         perm_products = ?, perm_categories = ?, perm_transactions = ?, perm_users = ?, perm_settings = ?
-         WHERE id = ?`
-      )
-      .run(
-        body.username,
-        hashPassword(body.password),
-        body.fullname || '',
-        perms.perm_products,
-        perms.perm_categories,
-        perms.perm_transactions,
-        perms.perm_users,
-        perms.perm_settings,
-        id
-      );
-  } else {
-    getDb()
-      .prepare(
-        `UPDATE users SET username = ?, fullname = ?,
-         perm_products = ?, perm_categories = ?, perm_transactions = ?, perm_users = ?, perm_settings = ?
-         WHERE id = ?`
-      )
-      .run(
-        body.username,
-        body.fullname || '',
-        perms.perm_products,
-        perms.perm_categories,
-        perms.perm_transactions,
-        perms.perm_users,
-        perms.perm_settings,
-        id
-      );
+    updates.push('password = ?');
+    params.push(hashPassword(body.password));
   }
+  if (body.pin) {
+    updates.push('pin = ?');
+    params.push(hashPassword(String(body.pin)));
+  }
+  params.push(id);
+  getDb().prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   res.sendStatus(200);
 });
 

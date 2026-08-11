@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
+import FirstRunWizard from './pages/FirstRunWizard';
 import PortalHome, { Portal } from './layout/PortalHome';
 import TillPortal from './layout/TillPortal';
 import ManagementPortal from './layout/ManagementPortal';
 
 export default function App() {
-  const { ready, user } = useAuth();
+  const { ready, user, firstRun } = useAuth();
   const [portal, setPortal] = useState<Portal | null>(null);
 
   if (!ready) {
@@ -18,6 +19,9 @@ export default function App() {
   }
 
   if (!user) {
+    if (firstRun) {
+      return <FirstRunWizard />;
+    }
     return <LoginPage />;
   }
 

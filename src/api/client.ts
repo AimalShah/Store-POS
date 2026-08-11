@@ -6,6 +6,7 @@ export type User = {
   id: number;
   username: string;
   fullname: string;
+  has_pin?: boolean;
   perm_products: number;
   perm_categories: number;
   perm_transactions: number;
@@ -178,6 +179,22 @@ export const api = {
     request<{ user: User; token: string }>(
       '/users/login',
       { method: 'POST', body: JSON.stringify({ username, password }) },
+      false
+    ),
+
+  loginByPin: (pin: string) =>
+    request<{ user: User; token: string }>(
+      '/users/login-pin',
+      { method: 'POST', body: JSON.stringify({ pin }) },
+      false
+    ),
+
+  getFirstRun: () => request<{ firstRun: boolean }>('/setup/first-run', {}, false),
+
+  completeFirstRun: (store: string, pin: string) =>
+    request<{ ok: boolean }>(
+      '/setup/first-run',
+      { method: 'POST', body: JSON.stringify({ store, pin }) },
       false
     ),
 
