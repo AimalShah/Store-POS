@@ -17,6 +17,7 @@ import { useStoreData } from '../hooks/useStoreData';
 import { getPosBridge } from '../bridge';
 import CatalogView from '../pages/CatalogView';
 import CustomersView from '../pages/CustomersView';
+import DashboardView from '../pages/DashboardView';
 import SettingsView from '../pages/SettingsView';
 import TeamView from '../pages/TeamView';
 import TransactionsModal from '../components/TransactionsModal';
@@ -194,10 +195,7 @@ export default function ManagementPortal({ onHome }: Props) {
 
         <main className="min-h-0 flex-1 overflow-auto p-6">
           {view === 'dashboard' && (
-            <EmptyState
-              title="Dashboard"
-              description="Today's sales, held orders, and low-stock alerts will appear here."
-            />
+            <DashboardView settings={settings} />
           )}
 
           {view === 'catalog' && (
