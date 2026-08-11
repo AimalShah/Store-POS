@@ -4,7 +4,7 @@ import { requirePerm } from '../auth.js';
 
 const router = Router();
 
-function decrementInventory(items, db) {
+function decrementInventory(items, db, transactionId, userId, userName) {
   for (const item of items || []) {
     const id = parseInt(item.id ?? item._id, 10);
     const qty = parseInt(item.quantity, 10) || 0;
@@ -13,6 +13,12 @@ function decrementInventory(items, db) {
     if (!product || product.stock === 0) continue;
     const updated = Math.max(0, (product.quantity || 0) - qty);
     db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(updated, id);
+
+    // Log stock movement for sale
+    db.prepare(
+      `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
+       VALUES (?, 'sale', ?, ?, 'Sale deduction', ?, 'transaction', ?, ?, ?)`
+    ).run(id, -qty, updated, transactionId, userId, userName, new Date().toISOString());
   }
 }
 
@@ -150,7 +156,7 @@ router.post('/new', (req, res) => {
       );
 
     if (isPaid) {
-      decrementInventory(items, db);
+      decrementInventory(items, db, result.lastInsertRowid, parseInt(body.user_id, 10) || 0, body.user || body.user_name || '');
     }
 
     return result.lastInsertRowid;
@@ -210,7 +216,7 @@ router.put('/new/:id', (req, res) => {
 
     // Decrement stock when completing a previously unpaid/hold order
     if (transitionToPaid) {
-      decrementInventory(items, db);
+      decrementInventory(items, db, id, parseInt(body.user_id, 10) || 0, body.user || body.user_name || '');
     }
   });
 

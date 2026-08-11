@@ -25,6 +25,8 @@ export async function initDatabase(filePath) {
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
 
+  console.log('[DEBUG] Starting db.exec() for schema creation');
+  
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -56,9 +58,39 @@ export async function initDatabase(filePath) {
       price REAL NOT NULL DEFAULT 0,
       category TEXT NOT NULL DEFAULT '',
       quantity INTEGER NOT NULL DEFAULT 0,
-      stock INTEGER NOT NULL DEFAULT 1,
+      stock INTEGER NOT NULL DEFAULT 0,
+      low_stock_threshold INTEGER NOT NULL DEFAULT 10,
       img TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      type TEXT NOT NULL, -- 'sale', 'restock', 'wastage', 'adjustment'
+      quantity_change INTEGER NOT NULL, -- negative for deduction, positive for addition
+      quantity_after INTEGER NOT NULL,
+      reason TEXT,
+      reference_id INTEGER, -- transaction id for sales
+      reference_type TEXT, -- 'transaction', 'manual'
+      user_id INTEGER NOT NULL DEFAULT 0,
+      user_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON stock_movements(created_at);
+
+    CREATE TABLE IF NOT EXISTS product_components (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_product_id INTEGER NOT NULL,
+      component_product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (parent_product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (component_product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_product_components_parent ON product_components(parent_product_id);
 
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,21 +146,123 @@ export async function initDatabase(filePath) {
       payment_type INTEGER NOT NULL DEFAULT 1,
       payment_breakdown_json TEXT NOT NULL DEFAULT '[]',
       items_json TEXT NOT NULL DEFAULT '[]',
-      date TEXT NOT NULL
+      date TEXT NOT NULL,
+      shift_id INTEGER
     );
+
+    CREATE INDEX IF NOT EXISTS idx_transactions_shift ON transactions(shift_id);
+
+    CREATE TABLE IF NOT EXISTS shifts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 0,
+      user_name TEXT NOT NULL DEFAULT '',
+      till INTEGER NOT NULL DEFAULT 1,
+      float_amount REAL NOT NULL DEFAULT 0,
+      counted_cash REAL,
+      status TEXT NOT NULL DEFAULT 'open', -- 'open', 'closed'
+      opened_at TEXT NOT NULL,
+      closed_at TEXT,
+      x_report_json TEXT,
+      z_report_json TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shifts_user ON shifts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
+    CREATE INDEX IF NOT EXISTS idx_shifts_till ON shifts(till);
 
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_till ON transactions(till);
-    CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
   `);
 
+  console.log('[DEBUG] db.exec() completed successfully');
+  
   // Migration: add payment_breakdown_json column if it doesn't exist
   try {
     const cols = db.prepare("PRAGMA table_info(transactions)").all();
     if (!cols.some((c) => c.name === 'payment_breakdown_json')) {
       db.prepare("ALTER TABLE transactions ADD COLUMN payment_breakdown_json TEXT NOT NULL DEFAULT '[]'").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: add low_stock_threshold column to products if it doesn't exist
+  try {
+    const cols = db.prepare("PRAGMA table_info(products)").all();
+    if (!cols.some((c) => c.name === 'low_stock_threshold')) {
+      db.prepare("ALTER TABLE products ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 10").run();
+    }
+    if (!cols.some((c) => c.name === 'stock')) {
+      db.prepare("ALTER TABLE products ADD COLUMN stock INTEGER NOT NULL DEFAULT 0").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: create stock_movements table if it doesn't exist
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='stock_movements'").all();
+    if (tables.length === 0) {
+      db.exec(`
+        CREATE TABLE stock_movements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          quantity_change INTEGER NOT NULL,
+          quantity_after INTEGER NOT NULL,
+          reason TEXT,
+          reference_id INTEGER,
+          reference_type TEXT,
+          user_id INTEGER NOT NULL DEFAULT 0,
+          user_name TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_stock_movements_product ON stock_movements(product_id);
+        CREATE INDEX idx_stock_movements_created ON stock_movements(created_at);
+      `);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: create shifts table if it doesn't exist
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='shifts'").all();
+    if (tables.length === 0) {
+      db.exec(`
+        CREATE TABLE shifts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL DEFAULT 0,
+          user_name TEXT NOT NULL DEFAULT '',
+          till INTEGER NOT NULL DEFAULT 1,
+          float_amount REAL NOT NULL DEFAULT 0,
+          counted_cash REAL,
+          status TEXT NOT NULL DEFAULT 'open',
+          opened_at TEXT NOT NULL,
+          closed_at TEXT,
+          x_report_json TEXT,
+          z_report_json TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX idx_shifts_user ON shifts(user_id);
+        CREATE INDEX idx_shifts_status ON shifts(status);
+        CREATE INDEX idx_shifts_till ON shifts(till);
+      `);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: add shift_id column to transactions if it doesn't exist
+  try {
+    const cols = db.prepare("PRAGMA table_info(transactions)").all();
+    if (!cols.some((c) => c.name === 'shift_id')) {
+      db.prepare("ALTER TABLE transactions ADD COLUMN shift_id INTEGER").run();
     }
   } catch {
     /* ignore */
@@ -205,7 +339,10 @@ export function mapProduct(row) {
     category: row.category,
     quantity: row.quantity,
     stock: row.stock,
+    trackStock: !!row.stock,
+    lowStockThreshold: row.low_stock_threshold || 10,
     img: row.img,
+    components: [],
   };
 }
 
@@ -264,6 +401,24 @@ export function mapTransaction(row) {
     payment_breakdown,
     items,
     date: row.date,
+    shift_id: row.shift_id,
+  };
+}
+
+export function mapShift(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    till: row.till,
+    floatAmount: row.float_amount,
+    countedCash: row.counted_cash,
+    status: row.status,
+    openedAt: row.opened_at,
+    closedAt: row.closed_at,
+    xReport: row.x_report_json ? JSON.parse(row.x_report_json) : null,
+    zReport: row.z_report_json ? JSON.parse(row.z_report_json) : null,
   };
 }
 

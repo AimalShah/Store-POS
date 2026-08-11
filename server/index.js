@@ -13,6 +13,7 @@ import transactionsRouter from './routes/transactions.js';
 import mediaRouter from './routes/media.js';
 import demoRouter from './routes/demo.js';
 import setupRouter from './routes/setup.js';
+import shiftsRouter from './routes/shifts.js';
 
 export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   fs.mkdirSync(uploadsPath, { recursive: true });
@@ -48,6 +49,7 @@ export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   app.use('/api/settings', authenticate, settingsRouter(uploadsPath));
   app.use('/api/media', authenticate, mediaRouter(uploadsPath));
   app.use('/api/demo', authenticate, demoRouter);
+  app.use('/api/shifts', authenticate, shiftsRouter);
   app.use('/api', authenticate, transactionsRouter);
 
   app.use((err, _req, res, _next) => {

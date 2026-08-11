@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
-import { api, Category, Product, getUploadsBase } from '../api/client';
+import { api, Category, Product, ProductComponent, getUploadsBase } from '../api/client';
 import PhotoPicker from '../components/PhotoPicker';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Checkbox } from '../components/ui/checkbox';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
+import { Separator } from '../components/ui/separator';
 
 type Props = {
   products: Product[];
@@ -11,14 +21,26 @@ type Props = {
   onChanged: () => Promise<void>;
 };
 
+type ComponentForm = {
+  id: string;
+  quantity: string;
+};
+
 const emptyProduct = {
   id: '',
   name: '',
   price: '',
   category: '',
   quantity: '0',
-  trackStock: true,
+  trackStock: false,
+  lowStockThreshold: 10,
   img: '',
+  components: [] as ComponentForm[],
+};
+
+const emptyComponent = {
+  id: '',
+  quantity: '1',
 };
 
 export default function CatalogView({
@@ -41,6 +63,10 @@ export default function CatalogView({
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
+  const [adjustType, setAdjustType] = useState<'restock' | 'wastage' | 'adjustment'>('restock');
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
   const uploads = getUploadsBase();
 
   useEffect(() => {
@@ -63,9 +89,65 @@ export default function CatalogView({
     fd.append('quantity', form.quantity || '0');
     fd.append('stock', form.trackStock ? '1' : 'on');
     fd.append('img', form.img);
+    fd.append('components', JSON.stringify(form.components.filter((c) => c.id).map((c) => ({ id: Number(c.id), quantity: Number(c.quantity) || 1 }))));
     await api.saveProduct(fd);
     setForm(emptyProduct);
     await onChanged();
+  };
+
+  const openAdjustDialog = (product: Product, type: 'restock' | 'wastage' | 'adjustment') => {
+    setAdjustProduct(product);
+    setAdjustType(type);
+    setAdjustQty('');
+    setAdjustReason('');
+  };
+
+  const handleAdjust = async () => {
+    if (!adjustProduct || !adjustQty.trim()) return;
+    const qty = parseInt(adjustQty, 10);
+    if (isNaN(qty) || qty === 0) return;
+
+    const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
+    const userId = user.id || 0;
+    const userName = user.fullname || '';
+
+    setBusy(true);
+    try {
+      await api.adjustStock(adjustProduct.id, {
+        type: adjustType,
+        quantityChange: adjustType === 'wastage' ? -Math.abs(qty) : qty,
+        reason: adjustReason,
+        userId,
+        userName,
+      });
+      setAdjustProduct(null);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Adjustment failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addComponent = () => {
+    setForm((prev) => ({
+      ...prev,
+      components: [...prev.components, emptyComponent],
+    }));
+  };
+
+  const removeComponent = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      components: prev.components.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateComponent = (index: number, field: 'id' | 'quantity', value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      components: prev.components.map((c, i) => (i === index ? { ...c, [field]: value } : c)),
+    }));
   };
 
   const editProduct = (p: Product) => {
@@ -75,8 +157,13 @@ export default function CatalogView({
       price: String(p.price),
       category: p.category,
       quantity: String(p.quantity),
-      trackStock: !!p.stock,
+      trackStock: !!p.trackStock,
+      lowStockThreshold: p.lowStockThreshold || 10,
       img: p.img || '',
+      components: (p.components || []).map((c) => ({
+        id: String(c.id),
+        quantity: String(c.quantity),
+      })),
     });
     setTab('products');
   };
@@ -162,263 +249,387 @@ export default function CatalogView({
   };
 
   return (
-    <div>
-      <div className="chips" style={{ paddingLeft: 0, border: 0, marginBottom: '1rem' }}>
-        {canProducts && (
-          <button
-            type="button"
-            className={`chip ${tab === 'products' ? 'active' : ''}`}
-            onClick={() => setTab('products')}
-          >
-            Products
-          </button>
-        )}
-        {canCategories && (
-          <button
-            type="button"
-            className={`chip ${tab === 'categories' ? 'active' : ''}`}
-            onClick={() => setTab('categories')}
-          >
-            Categories
-          </button>
-        )}
-        {canProducts && (
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.4rem' }}>
-            <button type="button" className="btn" disabled={busy} onClick={seedDemo}>
-              Seed demo
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={busy || !selected.length}
-              onClick={bulkDelete}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          {canProducts && (
+            <Button
+              variant={tab === 'products' ? 'default' : 'outline'}
+              onClick={() => setTab('products')}
             >
+              Products
+            </Button>
+          )}
+          {canCategories && (
+            <Button
+              variant={tab === 'categories' ? 'default' : 'outline'}
+              onClick={() => setTab('categories')}
+            >
+              Categories
+            </Button>
+          )}
+        </div>
+        {canProducts && (
+          <div className="flex items-center gap-2 ml-auto">
+            <Button variant="outline" disabled={busy} onClick={seedDemo}>
+              Seed demo
+            </Button>
+            <Button variant="destructive" disabled={busy || !selected.length} onClick={bulkDelete}>
               Delete selected ({selected.length})
-            </button>
+            </Button>
           </div>
         )}
       </div>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+          {error}
+        </div>
+      )}
 
       {tab === 'products' && canProducts && (
-        <div className="page-grid">
-          <div className="panel" style={{ padding: '1rem' }}>
-            <h3 style={{ marginTop: 0 }}>{form.id ? 'Edit product' : 'New product'}</h3>
-            <div className="field">
-              <label>Name</label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>Price</label>
-              <input
-                type="number"
-                step="0.01"
-                min={0}
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>Category</label>
-              <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              >
-                <option value="">None</option>
-                {cats.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <label
-              style={{
-                display: 'flex',
-                gap: '0.5rem',
-                alignItems: 'center',
-                marginBottom: '0.75rem',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={form.trackStock}
-                onChange={(e) => setForm({ ...form, trackStock: e.target.checked })}
-              />
-              Track inventory
-            </label>
-            {form.trackStock && (
-              <div className="field">
-                <label>Quantity on hand</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={form.quantity}
-                  onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+        <div className="grid gap-6 md:grid-cols-[1fr_2fr]">
+          <Card>
+            <CardHeader>
+              <CardTitle>{form.id ? 'Edit product' : 'New product'}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="product-name">Name</Label>
+                <Input
+                  id="product-name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Product name"
                 />
               </div>
-            )}
-            <PhotoPicker
-              value={form.img}
-              onChange={(img) => setForm({ ...form, img })}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="button" className="btn btn-primary" onClick={saveProduct}>
-                {form.id ? 'Update' : 'Add'} product
-              </button>
-              {form.id && (
-                <button type="button" className="btn" onClick={() => setForm(emptyProduct)}>
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
 
-          <div className="panel" style={{ padding: '1rem' }}>
-            <div className="field">
-              <label>Search catalog</label>
-              <input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Name, category, or ID"
+              <div className="space-y-2">
+                <Label htmlFor="product-price">Price</Label>
+                <Input
+                  id="product-price"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={form.price}
+                  onChange={(e) => setForm({ ...form, price: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-category">Category</Label>
+                <Select value={form.category} onValueChange={(value) => setForm({ ...form, category: value || '' })}>
+                  <SelectTrigger id="product-category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {cats.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="track-stock"
+                  checked={form.trackStock}
+                  onCheckedChange={(checked) => setForm({ ...form, trackStock: checked })}
+                />
+                <Label htmlFor="track-stock">Track inventory</Label>
+              </div>
+
+              {form.trackStock && (
+                <div className="space-y-2">
+                  <Label htmlFor="product-quantity">Quantity on hand</Label>
+                  <Input
+                    id="product-quantity"
+                    type="number"
+                    min={0}
+                    value={form.quantity}
+                    onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+              )}
+
+              {form.trackStock && (
+                <div className="space-y-2">
+                  <Label htmlFor="product-low-stock">Low stock threshold</Label>
+                  <Input
+                    id="product-low-stock"
+                    type="number"
+                    min={1}
+                    value={form.lowStockThreshold || 10}
+                    onChange={(e) => setForm({ ...form, lowStockThreshold: parseInt(e.target.value, 10) || 10 })}
+                    placeholder="10"
+                  />
+                </div>
+              )}
+
+              <PhotoPicker
+                value={form.img}
+                onChange={(img) => setForm({ ...form, img })}
+              />
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Combo Components</Label>
+                  <Button variant="outline" size="sm" onClick={addComponent}>
+                    + Add Component
+                  </Button>
+                </div>
+                {form.components.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No components. Add products to create a combo (e.g., Meal = Burger + Fries + Drink).
+                    Components are printed on receipts but do not affect stock.
+                  </p>
+                )}
+                {form.components.map((comp, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Select
+                      value={comp.id}
+                      onValueChange={(value) => updateComponent(idx, 'id', value || '')}
+                    >
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Select product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {list.filter((p) => p.id !== Number(form.id) || !form.id).map((p) => (
+                          <SelectItem key={p.id} value={String(p.id)}>
+                            {p.name} ({symbol}{Number(p.price).toFixed(2)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={comp.quantity}
+                      onChange={(e) => updateComponent(idx, 'quantity', e.target.value)}
+                      placeholder="Qty"
+                      className="w-20"
+                    />
+                    {comp.id && list.find((p) => p.id === Number(comp.id)) && (
+                      <Badge variant="outline" className="text-xs flex-1">
+                        {list.find((p) => p.id === Number(comp.id))!.name}
+                      </Badge>
+                    )}
+                    <Button variant="ghost" size="icon" onClick={() => removeComponent(idx)} aria-label="Remove component">
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <Separator />
+
+              <div className="flex gap-2">
+                <Button onClick={saveProduct} className="flex-1">
+                  {form.id ? 'Update' : 'Add'} product
+                </Button>
+                {form.id && (
+                  <Button variant="outline" onClick={() => setForm(emptyProduct)} className="flex-1">
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Product List</CardTitle>
+              <div className="w-64">
+                <Input
+                  placeholder="Search name, category, or ID"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+<TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        onCheckedChange={toggleSelectAllVisible}
+                        aria-label="Select all visible"
+                      />
+                    </TableHead>
+                    <TableHead className="w-16">Image</TableHead>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Stock</TableHead>
+                    <TableHead>Low Stock</TableHead>
+                    <TableHead className="w-64 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selected.includes(p.id)}
+                          onCheckedChange={() => toggleSelect(p.id)}
+                          aria-label={`Select ${p.name}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {p.img ? (
+                          <img
+                            src={`${uploads}/${p.img}`}
+                            alt=""
+                            className="h-10 w-10 rounded-md object-cover border"
+                          />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{p.id}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{p.name}</div>
+                        <div className="text-xs text-muted-foreground">{p.category || 'Uncategorized'}</div>
+                      </TableCell>
+                      <TableCell className="font-medium">{symbol}{Number(p.price).toFixed(2)}</TableCell>
+                      <TableCell>
+                        {p.trackStock ? (
+                          <>
+                            <span className={p.quantity <= 0 ? 'text-destructive font-medium' : ''}>
+                              {p.quantity}
+                            </span>
+                            {p.quantity <= 0 && <Badge variant="destructive" className="ml-1 text-xs">Out of stock</Badge>}
+                            {p.quantity > 0 && p.quantity <= (p.lowStockThreshold || 10) && (
+                              <Badge variant="secondary" className="ml-1 text-xs">Low stock</Badge>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {p.trackStock ? (
+                          <Badge variant="outline" className="text-xs">{p.lowStockThreshold || 10}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {p.trackStock && (
+                            <>
+                              <Button variant="outline" size="sm" onClick={() => openAdjustDialog(p, 'restock')}>
+                                + Restock
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => openAdjustDialog(p, 'wastage')}>
+                                - Wastage
+                              </Button>
+                            </>
+                          )}
+                          <Button variant="outline" size="sm" onClick={() => editProduct(p)}>
+                            Edit
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => removeProduct(p.id)}>
+                            Del
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!visible.length && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                        No products yet
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Stock Adjustment Dialog */}
+      <Dialog open={!!adjustProduct} onOpenChange={(open) => !open && setAdjustProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {adjustType === 'restock' ? 'Restock' : adjustType === 'wastage' ? 'Record Wastage' : 'Adjust Stock'}
+              {adjustProduct && <span className="ml-2 text-base font-normal text-muted-foreground">— {adjustProduct.name}</span>}
+            </DialogTitle>
+            <DialogDescription>
+              {adjustType === 'restock'
+                ? 'Add inventory to increase stock on hand.'
+                : adjustType === 'wastage'
+                ? 'Record items that were wasted, damaged, or expired.'
+                : 'Manually adjust stock level (positive or negative).'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="adjust-type">Type</Label>
+              <Select value={adjustType} onValueChange={(v) => setAdjustType(v as 'restock' | 'wastage' | 'adjustment')}>
+                <SelectTrigger id="adjust-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="restock">Restock (+)</SelectItem>
+                  <SelectItem value="wastage">Wastage (-)</SelectItem>
+                  <SelectItem value="adjustment">Adjustment (±)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="adjust-qty">Quantity</Label>
+              <Input
+                id="adjust-qty"
+                type="number"
+                step={1}
+                value={adjustQty}
+                onChange={(e) => setAdjustQty(e.target.value)}
+                placeholder={adjustType === 'wastage' ? 'Quantity wasted' : 'Quantity to add'}
+                min={1}
               />
             </div>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 36 }}>
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleSelectAllVisible}
-                      title="Select all visible"
-                      aria-label="Select all visible"
-                    />
-                  </th>
-                  <th />
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Stock</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(p.id)}
-                        onChange={() => toggleSelect(p.id)}
-                        aria-label={`Select ${p.name}`}
-                      />
-                    </td>
-                    <td>
-                      {p.img ? (
-                        <img
-                          src={`${uploads}/${p.img}`}
-                          alt=""
-                          style={{
-                            width: 40,
-                            height: 40,
-                            objectFit: 'cover',
-                            borderRadius: 6,
-                            border: '1px solid var(--line)',
-                          }}
-                        />
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td>{p.id}</td>
-                    <td>
-                      <div>{p.name}</div>
-                      <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.15rem' }}>
-                        {p.category || 'Uncategorized'}
-                      </div>
-                    </td>
-                    <td>
-                      {symbol}
-                      {Number(p.price).toFixed(2)}
-                    </td>
-                    <td>{p.stock ? p.quantity : '—'}</td>
-                    <td>
-                      <button type="button" className="btn" onClick={() => editProduct(p)}>
-                        Edit
-                      </button>{' '}
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => removeProduct(p.id)}
-                      >
-                        Del
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!visible.length && <div className="empty">No products yet</div>}
-          </div>
-        </div>
-      )}
-
-      {tab === 'categories' && canCategories && (
-        <div className="page-grid">
-          <div className="panel" style={{ padding: '1rem' }}>
-            <h3 style={{ marginTop: 0 }}>{editCatId ? 'Edit category' : 'New category'}</h3>
-            <div className="field">
-              <label>Name</label>
-              <input value={catName} onChange={(e) => setCatName(e.target.value)} />
+            <div className="space-y-2">
+              <Label htmlFor="adjust-reason">Reason</Label>
+              <Input
+                id="adjust-reason"
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder="e.g., New delivery, Damaged goods, Inventory count correction"
+              />
             </div>
-            <button type="button" className="btn btn-primary" onClick={saveCategory}>
-              {editCatId ? 'Update' : 'Add'} category
-            </button>
+            <p className="text-sm text-muted-foreground">
+              Current stock: <span className="font-medium">{adjustProduct?.quantity || 0}</span>
+              {' '}
+              {adjustProduct?.trackStock && (
+                <>
+                  | Low stock threshold: <span className="font-medium">{adjustProduct?.lowStockThreshold || 10}</span>
+                </>
+              )}
+            </p>
           </div>
-          <div className="panel" style={{ padding: '1rem' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {cats.map((c) => (
-                  <tr key={c.id}>
-                    <td>{c.name}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => {
-                          setEditCatId(c.id);
-                          setCatName(c.name);
-                        }}
-                      >
-                        Edit
-                      </button>{' '}
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => removeCategory(c.id)}
-                      >
-                        Del
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustProduct(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAdjust} disabled={busy || !adjustQty.trim()}>
+              {busy ? 'Saving...' : 'Save Adjustment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-

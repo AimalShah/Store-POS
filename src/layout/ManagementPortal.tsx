@@ -11,6 +11,8 @@ import {
   ShoppingCart,
   UserCog,
   Users,
+  Warehouse,
+  Timer,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useStoreData } from '../hooks/useStoreData';
@@ -19,6 +21,8 @@ import CatalogView from '../pages/CatalogView';
 import CustomersView from '../pages/CustomersView';
 import DashboardView from '../pages/DashboardView';
 import SettingsView from '../pages/SettingsView';
+import ShiftView from '../pages/ShiftView';
+import StockHistoryView from '../pages/StockHistoryView';
 import TeamView from '../pages/TeamView';
 import TransactionsModal from '../components/TransactionsModal';
 import { Button } from '../components/ui/button';
@@ -49,7 +53,8 @@ type NavView =
   | 'reports'
   | 'shifts'
   | 'team'
-  | 'settings';
+  | 'settings'
+  | 'stock-history';
 
 type Props = {
   onHome: () => void;
@@ -98,8 +103,14 @@ export default function ManagementPortal({ onHome }: Props) {
     },
     { id: 'sales', label: 'Sales', icon: ReceiptText, show: hasPerm('perm_transactions') },
     { id: 'customers', label: 'Customers', icon: Users, show: true },
+    {
+      id: 'stock-history',
+      label: 'Stock History',
+      icon: Warehouse,
+      show: hasPerm('perm_products'),
+    },
     { id: 'reports', label: 'Reports', icon: BarChart3, show: hasPerm('perm_transactions') },
-    { id: 'shifts', label: 'Shifts', icon: CalendarClock, show: hasPerm('perm_transactions') },
+    { id: 'shifts', label: 'Shifts', icon: Timer, show: hasPerm('perm_transactions') },
     { id: 'team', label: 'Team', icon: UserCog, show: hasPerm('perm_users') },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, show: hasPerm('perm_settings') },
   ];
@@ -221,6 +232,14 @@ export default function ManagementPortal({ onHome }: Props) {
 
           {view === 'customers' && (
             <CustomersView customers={customers} onChanged={reload} />
+          )}
+
+          {view === 'stock-history' && (
+            <StockHistoryView products={products} symbol={symbol} />
+          )}
+
+          {view === 'shifts' && (
+            <ShiftView settings={settings} onShiftChange={reload} />
           )}
 
           {view === 'reports' && (

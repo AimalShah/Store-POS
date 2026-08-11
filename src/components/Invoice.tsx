@@ -1,4 +1,5 @@
-import { getUploadsBase, Settings, Transaction } from '../api/client';
+import React from 'react';
+import { getUploadsBase, Settings, Transaction, ProductComponent } from '../api/client';
 
 type Props = {
   tx: Transaction;
@@ -61,14 +62,29 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         </thead>
         <tbody>
           {items.map((item, i) => (
-            <tr key={i}>
-              <td className="invoice-qty">{item.quantity}</td>
-              <td>{item.name}</td>
-              <td className="invoice-right">
-                {symbol}
-                {(Number(item.price) * Number(item.quantity)).toFixed(2)}
-              </td>
-            </tr>
+            <React.Fragment key={i}>
+              <tr>
+                <td className="invoice-qty">{item.quantity}</td>
+                <td>{item.name}</td>
+                <td className="invoice-right">
+                  {symbol}
+                  {(Number(item.price) * Number(item.quantity)).toFixed(2)}
+                </td>
+              </tr>
+              {item.components && item.components.length > 0 && (
+                <React.Fragment>
+                  {item.components.map((comp: ProductComponent, ci) => (
+                    <tr key={ci} style={{ backgroundColor: '#f9f9f9' }}>
+                      <td className="invoice-qty">{comp.quantity * item.quantity}</td>
+                      <td style={{ paddingLeft: '20px', fontSize: '0.9em', color: '#666' }}>
+                        → {comp.name} x{comp.quantity}
+                      </td>
+                      <td className="invoice-right" style={{ color: '#666' }}>{symbol}0.00</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              )}
+            </React.Fragment>
           ))}
         </tbody>
       </table>

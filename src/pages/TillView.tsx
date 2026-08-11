@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   Smartphone,
   Trash2,
+  Timer,
 } from 'lucide-react';
 import {
   api,
@@ -21,6 +22,7 @@ import {
   Customer,
   Product,
   Settings,
+  Shift,
   Transaction,
   getUploadsBase,
 } from '../api/client';
@@ -89,6 +91,21 @@ export default function TillView({
   const [showHolds, setShowHolds] = useState(false);
   const [holds, setHolds] = useState<Transaction[]>([]);
 
+  // Shift State
+  const [currentShift, setCurrentShift] = useState<Shift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+
+  const refreshShift = async () => {
+    try {
+      const shift = await api.getOpenShift(settings?.till || 1);
+      setCurrentShift(shift);
+    } catch {
+      setCurrentShift(null);
+    } finally {
+      setShiftLoading(false);
+    }
+  };
+
   // Payment State
   const [showPay, setShowPay] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<'cash' | 'card' | 'mobile'>('cash');
@@ -118,10 +135,14 @@ export default function TillView({
   }, []);
 
   useEffect(() => {
+    refreshShift();
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
         e.preventDefault();
-        if (cart.length) openPay();
+        if (cart.length && currentShift && currentShift.status === 'open') openPay();
       }
       if (e.key === 'F4') {
         e.preventDefault();
@@ -133,7 +154,7 @@ export default function TillView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [cart, showPay]);
+  }, [cart, showPay, currentShift]);
 
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -203,6 +224,7 @@ export default function TillView({
           price: Number(product.price),
           quantity: 1,
           stock: product.quantity,
+          components: product.components,
         },
       ];
     });
@@ -314,6 +336,7 @@ export default function TillView({
       payment_breakdown: paymentLines.length > 0 ? paymentLines : [{ method: selectedMethod, amount: total }],
       items: cart,
       date: new Date().toISOString(),
+      shift_id: currentShift?.id,
     };
   };
 
@@ -334,6 +357,13 @@ export default function TillView({
   };
 
   const completeSale = async () => {
+    // Check if a shift is open
+    if (!currentShift || currentShift.status !== 'open') {
+      setError('No shift is open. Please open a shift before completing a sale.');
+      setShowPay(false);
+      return;
+    }
+
     let currentLines = [...paymentLines];
     if (currentLines.length === 0) {
       const val = parseFloat(amountInput) || total;
@@ -379,6 +409,7 @@ export default function TillView({
       payment_breakdown: currentLines,
       items: cart,
       date: new Date().toISOString(),
+      shift_id: currentShift.id,
     };
 
     try {
@@ -576,6 +607,24 @@ export default function TillView({
               </Button>
             )}
           </div>
+
+          {/* Shift Status */}
+          <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 border">
+            <div className="flex items-center gap-2">
+              <Timer className="size-4 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                {shiftLoading ? (
+                  'Loading shift...'
+                ) : currentShift ? (
+                  <>
+                    Shift #{currentShift.id} — {currentShift.userName} — Float: {symbol}{currentShift.floatAmount.toFixed(2)}
+                  </>
+                ) : (
+                  <span className="text-destructive">No shift open — Open a shift to start selling</span>
+                )}
+              </span>
+            </div>
+          </div>
         </CardHeader>
 
         {/* Cart Item List */}
@@ -622,10 +671,11 @@ export default function TillView({
                     <div className="flex items-center justify-between pt-1 border-t border-border/40">
                       <div className="flex items-center gap-1">
                         <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="ghost" size="xs" className="h-7 px-2 text-xs text-muted-foreground">
-                              + Note
-                            </Button>
+                          <PopoverTrigger
+                            type="button"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground rounded-md transition-colors"
+                          >
+                            + Note
                           </PopoverTrigger>
                           <PopoverContent className="w-64 p-3" align="start">
                             <div className="space-y-2">
@@ -641,10 +691,11 @@ export default function TillView({
                         </Popover>
 
                         <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="ghost" size="xs" className="h-7 px-2 text-xs text-muted-foreground">
-                              + Discount
-                            </Button>
+                          <PopoverTrigger
+                            type="button"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground rounded-md transition-colors"
+                          >
+                            + Discount
                           </PopoverTrigger>
                           <PopoverContent className="w-64 p-3" align="start">
                             <div className="space-y-3">
@@ -781,7 +832,7 @@ export default function TillView({
             </Button>
             <Button
               onClick={openPay}
-              disabled={!cart.length}
+              disabled={!cart.length || !currentShift || currentShift.status !== 'open'}
               className="h-12 text-base font-semibold"
             >
               Pay

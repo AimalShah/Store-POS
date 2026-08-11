@@ -28,8 +28,6 @@ function dateLocal(d: Date): string {
 
 type SaleDay = { day: string; total: number };
 
-const LOW_STOCK_THRESHOLD = 10;
-
 /* ── types ───────────────────────────────────────────────── */
 
 interface DashboardState {
@@ -37,7 +35,7 @@ interface DashboardState {
   todayCount: number;
   heldCount: number;
   weeklySales: SaleDay[];
-  lowStock: { name: string; quantity: number; id: number }[];
+  lowStock: { name: string; quantity: number; id: number; threshold: number }[];
   loading: boolean;
   error: string | null;
 }
@@ -96,12 +94,12 @@ export default function DashboardView({ settings }: { settings: Settings | null 
       }
 
       // Low-stock items (only if stock tracking permission exists)
-      let lowStockItems: { name: string; quantity: number; id: number }[] = [];
+      let lowStockItems: { name: string; quantity: number; id: number; threshold: number }[] = [];
       if (hasPerm('perm_products')) {
         const products = await api.getProducts().catch(() => [] as Product[]);
         lowStockItems = products
-          .filter((p) => p.stock && p.quantity <= LOW_STOCK_THRESHOLD && p.quantity >= 0)
-          .map((p) => ({ name: p.name, quantity: p.quantity, id: p.id }))
+          .filter((p) => p.trackStock && p.quantity >= 0 && p.quantity <= (p.lowStockThreshold || 10))
+          .map((p) => ({ name: p.name, quantity: p.quantity, id: p.id, threshold: p.lowStockThreshold || 10 }))
           .sort((a, b) => a.quantity - b.quantity);
       }
 
@@ -129,24 +127,26 @@ export default function DashboardView({ settings }: { settings: Settings | null 
 
   /* ── KPI cards ───────────────────────────────────────── */
 
+  const { todayTotal, todayCount, heldCount } = state;
+
   const kpiCards = [
     {
       title: "Today's Sales",
       value: `${symbol}${todayTotal.toFixed(2)}`,
       hint: 'Paid sales only',
-      accent: state.todayTotal > 0,
+      accent: todayTotal > 0,
     },
     {
       title: 'Sale Count',
-      value: String(state.todayCount),
+      value: String(todayCount),
       hint: 'Completed today',
-      accent: state.todayCount > 0,
+      accent: todayCount > 0,
     },
     {
       title: 'Held Orders',
-      value: String(state.heldCount),
+      value: String(heldCount),
       hint: 'Pending customers',
-      accent: state.heldCount > 0,
+      accent: heldCount > 0,
     },
   ];
 
@@ -210,13 +210,15 @@ export default function DashboardView({ settings }: { settings: Settings | null 
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis
-                  tickFormatter={(v: number) => `${symbol}${v}`}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  tickFormatter={(v: any) => `${symbol}${Number(v)}`}
                   tickLine={false}
                   axisLine={false}
                   fontSize={12}
                 />
                 <Tooltip
-                  formatter={(value: number) => `${symbol}${value.toFixed(2)}`}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => `${symbol}${Number(value).toFixed(2)}`}
                   contentStyle={{ borderRadius: '8px' }}
                 />
                 <Bar
@@ -241,7 +243,7 @@ export default function DashboardView({ settings }: { settings: Settings | null 
           {!state.loading && state.lowStock.length === 0 && hasPerm('perm_products') && (
             <EmptyInline
               title="All stocked up"
-              description="No tracked products are below the threshold of {LOW_STOCK_THRESHOLD}. Great job!"
+              description="No tracked products are below their individual low-stock thresholds. Great job!"
             />
           )}
           {!state.loading && !hasPerm('perm_products') && (
@@ -259,14 +261,15 @@ export default function DashboardView({ settings }: { settings: Settings | null 
                     <th className="pb-2 pl-2 text-left font-medium text-muted-foreground">
                       Product
                     </th>
-                    <th className="pb-2 text-right font-medium text-muted-foreground">Qty Left</th>
+                    <th className="pb-2 text-center font-medium text-muted-foreground">Qty Left</th>
+                    <th className="pb-2 text-right font-medium text-muted-foreground">Threshold</th>
                   </tr>
                 </thead>
                 <tbody>
                   {state.lowStock.map((item) => (
                     <tr key={item.id} className="border-b last:border-b-0">
                       <td className="py-2 pl-2">{item.name}</td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-center">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                             item.quantity === 0
@@ -276,6 +279,9 @@ export default function DashboardView({ settings }: { settings: Settings | null 
                         >
                           {item.quantity}
                         </span>
+                      </td>
+                      <td className="py-2 text-right text-xs text-muted-foreground">
+                        {item.threshold}
                       </td>
                     </tr>
                   ))}

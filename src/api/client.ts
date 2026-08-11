@@ -23,7 +23,37 @@ export type Product = {
   category: string;
   quantity: number;
   stock: number;
+  trackStock: boolean;
+  lowStockThreshold: number;
   img: string;
+  components?: ProductComponent[];
+};
+
+export type ProductComponent = {
+  id: number;
+  name: string;
+  price: number;
+  quantity: number;
+};
+
+export type StockMovement = {
+  id: number;
+  productId: number;
+  type: 'sale' | 'restock' | 'wastage' | 'adjustment';
+  quantityChange: number;
+  quantityAfter: number;
+  reason?: string;
+  referenceId?: number;
+  referenceType?: string;
+  userId: number;
+  userName: string;
+  createdAt: string;
+  productName?: string;
+};
+
+export type StockMovementsResponse = {
+  movements: StockMovement[];
+  total: number;
 };
 
 export type Category = {
@@ -75,6 +105,7 @@ export type CartItem = {
   note?: string;
   discountType?: 'flat' | 'percent';
   discountValue?: number;
+  components?: ProductComponent[];
 };
 
 export type Transaction = {
@@ -97,6 +128,46 @@ export type Transaction = {
   payment_breakdown?: { method: string; amount: number; tendered?: number }[];
   items: CartItem[];
   date: string;
+  shift_id?: number;
+};
+
+export type Shift = {
+  id: number;
+  userId: number;
+  userName: string;
+  till: number;
+  floatAmount: number;
+  countedCash?: number;
+  status: 'open' | 'closed';
+  openedAt: string;
+  closedAt?: string;
+  xReport?: XReport | null;
+  zReport?: ZReport | null;
+};
+
+export type XReport = {
+  totalSales: number;
+  cashSales: number;
+  cardSales: number;
+  mobileSales: number;
+  saleCount: number;
+  transactionCount: number;
+  refundCount: number;
+  refundTotal: number;
+};
+
+export type ZReport = {
+  totalSales: number;
+  cashSales: number;
+  cardSales: number;
+  mobileSales: number;
+  saleCount: number;
+  transactionCount: number;
+  refundCount: number;
+  refundTotal: number;
+  expectedCash: number;
+  actualCash: number;
+  difference: number;
 };
 
 let baseUrl = 'http://127.0.0.1:8001/api';
@@ -323,14 +394,86 @@ export const api = {
       customersAdded: number;
     }>('/demo/seed', { method: 'POST', body: '{}' }),
 
-  clearDemo: (options?: {
-    products?: boolean;
-    categories?: boolean;
-    customers?: boolean;
-    transactions?: boolean;
-  }) =>
-    request<{ ok: boolean; message: string; deleted: Record<string, number> }>(
-      '/demo/clear',
-      { method: 'POST', body: JSON.stringify(options || {}) }
-    ),
-};
+clearDemo: (options?: {
+      products?: boolean;
+      categories?: boolean;
+      customers?: boolean;
+      transactions?: boolean;
+    }) =>
+      request<{ ok: boolean; message: string; deleted: Record<string, number> }>(
+        '/demo/clear',
+        { method: 'POST', body: JSON.stringify(options || {}) }
+      ),
+
+    adjustStock: (productId: number, body: {
+      type: 'restock' | 'wastage' | 'adjustment';
+      quantityChange: number;
+      reason?: string;
+      userId?: number;
+      userName?: string;
+    }) => request<Product>(`/inventory/product/${productId}/adjust-stock`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+    getStockMovements: (params?: {
+      productId?: number;
+      type?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.productId) q.append('productId', String(params.productId));
+      if (params?.type) q.append('type', params.type);
+      if (params?.startDate) q.append('startDate', params.startDate);
+      if (params?.endDate) q.append('endDate', params.endDate);
+      if (params?.limit) q.append('limit', String(params.limit));
+      if (params?.offset) q.append('offset', String(params.offset));
+      return request<StockMovementsResponse>(`/inventory/stock-movements?${q}`);
+    },
+
+    getProductStockMovements: (productId: number, limit = 100, offset = 0) =>
+      request<StockMovementsResponse>(
+        `/inventory/product/${productId}/stock-movements?limit=${limit}&offset=${offset}`
+      ),
+
+    // Shifts
+    getOpenShift: (till?: number) =>
+      request<Shift | null>(`/shifts/open${till ? `?till=${till}` : ''}`),
+
+    getShifts: (params?: {
+      status?: string;
+      till?: number;
+      userId?: number;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.append('status', params.status);
+      if (params?.till) q.append('till', String(params.till));
+      if (params?.userId) q.append('userId', String(params.userId));
+      if (params?.limit) q.append('limit', String(params.limit));
+      if (params?.offset) q.append('offset', String(params.offset));
+      return request<Shift[]>(`/shifts?${q}`);
+    },
+
+    openShift: (body: { floatAmount: number; till: number }) =>
+      request<Shift>('/shifts/open', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    closeShift: (shiftId: number, body: { countedCash: number }) =>
+      request<Shift>(`/shifts/${shiftId}/close`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    getXReport: (shiftId: number) =>
+      request<XReport>(`/shifts/${shiftId}/x-report`),
+
+    getZReport: (shiftId: number) =>
+      request<ZReport>(`/shifts/${shiftId}/z-report`),
+  };
