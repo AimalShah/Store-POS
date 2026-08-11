@@ -1,6 +1,6 @@
 # Store POS
 
-Modern desktop Point of Sale for a single register, completely offline. Version **2.0** rebuilds the original Electron app on a secure, maintainable stack.
+Modern desktop Point of Sale for a single register, completely offline. Version **3.0** rebuilds the original Electron app on a secure, maintainable stack.
 
 ## Features
 
@@ -10,14 +10,24 @@ Modern desktop Point of Sale for a single register, completely offline. Version 
 - Product tiles with photos, price, and stock status
 - Cart with quantity controls, discount, and tax
 - Customer picker with quick-add
-- Hold / resume sales
+- Hold / resume orders
 - Cash payment pad with South African note shortcuts (R10–R200) plus Exact
 - Change / still-due display
-- Printable invoice with a sequential daily invoice number
+- Printable receipt with a sequential daily invoice number
+
+### PIN Login
+- Fast numeric PIN entry for returning cashiers
+- Admin username/password fallback for first login and recovery
+- Configurable per user
+
+### Two-Portal Navigation
+- **Manager Portal** — Catalog, Sales history, Customers, Team, Settings (full permissions)
+- **Cashier Portal** — Till only (focused, distraction-free)
+- Role-based access: cashiers see only the Till; managers see everything
 
 ### Catalog
 - Products and categories
-- Inventory tracking
+- Inventory tracking (opt-in per product)
 - Photo picker (local uploads to a media library)
 - **Seed demo** sample catalog (SA-style products & customers)
 - Multi-select **bulk delete**
@@ -39,11 +49,11 @@ Modern desktop Point of Sale for a single register, completely offline. Version 
 
 | Layer | Technology |
 |--------|------------|
-| Desktop shell | Electron 33 (contextIsolation, preload bridge — no `nodeIntegration`) |
+| Desktop shell | Electron 43 (contextIsolation, preload bridge — no `nodeIntegration`) |
 | UI | React 18 + TypeScript + Vite 6 |
 | API | Express |
 | Auth | JWT + bcrypt |
-| Database | SQLite via **sql.js** (no native build toolchain required) |
+| Database | SQLite via **better-sqlite3** (native, WAL journaled, durable) |
 | Installer | electron-builder (Windows NSIS) |
 
 ## Requirements
@@ -92,14 +102,14 @@ This app is a single-machine, fully offline POS. The local API runs on loopback 
 Installer output:
 
 ```text
-release/Store POS Setup 2.0.0.exe
+release/Store POS Setup 3.0.0.exe
 ```
 
 ## Project layout
 
 ```text
 electron/          Main process + secure preload (window.pos)
-server/            Express API, sql.js database, route modules
+server/            Express API, better-sqlite3 database, route modules
   routes/          inventory, categories, customers, users, settings,
                    transactions, media, demo
 src/               React UI
@@ -148,8 +158,11 @@ Authenticated routes expect `Authorization: Bearer <token>`.
 | Blank window / `window.pos` missing | Use Electron via `npm run dev`, not a plain browser tab |
 | Sales history empty | Date filters use local time; default range is month start → end of today |
 | Media library 404 after code changes | Restart Electron so the API process reloads new routes |
-| Native module / SSL build errors | This project uses **sql.js** deliberately to avoid `better-sqlite3` compile issues |
+| Native module build errors | Run `npm run rebuild` or `npx electron-rebuild -f -w better-sqlite3` |
+| PIN login not working | Ensure user has a PIN set in Team settings; fallback to username/password |
+| Cashier sees only Till | This is by design — cashiers have the focused Cashier Portal |
+| Manager missing Catalog/Sales/etc. | Ensure user has the relevant permission flags in Team settings |
 
 ## License / authorship
 
-Desktop POS application maintained for store use. See repository history for contributors to the original and 2.0 rewrite.
+Desktop POS application maintained for store use. See repository history for contributors to the original and 3.0 rewrite.

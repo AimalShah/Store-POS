@@ -117,21 +117,22 @@ export async function initDatabase(filePath) {
       date TEXT NOT NULL
     );
 
-    try {
-      const cols = db.prepare("PRAGMA table_info(transactions)").all();
-      if (!cols.some((c) => c.name === 'payment_breakdown_json')) {
-        db.prepare("ALTER TABLE transactions ADD COLUMN payment_breakdown_json TEXT NOT NULL DEFAULT '[]'").run();
-      }
-    } catch {
-      /* ignore */
-    }
-
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_till ON transactions(till);
     CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
   `);
+
+  // Migration: add payment_breakdown_json column if it doesn't exist
+  try {
+    const cols = db.prepare("PRAGMA table_info(transactions)").all();
+    if (!cols.some((c) => c.name === 'payment_breakdown_json')) {
+      db.prepare("ALTER TABLE transactions ADD COLUMN payment_breakdown_json TEXT NOT NULL DEFAULT '[]'").run();
+    }
+  } catch {
+    /* ignore */
+  }
 
   const versionRow = db.prepare('SELECT version FROM schema_version WHERE id = 1').get();
   if (!versionRow) {
