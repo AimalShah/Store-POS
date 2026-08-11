@@ -1,17 +1,18 @@
+import { useState } from 'react';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
-import PosPage from './pages/PosPage';
+import PortalHome, { Portal } from './layout/PortalHome';
+import TillPortal from './layout/TillPortal';
+import ManagementPortal from './layout/ManagementPortal';
 
 export default function App() {
   const { ready, user } = useAuth();
+  const [portal, setPortal] = useState<Portal | null>(null);
 
   if (!ready) {
     return (
-      <div className="login-wrap">
-        <div className="panel login-card">
-          <h1>Store POS</h1>
-          <p>Starting…</p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-sm text-muted-foreground">Starting…</div>
       </div>
     );
   }
@@ -20,5 +21,13 @@ export default function App() {
     return <LoginPage />;
   }
 
-  return <PosPage />;
+  if (!portal) {
+    return <PortalHome onOpen={setPortal} />;
+  }
+
+  if (portal === 'till') {
+    return <TillPortal onHome={() => setPortal(null)} />;
+  }
+
+  return <ManagementPortal onHome={() => setPortal(null)} />;
 }
