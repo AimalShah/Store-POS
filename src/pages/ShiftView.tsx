@@ -36,12 +36,14 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [openShiftDialog, setOpenShiftDialog] = useState(false);
   const [floatAmount, setFloatAmount] = useState('');
+  const [closingShift, setClosingShift] = useState<Shift | null>(null);
+  const [countedCash, setCountedCash] = useState('');
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [xReport, setXReport] = useState<XReport | null>(null);
   const [zReport, setZReport] = useState<ZReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
-  const symbol = settings?.symbol || '$';
+  const symbol = settings?.symbol || 'Rs';
   const till = settings?.till || 1;
 
   const loadShifts = async () => {
@@ -85,10 +87,13 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
     }
   };
 
-  const handleCloseShift = async (shift: Shift) => {
-    const countedCash = window.prompt(`Enter counted cash amount for shift #${shift.id}:`, String(shift.floatAmount + (shift.xReport?.cashSales || 0)));
-    if (countedCash === null) return;
+  const handleCloseShift = (shift: Shift) => {
+    setClosingShift(shift);
+    setCountedCash(String(shift.floatAmount + (shift.xReport?.cashSales || 0)));
+  };
 
+  const confirmCloseShift = async () => {
+    if (!closingShift) return;
     const cash = parseFloat(countedCash);
     if (isNaN(cash) || cash < 0) {
       setError('Invalid cash amount');
@@ -98,7 +103,8 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
     setError(null);
     setLoading(true);
     try {
-      await api.closeShift(shift.id, { countedCash: cash });
+      await api.closeShift(closingShift.id, { countedCash: cash });
+      setClosingShift(null);
       await loadShifts();
       onShiftChange();
     } catch (err) {
@@ -209,7 +215,7 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
                     <TableCell className="text-sm">{formatDateTime(shift.openedAt)}</TableCell>
                     <TableCell className="text-sm">{shift.closedAt ? formatDateTime(shift.closedAt) : '—'}</TableCell>
                     <TableCell className="font-medium">{symbol}{shift.floatAmount.toFixed(2)}</TableCell>
-                    <TableCell className="font-medium">{shift.countedCash !== undefined ? `${symbol}${shift.countedCash.toFixed(2)}` : '—'}</TableCell>
+                    <TableCell className="font-medium">{shift.countedCash != null ? `${symbol}${shift.countedCash.toFixed(2)}` : '—'}</TableCell>
                     <TableCell className="font-medium">
                       {shift.zReport && shift.zReport.difference !== undefined ? (
                         <span className={shift.zReport.difference >= 0 ? 'text-green-600' : 'text-destructive'}>
@@ -282,6 +288,39 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
             </Button>
             <Button onClick={handleOpenShift} disabled={loading || !floatAmount.trim()}>
               {loading ? 'Opening...' : 'Open Shift'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Close Shift Dialog */}
+      <Dialog open={!!closingShift} onOpenChange={(open) => !open && setClosingShift(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Close Shift #{closingShift?.id}</DialogTitle>
+            <DialogDescription>
+              Enter the counted cash in the drawer to reconcile against expected cash.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="counted-cash">Counted Cash ({symbol})</Label>
+            <Input
+              id="counted-cash"
+              type="number"
+              step="0.01"
+              min={0}
+              value={countedCash}
+              onChange={(e) => setCountedCash(e.target.value)}
+              placeholder="0.00"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClosingShift(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmCloseShift} disabled={loading || !countedCash.trim()}>
+              {loading ? 'Closing...' : 'Close Shift'}
             </Button>
           </DialogFooter>
         </DialogContent>

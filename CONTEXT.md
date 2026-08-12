@@ -40,6 +40,18 @@ The customer-facing document generated when an order is completed. Carries the s
 The formal A4/PDF document used for reprints and exports, with the sequential invoice number.
 _Avoid_: Bill
 
+**Cost (COGS)**:
+The per-unit purchase/prep cost recorded against a Product. Enables profit and margin reporting. Off until a value is entered.
+_Avoid_: price, expense
+
+**Profit**:
+Revenue from a Sale minus the summed Cost of the items sold. Derived, not stored.
+_Avoid_: earnings, income
+
+**Margin**:
+Profit expressed as a percentage of a Sale's revenue. Derived from Profit and total.
+_Avoid_: markup, margin percent
+
 **Shift**:
 A period of till activity opened by a user with a starting cash float, closed with a counted cash total and reconciliation.
 

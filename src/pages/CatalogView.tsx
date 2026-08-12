@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api, Category, Product, ProductComponent, getUploadsBase } from '../api/client';
 import PhotoPicker from '../components/PhotoPicker';
 import { Button } from '../components/ui/button';
@@ -11,6 +12,17 @@ import { Checkbox } from '../components/ui/checkbox';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Separator } from '../components/ui/separator';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 
 type Props = {
   products: Product[];
@@ -30,6 +42,7 @@ const emptyProduct = {
   id: '',
   name: '',
   price: '',
+  cost: '',
   category: '',
   quantity: '0',
   trackStock: false,
@@ -67,6 +80,7 @@ export default function CatalogView({
   const [adjustType, setAdjustType] = useState<'restock' | 'wastage' | 'adjustment'>('restock');
   const [adjustQty, setAdjustQty] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
+  const [pending, setPending] = useState<{ kind: 'product' | 'bulk' | 'category'; id?: number } | null>(null);
   const uploads = getUploadsBase();
 
   useEffect(() => {
@@ -85,6 +99,7 @@ export default function CatalogView({
     fd.append('id', form.id);
     fd.append('name', form.name.trim());
     fd.append('price', form.price || '0');
+    fd.append('cost', form.cost || '0');
     fd.append('category', form.category);
     fd.append('quantity', form.quantity || '0');
     fd.append('stock', form.trackStock ? '1' : 'on');
@@ -155,6 +170,7 @@ export default function CatalogView({
       id: String(p.id),
       name: p.name,
       price: String(p.price),
+      cost: String(p.cost ?? '0'),
       category: p.category,
       quantity: String(p.quantity),
       trackStock: !!p.trackStock,
@@ -168,10 +184,8 @@ export default function CatalogView({
     setTab('products');
   };
 
-  const removeProduct = async (id: number) => {
-    if (!confirm('Delete this product?')) return;
-    await api.deleteProduct(id);
-    await onChanged();
+  const removeProduct = (id: number) => {
+    setPending({ kind: 'product', id });
   };
 
   const toggleSelect = (id: number) => {
@@ -200,20 +214,9 @@ export default function CatalogView({
     }
   };
 
-  const bulkDelete = async () => {
+  const bulkDelete = () => {
     if (!selected.length) return;
-    if (!confirm(`Delete ${selected.length} selected product(s)?`)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.deleteProducts(selected);
-      setSelected([]);
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulk delete failed');
-    } finally {
-      setBusy(false);
-    }
+    setPending({ kind: 'bulk' });
   };
 
   const seedDemo = async () => {
@@ -222,7 +225,7 @@ export default function CatalogView({
     try {
       const result = await api.seedDemo();
       await onChanged();
-      alert(result.message);
+      toast.success(result.message);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Seed failed');
     } finally {
@@ -242,10 +245,30 @@ export default function CatalogView({
     await onChanged();
   };
 
-  const removeCategory = async (id: number) => {
-    if (!confirm('Delete this category?')) return;
-    await api.deleteCategory(id);
-    await onChanged();
+  const removeCategory = (id: number) => {
+    setPending({ kind: 'category', id });
+  };
+
+  const confirmPending = async () => {
+    if (!pending) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (pending.kind === 'product' && pending.id != null) {
+        await api.deleteProduct(pending.id);
+      } else if (pending.kind === 'bulk') {
+        await api.deleteProducts(selected);
+        setSelected([]);
+      } else if (pending.kind === 'category' && pending.id != null) {
+        await api.deleteCategory(pending.id);
+      }
+      setPending(null);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -313,6 +336,19 @@ export default function CatalogView({
                   min={0}
                   value={form.price}
                   onChange={(e) => setForm({ ...form, price: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-cost">Cost (COGS)</Label>
+                <Input
+                  id="product-cost"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={form.cost}
+                  onChange={(e) => setForm({ ...form, cost: e.target.value })}
                   placeholder="0.00"
                 />
               </div>
@@ -535,11 +571,17 @@ export default function CatalogView({
                               </Button>
                             </>
                           )}
-                          <Button variant="outline" size="sm" onClick={() => editProduct(p)}>
-                            Edit
+                          <Button variant="ghost" size="icon" aria-label={`Edit ${p.name}`} onClick={() => editProduct(p)}>
+                            <Pencil className="size-4" />
                           </Button>
-                          <Button variant="destructive" size="sm" onClick={() => removeProduct(p.id)}>
-                            Del
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={`Delete ${p.name}`}
+                            onClick={() => removeProduct(p.id)}
+                          >
+                            <Trash2 className="size-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -554,6 +596,99 @@ export default function CatalogView({
                   )}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {tab === 'categories' && canCategories && (
+        <div className="grid gap-6 md:grid-cols-[1fr_2fr]">
+          <Card>
+            <CardHeader>
+              <CardTitle>{editCatId ? 'Edit category' : 'New category'}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cat-name">Name</Label>
+                <Input
+                  id="cat-name"
+                  value={catName}
+                  onChange={(e) => setCatName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void saveCategory();
+                  }}
+                  placeholder="e.g. Beverages"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={() => void saveCategory()} disabled={!catName.trim()} className="flex-1">
+                  {editCatId ? 'Update' : 'Add category'}
+                </Button>
+                {editCatId && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEditCatId(null);
+                      setCatName('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Categories</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {cats.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No categories yet. Add one above.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="w-24 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cats.map((c) => (
+                      <TableRow key={c.id}>
+                        <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Edit ${c.name}`}
+                              onClick={() => {
+                                setCatName(c.name);
+                                setEditCatId(c.id);
+                              }}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`Delete ${c.name}`}
+                              onClick={() => removeCategory(c.id)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -630,6 +765,32 @@ export default function CatalogView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pending?.kind === 'bulk'
+                ? `Delete ${selected.length} selected product(s)?`
+                : pending?.kind === 'category'
+                ? 'Delete this category?'
+                : 'Delete this product?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

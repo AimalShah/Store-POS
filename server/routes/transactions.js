@@ -26,6 +26,47 @@ function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
+// Snapshot cost (COGS) and categoryId onto each line item at sale time so
+// historical reports stay accurate even if the product is later edited.
+function snapshotItems(items, db) {
+  return (items || []).map((item) => {
+    const id = parseInt(item.id ?? item._id, 10);
+    const product = id ? db.prepare('SELECT cost, category FROM products WHERE id = ?').get(id) : null;
+    const categoryName = product?.category || '';
+    const categoryRow = categoryName
+      ? db.prepare('SELECT id FROM categories WHERE name = ?').get(categoryName)
+      : null;
+    return {
+      ...item,
+      cost: product ? Number(product.cost) || 0 : Number(item.cost) || 0,
+      categoryId: categoryRow ? categoryRow.id : 0,
+    };
+  });
+}
+
+// Derive the total paid and change due from a split-payment breakdown.
+// Change applies to the cash line only: cash tendered above the total.
+function derivePayment(body) {
+  const breakdown = Array.isArray(body.payment_breakdown) ? body.payment_breakdown : [];
+  if (!breakdown.length) {
+    return {
+      paymentBreakdown: breakdown,
+      paid: parseFloat(body.paid) || 0,
+      change: parseFloat(body.change) || 0,
+    };
+  }
+  let paid = 0;
+  let cashPaid = 0;
+  for (const line of breakdown) {
+    const amount = Number(line.amount) || 0;
+    paid += amount;
+    if ((line.method || 'cash') === 'cash') cashPaid += amount;
+  }
+  const total = parseFloat(body.total) || 0;
+  const change = Math.max(0, cashPaid - total);
+  return { paymentBreakdown: breakdown, paid, change };
+}
+
 // Transactions store UTC ISO dates; the store's day boundary is local time,
 // so the daily invoice counter runs against the sale's local day.
 function localDay(iso) {
@@ -111,9 +152,9 @@ router.get('/by-date', requirePerm('perm_transactions'), (req, res) => {
 
 router.post('/new', (req, res) => {
   const body = req.body || {};
-  const items = body.items || [];
-  const paid = parseFloat(body.paid) || 0;
+  const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
+  const { paymentBreakdown, paid, change } = derivePayment(body);
   const saleDate = body.date || new Date().toISOString();
 
   const db = getDb();
@@ -127,7 +168,6 @@ router.post('/new', (req, res) => {
     }
     invoiceRef = ref;
 
-    const paymentBreakdown = body.payment_breakdown || [];
     const result = db
       .prepare(
         `INSERT INTO transactions (
@@ -148,7 +188,7 @@ router.post('/new', (req, res) => {
         parseFloat(body.tax) || 0,
         total,
         paid,
-        parseFloat(body.change) || 0,
+        change,
         parseInt(body.payment_type, 10) || 1,
         JSON.stringify(paymentBreakdown),
         JSON.stringify(items),
@@ -169,10 +209,9 @@ router.post('/new', (req, res) => {
 router.put('/new/:id', (req, res) => {
   const body = req.body || {};
   const id = parseInt(req.params.id ?? body._id ?? body.id, 10);
-  const items = body.items || [];
-  const paymentBreakdown = body.payment_breakdown || [];
-  const paid = parseFloat(body.paid) || 0;
+  const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
+  const { paymentBreakdown, paid, change } = derivePayment(body);
   const status = parseInt(body.status, 10) ?? 1;
   const saleDate = body.date || new Date().toISOString();
 
@@ -206,7 +245,7 @@ router.put('/new/:id', (req, res) => {
       parseFloat(body.tax) || 0,
       total,
       paid,
-      parseFloat(body.change) || 0,
+      change,
       parseInt(body.payment_type, 10) || 1,
       JSON.stringify(paymentBreakdown),
       JSON.stringify(items),

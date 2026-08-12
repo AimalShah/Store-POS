@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
 import { api, getUploadsBase, MediaItem } from '../api/client';
-import Modal from './Modal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 
 type Props = {
   value: string;
@@ -8,18 +22,16 @@ type Props = {
   label?: string;
 };
 
-type Tab = 'library' | 'upload';
-
 export default function PhotoPicker({
   value,
   onChange,
   label = 'Photo',
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>('library');
   const [library, setLibrary] = useState<MediaItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDel, setPendingDel] = useState<MediaItem | null>(null);
 
   const uploads = getUploadsBase();
   const previewSrc = value ? `${uploads}/${value}` : '';
@@ -42,7 +54,6 @@ export default function PhotoPicker({
       const item = await api.uploadMedia(file);
       await loadLibrary();
       onChange(item.path);
-      setTab('library');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -50,109 +61,131 @@ export default function PhotoPicker({
     }
   };
 
-  const removeFromLibrary = async (id: number) => {
-    if (!confirm('Remove this image from the library?')) return;
-    await api.deleteMedia(id);
+  const removeFromLibrary = async () => {
+    if (!pendingDel) return;
+    await api.deleteMedia(pendingDel.id);
+    setPendingDel(null);
     await loadLibrary();
   };
 
   return (
-    <div className="field">
-      <label>{label}</label>
-      <div className="photo-picker-row">
-        <div className={`photo-preview ${value ? '' : 'empty'}`}>
-          {value ? <img src={previewSrc} alt="" /> : <span>No photo</span>}
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-4">
+        <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-md border bg-muted text-xs text-muted-foreground">
+          {value ? <img src={previewSrc} alt="" className="h-full w-full object-cover" /> : 'No photo'}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
+        <div className="flex flex-col gap-2">
+          <Button type="button" onClick={() => setOpen(true)}>
             Choose {label.toLowerCase()}
-          </button>
+          </Button>
           {value && (
-            <button type="button" className="btn" onClick={() => onChange('')}>
+            <Button type="button" variant="outline" onClick={() => onChange('')}>
               Clear
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
-      <Modal
-        title="Photo library"
-        open={open}
-        onClose={() => setOpen(false)}
-        wide
-        footer={
-          <button type="button" className="btn" onClick={() => setOpen(false)}>
-            Done
-          </button>
-        }
-      >
-        <div className="chips" style={{ padding: 0, border: 0, marginBottom: '0.85rem' }}>
-          <button
-            type="button"
-            className={`chip ${tab === 'library' ? 'active' : ''}`}
-            onClick={() => setTab('library')}
-          >
-            Library
-          </button>
-          <button
-            type="button"
-            className={`chip ${tab === 'upload' ? 'active' : ''}`}
-            onClick={() => setTab('upload')}
-          >
-            Upload
-          </button>
-        </div>
-
-        {error && <div className="error">{error}</div>}
-
-        {tab === 'library' && (
-          <div className="media-grid">
-            {library.map((item) => (
-              <div
-                key={item.id}
-                className={`media-tile ${value === item.path ? 'selected' : ''}`}
-                onClick={() => onChange(item.path)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') onChange(item.path);
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Photo library</DialogTitle>
+          </DialogHeader>
+          {error && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+          <Tabs defaultValue="library">
+            <TabsList>
+              <TabsTrigger value="library">Library</TabsTrigger>
+              <TabsTrigger value="upload">Upload</TabsTrigger>
+            </TabsList>
+            <TabsContent value="library" className="space-y-3">
+              {library.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Library is empty — upload a file
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                  {library.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onChange(item.path)}
+                      className={`group relative aspect-square overflow-hidden rounded-md border ${
+                        value === item.path ? 'ring-2 ring-primary' : ''
+                      }`}
+                    >
+                      <img
+                        src={`${uploads}/${item.path}`}
+                        alt={item.alt || ''}
+                        className="h-full w-full object-cover"
+                      />
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPendingDel(item);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                            setPendingDel(item);
+                          }
+                        }}
+                        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white"
+                      >
+                        ×
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="upload" className="space-y-2">
+              <Label htmlFor="photo-upload">Upload image to library</Label>
+              <Input
+                id="photo-upload"
+                type="file"
+                accept="image/*"
+                disabled={busy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadFile(file);
                 }}
-                role="button"
-                tabIndex={0}
-              >
-                <img src={`${uploads}/${item.path}`} alt={item.alt || ''} />
-                <span>Upload</span>
-                <button
-                  type="button"
-                  className="media-del"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFromLibrary(item.id);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            {!library.length && (
-              <div className="empty">Library is empty — upload a file</div>
-            )}
-          </div>
-        )}
+              />
+            </TabsContent>
+          </Tabs>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {tab === 'upload' && (
-          <div className="field">
-            <label>Upload image to library</label>
-            <input
-              type="file"
-              accept="image/*"
-              disabled={busy}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) uploadFile(file);
-              }}
-            />
-          </div>
-        )}
-      </Modal>
+      <AlertDialog open={!!pendingDel} onOpenChange={(o) => !o && setPendingDel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove image?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the image from the library. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={removeFromLibrary}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

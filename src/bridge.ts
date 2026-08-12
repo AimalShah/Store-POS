@@ -1,4 +1,4 @@
-import type { ApiInfo, PosBridge } from './vite-env';
+import type { ApiInfo, PosBridge, PrintResult, SaveFileOptions, SaveFileResult } from './vite-env';
 
 const FALLBACK_PORT = 8001;
 
@@ -10,6 +10,13 @@ function constantApiInfo(): ApiInfo {
   };
 }
 
+function decodeBase64(data: string): ArrayBuffer {
+  const bin = atob(data);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
 function browserFallback(): PosBridge {
   return {
     getApiInfo: async () => constantApiInfo(),
@@ -19,6 +26,24 @@ function browserFallback(): PosBridge {
     reload: () => {
       window.location.reload();
     },
+    saveFile: async ({ defaultName, type, data }: SaveFileOptions): Promise<SaveFileResult> => {
+      const mime =
+        type === 'xlsx'
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'text/csv;charset=utf-8';
+      const blob = new Blob([decodeBase64(data)], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = defaultName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      return { ok: true, filePath: defaultName };
+    },
+    printReceipt: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
+    printKot: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
   };
 }
 

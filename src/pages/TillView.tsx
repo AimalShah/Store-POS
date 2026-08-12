@@ -30,6 +30,7 @@ import { useAuth } from '../context/AuthContext';
 import CustomerSelect from '../components/CustomerSelect';
 import Invoice from '../components/Invoice';
 import PaymentPad from '../components/PaymentPad';
+import { printReceipt } from '../lib/printing';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '../components/ui/card';
@@ -115,7 +116,7 @@ export default function TillView({
   const [invoice, setInvoice] = useState<Transaction | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
 
-  const symbol = settings?.symbol || '$';
+  const symbol = settings?.symbol || 'Rs';
   const taxRate = settings?.charge_tax ? Number(settings.percentage) || 0 : 0;
   const uploads = getUploadsBase();
 
@@ -428,18 +429,19 @@ export default function TillView({
         savedId = res.id;
         savedRef = res.ref_number;
       }
-      setInvoice({
+      const savedTx = {
         ...body,
         _id: savedId,
         id: savedId,
         ref_number: savedRef,
-      });
+      };
+      setInvoice(savedTx);
       setShowInvoice(true);
       clearCart();
       setShowPay(false);
       await onRefresh();
       await refreshHolds();
-      setTimeout(() => window.print(), 150);
+      void printReceipt(savedTx, settings, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sale completion failed');
     }
@@ -486,7 +488,7 @@ export default function TillView({
       )}
 
       {/* Left Panel: Product Grid & Search */}
-      <div className="flex flex-1 flex-col gap-4 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
         {/* Search Bar & Category Chips */}
         <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm">
           <div className="flex gap-2">
@@ -535,7 +537,7 @@ export default function TillView({
         </div>
 
         {/* Product Grid */}
-        <ScrollArea className="flex-1 rounded-lg border bg-card p-4 shadow-sm">
+        <ScrollArea className="min-h-0 flex-1 rounded-lg border bg-card p-4 shadow-sm">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
             {filteredProducts.map((p) => {
               const isOut = !!p.stock && p.quantity <= 0;
@@ -583,7 +585,7 @@ export default function TillView({
       </div>
 
       {/* Right Panel: Cart Card */}
-      <Card className="flex flex-col w-full lg:w-[420px] shrink-0 h-full shadow-sm">
+      <Card className="flex min-h-0 w-full flex-col lg:w-[420px] shrink-0 h-full shadow-sm">
         <CardHeader className="pb-3 border-b space-y-3">
           <div className="flex items-center justify-between gap-2">
             <CustomerSelect
@@ -1040,7 +1042,10 @@ export default function TillView({
             <Button variant="outline" onClick={() => setShowInvoice(false)}>
               Close
             </Button>
-            <Button onClick={() => window.print()} className="gap-2">
+            <Button
+              onClick={() => (invoice ? void printReceipt(invoice, settings, false) : window.print())}
+              className="gap-2"
+            >
               <Printer className="size-4" />
               Print Receipt
             </Button>

@@ -1,14 +1,10 @@
-import { useState } from 'react';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import FirstRunWizard from './pages/FirstRunWizard';
-import PortalHome, { Portal } from './layout/PortalHome';
-import TillPortal from './layout/TillPortal';
-import ManagementPortal from './layout/ManagementPortal';
+import AppShell from './layout/AppShell';
 
 export default function App() {
   const { ready, user, firstRun } = useAuth();
-  const [portal, setPortal] = useState<Portal | null>(null);
 
   if (!ready) {
     return (
@@ -25,13 +21,5 @@ export default function App() {
     return <LoginPage />;
   }
 
-  if (!portal) {
-    return <PortalHome onOpen={setPortal} />;
-  }
-
-  if (portal === 'till') {
-    return <TillPortal onHome={() => setPortal(null)} />;
-  }
-
-  return <ManagementPortal onHome={() => setPortal(null)} />;
+  return <AppShell />;
 }

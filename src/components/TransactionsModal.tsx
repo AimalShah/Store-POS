@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
 import { api, Settings, Transaction, User } from '../api/client';
-import Modal from './Modal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Label } from '../components/ui/label';
+import { Input } from '../components/ui/input';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import Invoice from './Invoice';
 
 type Props = {
@@ -47,9 +60,9 @@ export default function TransactionsModal({
   const [users, setUsers] = useState<User[]>([]);
   const [start, setStart] = useState(initial.start);
   const [end, setEnd] = useState(initial.end);
-  const [userId, setUserId] = useState(0);
-  const [till, setTill] = useState(0);
-  const [status, setStatus] = useState(1);
+  const [userId, setUserId] = useState<string>('0');
+  const [till, setTill] = useState<string>('0');
+  const [status, setStatus] = useState<string>('1');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [invoice, setInvoice] = useState<Transaction | null>(null);
@@ -62,9 +75,9 @@ export default function TransactionsModal({
         api.getByDate({
           start: localInputToIso(start),
           end: localInputToIso(end, true),
-          user: userId,
-          till,
-          status,
+          user: Number(userId),
+          till: Number(till),
+          status: Number(status),
         }),
         api.getUsers().catch(() => [] as User[]),
       ]);
@@ -83,151 +96,177 @@ export default function TransactionsModal({
   }, [open, embedded]);
 
   const body = (
-    <>
-      {error && <div className="error">{error}</div>}
-      <div className="filters">
-        <div className="field">
-          <label>From</label>
-          <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {error}
         </div>
-        <div className="field">
-          <label>To</label>
-          <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Cashier</label>
-          <select value={userId} onChange={(e) => setUserId(Number(e.target.value))}>
-            <option value={0}>All</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullname}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>Till</label>
-          <input
-            type="number"
-            min={0}
-            value={till}
-            onChange={(e) => setTill(Number(e.target.value))}
+      )}
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="tx-from">From</Label>
+          <Input
+            id="tx-from"
+            type="datetime-local"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
           />
         </div>
-        <div className="field">
-          <label>Status</label>
-          <select value={status} onChange={(e) => setStatus(Number(e.target.value))}>
-            <option value={1}>Paid</option>
-            <option value={0}>Unpaid / Hold</option>
-          </select>
+        <div className="space-y-2">
+          <Label htmlFor="tx-to">To</Label>
+          <Input
+            id="tx-to"
+            type="datetime-local"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
         </div>
-        <button className="btn btn-primary" type="button" onClick={load} disabled={loading}>
+        <div className="space-y-2">
+          <Label>Cashier</Label>
+          <Select value={userId} onValueChange={(v) => setUserId(v ?? '0')}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">All</SelectItem>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={String(u.id)}>
+                  {u.fullname}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tx-till">Till</Label>
+          <Input
+            id="tx-till"
+            type="number"
+            min={0}
+            className="w-[100px]"
+            value={till}
+            onChange={(e) => setTill(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Status</Label>
+          <Select value={status} onValueChange={(v) => setStatus(v ?? '1')}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">Paid</SelectItem>
+              <SelectItem value="0">Unpaid / Hold</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button onClick={load} disabled={loading}>
           {loading ? 'Loading…' : 'Filter'}
-        </button>
+        </Button>
       </div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Date</th>
-            <th>Cashier</th>
-            <th>Till</th>
-            <th>Customer</th>
-            <th>Total</th>
-            <th>Paid</th>
-            <th>Status</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td>{r.id}</td>
-              <td>{new Date(r.date).toLocaleString()}</td>
-              <td>{r.user}</td>
-              <td>{r.till}</td>
-              <td>{r.customer_name}</td>
-              <td>
-                {symbol}
-                {Number(r.total).toFixed(2)}
-              </td>
-              <td>
-                {symbol}
-                {Number(r.paid).toFixed(2)}
-              </td>
-              <td>{r.status === 1 ? 'Paid' : 'Open'}</td>
-              <td>
-                {r.status === 1 ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setInvoice(r)}
-                    title={r.ref_number ? `Print ${r.ref_number}` : 'Print invoice'}
-                  >
-                    Print
-                  </button>
-                ) : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {!rows.length && !loading && <div className="empty">No transactions in this range</div>}
-    </>
+
+      {rows.length === 0 && !loading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          No transactions in this range
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>ID</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Cashier</TableHead>
+              <TableHead>Till</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell>{r.id}</TableCell>
+                <TableCell>{new Date(r.date).toLocaleString()}</TableCell>
+                <TableCell>{r.user}</TableCell>
+                <TableCell>{r.till}</TableCell>
+                <TableCell>{r.customer_name}</TableCell>
+                <TableCell className="text-right">
+                  {symbol}
+                  {Number(r.total).toFixed(2)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {symbol}
+                  {Number(r.paid).toFixed(2)}
+                </TableCell>
+                <TableCell>
+                  {r.status === 1 ? (
+                    <Badge>Paid</Badge>
+                  ) : (
+                    <Badge variant="secondary">Open</Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {r.status === 1 && (
+                    <Button variant="outline" size="sm" onClick={() => setInvoice(r)}>
+                      Print
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 
-  const invoicePrint = invoice ? (
-    <div id="receipt-print" className="receipt-print" style={{ display: 'block' }}>
-      <Invoice tx={invoice} settings={settings} symbol={symbol} />
-    </div>
-  ) : null;
-
-  const invoiceModal = (
-    <Modal
-      title="Invoice"
-      open={!!invoice}
-      onClose={() => setInvoice(null)}
-      compact
-      footer={
-        <>
-          <button type="button" className="btn" onClick={() => setInvoice(null)}>
+  const invoiceDialog = (
+    <Dialog open={!!invoice} onOpenChange={(o) => !o && setInvoice(null)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Invoice</DialogTitle>
+        </DialogHeader>
+        {invoice && <Invoice tx={invoice} settings={settings} symbol={symbol} />}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setInvoice(null)}>
             Close
-          </button>
-          <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-            Print
-          </button>
-        </>
-      }
-    >
-      {invoice ? <Invoice tx={invoice} settings={settings} symbol={symbol} /> : null}
-    </Modal>
+          </Button>
+          <Button onClick={() => window.print()}>Print</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 
   if (embedded) {
     return (
       <>
-        <div className="panel" style={{ padding: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <strong>Transactions</strong>
-            <button className="btn" type="button" onClick={onClose}>
-              Back to till
-            </button>
-          </div>
-          {body}
-        </div>
-        {invoicePrint}
-        {invoiceModal}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle>Transactions</CardTitle>
+            <Button variant="outline" onClick={onClose}>
+              Back to dashboard
+            </Button>
+          </CardHeader>
+          <CardContent>{body}</CardContent>
+        </Card>
+        {invoiceDialog}
       </>
     );
   }
 
   return (
     <>
-      <Modal title="Transactions" open={open} onClose={onClose} wide>
-        {body}
-      </Modal>
-      {invoicePrint}
-      {invoiceModal}
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Transactions</DialogTitle>
+          </DialogHeader>
+          {body}
+        </DialogContent>
+      </Dialog>
+      {invoiceDialog}
     </>
   );
 }

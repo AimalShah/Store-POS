@@ -133,7 +133,9 @@ router.post('/open', (req, res) => {
   const body = req.body || {};
   const floatAmount = parseFloat(body.floatAmount) || 0;
   const till = parseInt(body.till, 10) || 1;
-  const user = req.user || { id: 0, fullname: 'Unknown' };
+  const authUser = req.user || {};
+  const userId = authUser.id || 0;
+  const userName = authUser.fullname || 'Unknown';
 
   // Check if there's already an open shift for this till
   const db = getDb();
@@ -146,7 +148,7 @@ router.post('/open', (req, res) => {
   const result = db.prepare(
     `INSERT INTO shifts (user_id, user_name, till, float_amount, status, opened_at)
      VALUES (?, ?, ?, ?, 'open', ?)`
-  ).run(user.id, user.fullname, till, floatAmount, openedAt);
+  ).run(userId, userName, till, floatAmount, openedAt);
 
   const shift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(result.lastInsertRowid);
   res.json(mapShift(shift));

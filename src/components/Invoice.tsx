@@ -17,56 +17,69 @@ export default function Invoice({ tx, settings, symbol }: Props) {
   const change = Number(tx.change ?? Math.max(0, paid - total));
   const logo = settings?.img ? `${getUploadsBase()}/${settings.img}` : undefined;
 
+  const meta: [string, string | number][] = [
+    ['Invoice', tx.ref_number || '-'],
+    ['Date', new Date(tx.date).toLocaleString()],
+    ['Cashier', tx.user || '-'],
+    ['Till', tx.till || 1],
+    ['Customer', tx.customer_name || 'Walk-in'],
+  ];
+
+  const totals: Array<[string, string]> = [['Subtotal', `${symbol}${subtotal.toFixed(2)}`]];
+  if (discount > 0) totals.push(['Discount', `-${symbol}${discount.toFixed(2)}`]);
+  if (tax > 0) totals.push([settings?.tax || 'Tax', `${symbol}${tax.toFixed(2)}`]);
+  totals.push(['TOTAL', `${symbol}${total.toFixed(2)}`]);
+  if (tx.payment_breakdown && tx.payment_breakdown.length > 0) {
+    for (const pb of tx.payment_breakdown) {
+      totals.push([pb.method, `${symbol}${Number(pb.amount).toFixed(2)}`]);
+    }
+  } else {
+    totals.push(['Paid', `${symbol}${paid.toFixed(2)}`]);
+  }
+  totals.push(['Change', `${symbol}${change.toFixed(2)}`]);
+
   return (
-    <div className="invoice-doc">
-      {logo ? <img className="invoice-logo" src={logo} alt="" /> : null}
-      <div className="invoice-center invoice-store">{settings?.store || 'Store POS'}</div>
-      {settings?.address_one ? <div className="invoice-center">{settings.address_one}</div> : null}
-      {settings?.address_two ? <div className="invoice-center">{settings.address_two}</div> : null}
-      {settings?.contact ? <div className="invoice-center">{settings.contact}</div> : null}
+    <div className="font-mono text-sm">
+      {logo ? <img className="mx-auto mb-2 h-16 w-auto object-contain" src={logo} alt="" /> : null}
+      <div className="text-center text-base font-bold">{settings?.store || 'Store POS'}</div>
+      {settings?.address_one ? (
+        <div className="text-center text-xs text-muted-foreground">{settings.address_one}</div>
+      ) : null}
+      {settings?.address_two ? (
+        <div className="text-center text-xs text-muted-foreground">{settings.address_two}</div>
+      ) : null}
+      {settings?.contact ? (
+        <div className="text-center text-xs text-muted-foreground">{settings.contact}</div>
+      ) : null}
 
-      <div className="invoice-title">INVOICE</div>
+      <div className="mt-2 text-center font-semibold tracking-widest">INVOICE</div>
 
-      <div className="invoice-meta">
-        <div>
-          <span>Invoice</span>
-          <span className="invoice-ref">{tx.ref_number || '-'}</span>
-        </div>
-        <div>
-          <span>Date</span>
-          <span>{new Date(tx.date).toLocaleString()}</span>
-        </div>
-        <div>
-          <span>Cashier</span>
-          <span>{tx.user || '-'}</span>
-        </div>
-        <div>
-          <span>Till</span>
-          <span>{tx.till || 1}</span>
-        </div>
-        <div>
-          <span>Customer</span>
-          <span>{tx.customer_name || 'Walk-in'}</span>
-        </div>
+      <div className="mt-2 space-y-0.5">
+        {meta.map(([label, value]) => (
+          <div key={label} className="flex justify-between">
+            <span className="text-muted-foreground">{label}</span>
+            <span>{value}</span>
+          </div>
+        ))}
       </div>
 
-      <div className="invoice-rule" />
+      <div className="my-2 border-t" />
 
-      <table className="invoice-items">
+      <table className="w-full text-sm">
         <thead>
-          <tr>
-            <th className="invoice-qty">Qty</th>
-            <th>Item</th>
-            <th className="invoice-right">Amount</th>
+          <tr className="border-b text-left text-xs text-muted-foreground">
+            <th className="w-10 py-1 text-center">Qty</th>
+            <th className="py-1">Item</th>
+            <th className="py-1 text-right">Amount</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, i) => (
             <React.Fragment key={i}>
               <tr>
-                <td className="invoice-qty">{item.quantity}</td>
-                <td>{item.name}</td>
-                <td className="invoice-right">
+                <td className="py-1 text-center">{item.quantity}</td>
+                <td className="py-1">{item.name}</td>
+                <td className="py-1 text-right">
                   {symbol}
                   {(Number(item.price) * Number(item.quantity)).toFixed(2)}
                 </td>
@@ -74,12 +87,16 @@ export default function Invoice({ tx, settings, symbol }: Props) {
               {item.components && item.components.length > 0 && (
                 <React.Fragment>
                   {item.components.map((comp: ProductComponent, ci) => (
-                    <tr key={ci} style={{ backgroundColor: '#f9f9f9' }}>
-                      <td className="invoice-qty">{comp.quantity * item.quantity}</td>
-                      <td style={{ paddingLeft: '20px', fontSize: '0.9em', color: '#666' }}>
+                    <tr key={ci} className="bg-muted/50">
+                      <td className="py-0.5 text-center text-xs">
+                        {comp.quantity * item.quantity}
+                      </td>
+                      <td className="py-0.5 pl-5 text-xs text-muted-foreground">
                         → {comp.name} x{comp.quantity}
                       </td>
-                      <td className="invoice-right" style={{ color: '#666' }}>{symbol}0.00</td>
+                      <td className="py-0.5 text-right text-xs text-muted-foreground">
+                        {symbol}0.00
+                      </td>
                     </tr>
                   ))}
                 </React.Fragment>
@@ -89,74 +106,27 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         </tbody>
       </table>
 
-      <div className="invoice-rule" />
+      <div className="my-2 border-t" />
 
-      <div className="invoice-totals">
-        <div className="invoice-total-row">
-          <span>Subtotal</span>
-          <span>
-            {symbol}
-            {subtotal.toFixed(2)}
-          </span>
-        </div>
-        {discount > 0 && (
-          <div className="invoice-total-row">
-            <span>Discount</span>
-            <span>
-              -{symbol}
-              {discount.toFixed(2)}
-            </span>
+      <div className="space-y-0.5">
+        {totals.map(([label, value], idx) => (
+          <div
+            key={label}
+            className={`flex justify-between ${
+              label === 'TOTAL' ? 'font-bold' : 'text-muted-foreground'
+            }`}
+          >
+            <span className="capitalize">{label}</span>
+            <span>{value}</span>
           </div>
-        )}
-        {tax > 0 && (
-          <div className="invoice-total-row">
-            <span>{settings?.tax || 'Tax'}</span>
-            <span>
-              {symbol}
-              {tax.toFixed(2)}
-            </span>
-          </div>
-        )}
-        <div className="invoice-total-row invoice-grand">
-          <span>TOTAL</span>
-          <span>
-            {symbol}
-            {total.toFixed(2)}
-          </span>
-        </div>
-        {tx.payment_breakdown && tx.payment_breakdown.length > 0 ? (
-          tx.payment_breakdown.map((pb, idx) => (
-            <div key={idx} className="invoice-total-row">
-              <span className="capitalize">{pb.method}</span>
-              <span>
-                {symbol}
-                {Number(pb.amount).toFixed(2)}
-              </span>
-            </div>
-          ))
-        ) : (
-          <div className="invoice-total-row">
-            <span>Paid</span>
-            <span>
-              {symbol}
-              {paid.toFixed(2)}
-            </span>
-          </div>
-        )}
-        <div className="invoice-total-row">
-          <span>Change</span>
-          <span>
-            {symbol}
-            {change.toFixed(2)}
-          </span>
-        </div>
+        ))}
       </div>
 
       {settings?.footer ? (
-        <div className="invoice-rule" />
-      ) : null}
-      {settings?.footer ? (
-        <div className="invoice-center invoice-footer">{settings.footer}</div>
+        <>
+          <div className="my-2 border-t" />
+          <div className="text-center text-xs text-muted-foreground">{settings.footer}</div>
+        </>
       ) : null}
     </div>
   );

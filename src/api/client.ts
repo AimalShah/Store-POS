@@ -20,6 +20,7 @@ export type Product = {
   id: number;
   name: string;
   price: number;
+  cost: number;
   category: string;
   quantity: number;
   stock: number;
@@ -86,6 +87,20 @@ export type Settings = {
   till: number;
 };
 
+export type PrinterSettings = {
+  interface: '' | 'usb' | 'network';
+  usbDevice: string;
+  networkHost: string;
+  networkPort: number;
+  width: 58 | 80;
+  kotInterface: '' | 'usb' | 'network';
+  kotUsbDevice: string;
+  kotNetworkHost: string;
+  kotNetworkPort: number;
+  kotWidth: 58 | 80;
+  autoPrintKot: boolean;
+};
+
 export type MediaItem = {
   id: number;
   filename: string;
@@ -102,6 +117,8 @@ export type CartItem = {
   price: number;
   quantity: number;
   stock: number;
+  cost?: number;
+  categoryId?: number;
   note?: string;
   discountType?: 'flat' | 'percent';
   discountValue?: number;
@@ -168,6 +185,20 @@ export type ZReport = {
   expectedCash: number;
   actualCash: number;
   difference: number;
+};
+
+export type ReportSummary = {
+  summary: {
+    saleCount: number;
+    itemsSold: number;
+    subtotal: number;
+    discount: number;
+    tax: number;
+    totalSales: number;
+  };
+  byCategory: { category: string; count: number; revenue: number }[];
+  byPaymentMethod: { method: string; count: number; amount: number }[];
+  bestSellers: { productId: number | null; name: string; quantity: number; revenue: number }[];
 };
 
 let baseUrl = 'http://127.0.0.1:8001/api';
@@ -339,6 +370,8 @@ export const api = {
 
   getOnHold: () => request<Transaction[]>('/on-hold'),
 
+  getAllTransactions: () => request<Transaction[]>('/all'),
+
   getCustomerOrders: () => request<Transaction[]>('/customer-orders'),
 
   getByDate: (params: {
@@ -476,4 +509,21 @@ clearDemo: (options?: {
 
     getZReport: (shiftId: number) =>
       request<ZReport>(`/shifts/${shiftId}/z-report`),
+
+    getReportSummary: (params: { start?: string; end?: string; till?: number }) => {
+      const q = new URLSearchParams();
+      if (params.start) q.append('start', params.start);
+      if (params.end) q.append('end', params.end);
+      if (params.till) q.append('till', String(params.till));
+      return request<ReportSummary>(`/reports/summary?${q}`);
+    },
+
+    getPrinterSettings: () =>
+      request<{ printer: PrinterSettings }>('/printer/settings'),
+
+    savePrinterSettings: (body: Partial<PrinterSettings>) =>
+      request<{ printer: PrinterSettings }>('/printer/settings', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   };

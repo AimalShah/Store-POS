@@ -49,7 +49,7 @@ export default function settingsRouter(uploadsPath) {
         address_two: body.address_two ?? existing?.address_two ?? '',
         contact: body.contact ?? existing?.contact ?? '',
         tax: body.tax ?? existing?.tax ?? '',
-        symbol: body.symbol ?? existing?.symbol ?? '$',
+        symbol: body.symbol ?? existing?.symbol ?? 'Rs',
         percentage: parseFloat(body.percentage ?? existing?.percentage ?? 0) || 0,
         charge_tax: body.charge_tax === 'on' || body.charge_tax === true || body.charge_tax === 1 || body.charge_tax === '1' ? 1 : 0,
         footer: body.footer ?? existing?.footer ?? '',

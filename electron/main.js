@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { printKotJob, printReceiptJob, readPrinterConfig } from './thermal.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,6 +94,32 @@ ipcMain.handle('get-api-info', () => {
 
 ipcMain.on('app-quit', () => {
   app.quit();
+});
+
+ipcMain.handle('print-receipt', async (_event, payload) => {
+  const config = readPrinterConfig();
+  if (!config || !config.receipt.interface) return { printed: false, fallback: true };
+  return printReceiptJob(payload.tx, payload.settings, config, { printKot: !!payload.printKot });
+});
+
+ipcMain.handle('print-kot', async (_event, payload) => {
+  const config = readPrinterConfig();
+  if (!config || !config.kot.interface) return { printed: false, fallback: true };
+  return printKotJob(payload.tx, config);
+});
+
+ipcMain.handle('save-file', async (_event, { defaultName, type, data }) => {
+  const isXlsx = type === 'xlsx';
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export',
+    defaultPath: defaultName,
+    filters: isXlsx
+      ? [{ name: 'Excel Workbook', extensions: ['xlsx'] }]
+      : [{ name: 'CSV file', extensions: ['csv'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
+  return { ok: true, filePath };
 });
 
 ipcMain.on('app-reload', () => {

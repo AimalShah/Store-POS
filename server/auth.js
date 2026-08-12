@@ -13,6 +13,7 @@ export function signToken(user) {
     {
       id: user.id || user._id,
       username: user.username,
+      fullname: user.fullname,
       perm_products: user.perm_products,
       perm_categories: user.perm_categories,
       perm_transactions: user.perm_transactions,

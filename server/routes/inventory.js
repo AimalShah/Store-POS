@@ -20,6 +20,7 @@ function mapProductWithComponents(row, db) {
     id: row.id,
     name: row.name,
     price: row.price,
+    cost: row.cost || 0,
     category: row.category,
     quantity: row.quantity,
     stock: row.stock,
@@ -101,6 +102,7 @@ export default function inventoryRouter(uploadsPath) {
 
       const stock = body.stock === 'on' || body.stock === 0 || body.stock === '0' ? 0 : 1;
       const quantity = body.quantity === '' || body.quantity == null ? 0 : parseInt(body.quantity, 10);
+      const cost = body.cost === '' || body.cost == null ? 0 : parseFloat(body.cost) || 0;
 
       let components = [];
       if (body.components) {
@@ -114,12 +116,13 @@ export default function inventoryRouter(uploadsPath) {
       if (!body.id) {
         const result = db
           .prepare(
-            `INSERT INTO products (name, price, category, quantity, stock, img)
-             VALUES (?, ?, ?, ?, ?, ?)`
+            `INSERT INTO products (name, price, cost, category, quantity, stock, img)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             body.name,
             parseFloat(body.price) || 0,
+            cost,
             body.category || '',
             quantity,
             stock,
@@ -143,11 +146,12 @@ export default function inventoryRouter(uploadsPath) {
 
       const id = parseInt(body.id, 10);
       db.prepare(
-        `UPDATE products SET name = ?, price = ?, category = ?, quantity = ?, stock = ?, img = ?
+        `UPDATE products SET name = ?, price = ?, cost = ?, category = ?, quantity = ?, stock = ?, img = ?
          WHERE id = ?`
       ).run(
         body.name,
         parseFloat(body.price) || 0,
+        cost,
         body.category || '',
         quantity,
         stock,

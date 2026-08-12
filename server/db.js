@@ -56,6 +56,7 @@ export async function initDatabase(filePath) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       price REAL NOT NULL DEFAULT 0,
+      cost REAL NOT NULL DEFAULT 0,
       category TEXT NOT NULL DEFAULT '',
       quantity INTEGER NOT NULL DEFAULT 0,
       stock INTEGER NOT NULL DEFAULT 0,
@@ -108,7 +109,7 @@ export async function initDatabase(filePath) {
       address_two TEXT NOT NULL DEFAULT '',
       contact TEXT NOT NULL DEFAULT '',
       tax TEXT NOT NULL DEFAULT '',
-      symbol TEXT NOT NULL DEFAULT '$',
+      symbol TEXT NOT NULL DEFAULT 'Rs',
       percentage REAL NOT NULL DEFAULT 0,
       charge_tax INTEGER NOT NULL DEFAULT 0,
       footer TEXT NOT NULL DEFAULT '',
@@ -126,6 +127,21 @@ export async function initDatabase(filePath) {
       photographer TEXT NOT NULL DEFAULT '',
       alt TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS printer_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      interface TEXT NOT NULL DEFAULT '', -- '', 'usb', 'network'
+      usb_device TEXT NOT NULL DEFAULT '',
+      network_host TEXT NOT NULL DEFAULT '',
+      network_port INTEGER NOT NULL DEFAULT 9100,
+      width INTEGER NOT NULL DEFAULT 58, -- 58 or 80
+      kot_interface TEXT NOT NULL DEFAULT '',
+      kot_usb_device TEXT NOT NULL DEFAULT '',
+      kot_network_host TEXT NOT NULL DEFAULT '',
+      kot_network_port INTEGER NOT NULL DEFAULT 9100,
+      kot_width INTEGER NOT NULL DEFAULT 58,
+      auto_print_kot INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
@@ -149,8 +165,6 @@ export async function initDatabase(filePath) {
       date TEXT NOT NULL,
       shift_id INTEGER
     );
-
-    CREATE INDEX IF NOT EXISTS idx_transactions_shift ON transactions(shift_id);
 
     CREATE TABLE IF NOT EXISTS shifts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,6 +212,9 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     }
     if (!cols.some((c) => c.name === 'stock')) {
       db.prepare("ALTER TABLE products ADD COLUMN stock INTEGER NOT NULL DEFAULT 0").run();
+    }
+    if (!cols.some((c) => c.name === 'cost')) {
+      db.prepare("ALTER TABLE products ADD COLUMN cost REAL NOT NULL DEFAULT 0").run();
     }
   } catch {
     /* ignore */
@@ -263,6 +280,32 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     const cols = db.prepare("PRAGMA table_info(transactions)").all();
     if (!cols.some((c) => c.name === 'shift_id')) {
       db.prepare("ALTER TABLE transactions ADD COLUMN shift_id INTEGER").run();
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_shift ON transactions(shift_id)").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: create printer_settings table if it doesn't exist
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='printer_settings'").all();
+    if (tables.length === 0) {
+      db.exec(`
+        CREATE TABLE printer_settings (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          interface TEXT NOT NULL DEFAULT '',
+          usb_device TEXT NOT NULL DEFAULT '',
+          network_host TEXT NOT NULL DEFAULT '',
+          network_port INTEGER NOT NULL DEFAULT 9100,
+          width INTEGER NOT NULL DEFAULT 58,
+          kot_interface TEXT NOT NULL DEFAULT '',
+          kot_usb_device TEXT NOT NULL DEFAULT '',
+          kot_network_host TEXT NOT NULL DEFAULT '',
+          kot_network_port INTEGER NOT NULL DEFAULT 9100,
+          kot_width INTEGER NOT NULL DEFAULT 58,
+          auto_print_kot INTEGER NOT NULL DEFAULT 0
+        );
+      `);
     }
   } catch {
     /* ignore */
@@ -300,15 +343,23 @@ function seedDefaults() {
   if (!settings) {
     db.prepare(
       `INSERT INTO settings (id, app, store, symbol, percentage, charge_tax, till)
-       VALUES (1, 'Standalone Point of Sale', 'My Store', '$', 0, 0, 1)`
+       VALUES (1, 'Standalone Point of Sale', 'My Store', 'Rs', 0, 0, 1)`
     ).run();
   }
+
+  // Migrate any legacy '$' currency symbol to PKR (Rs).
+  db.prepare(`UPDATE settings SET symbol = 'Rs' WHERE symbol = '$' OR symbol IS NULL`).run();
 
   const walkIn = db.prepare("SELECT id FROM customers WHERE name = 'Walk-in Customer'").get();
   if (!walkIn) {
     db.prepare(
       `INSERT INTO customers (name, phone, email, address) VALUES ('Walk-in Customer', '', '', '')`
     ).run();
+  }
+
+  const printerSettings = db.prepare('SELECT id FROM printer_settings WHERE id = 1').get();
+  if (!printerSettings) {
+    db.prepare(`INSERT INTO printer_settings (id) VALUES (1)`).run();
   }
 }
 
@@ -336,6 +387,7 @@ export function mapProduct(row) {
     id: row.id,
     name: row.name,
     price: row.price,
+    cost: row.cost || 0,
     category: row.category,
     quantity: row.quantity,
     stock: row.stock,
@@ -440,5 +492,22 @@ export function mapSettings(row) {
       img: row.img,
       till: row.till,
     },
+  };
+}
+
+export function mapPrinterSettings(row) {
+  if (!row) return null;
+  return {
+    interface: row.interface || '',
+    usbDevice: row.usb_device || '',
+    networkHost: row.network_host || '',
+    networkPort: row.network_port || 9100,
+    width: row.width || 58,
+    kotInterface: row.kot_interface || '',
+    kotUsbDevice: row.kot_usb_device || '',
+    kotNetworkHost: row.kot_network_host || '',
+    kotNetworkPort: row.kot_network_port || 9100,
+    kotWidth: row.kot_width || 58,
+    autoPrintKot: !!row.auto_print_kot,
   };
 }

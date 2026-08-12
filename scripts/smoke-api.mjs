@@ -173,6 +173,87 @@ try {
     throw new Error(`expected invoice ref on hold resume, got ${resumed.ref_number}`);
   }
 
+  // Reports: summary, by category, by payment method, best sellers
+  const startIso = new Date(Date.now() - 86400000).toISOString();
+  const endIso = new Date(Date.now() + 86400000).toISOString();
+  const report = await req(
+    `/api/reports/summary?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`,
+    {},
+    token
+  );
+
+  if (report.summary.saleCount !== 2) {
+    throw new Error(`expected 2 sales in report, got ${report.summary.saleCount}`);
+  }
+  if (Math.abs(report.summary.totalSales - 7.5) > 0.001) {
+    throw new Error(`expected total sales 7.5, got ${report.summary.totalSales}`);
+  }
+  if (report.summary.itemsSold !== 3) {
+    throw new Error(`expected 3 items sold, got ${report.summary.itemsSold}`);
+  }
+
+  const drink = report.byCategory.find((c) => c.category === 'Drinks');
+  if (!drink || drink.count !== 3 || Math.abs(drink.revenue - 7.5) > 0.001) {
+    throw new Error(`unexpected category totals: ${JSON.stringify(report.byCategory)}`);
+  }
+
+  const cash = report.byPaymentMethod.find((p) => p.method === 'cash');
+  if (!cash || cash.count !== 2 || Math.abs(cash.amount - 7.5) > 0.001) {
+    throw new Error(`unexpected payment totals: ${JSON.stringify(report.byPaymentMethod)}`);
+  }
+
+  const top = report.bestSellers[0];
+  if (!top || top.name !== 'Cola' || top.quantity !== 3 || Math.abs(top.revenue - 7.5) > 0.001) {
+    throw new Error(`unexpected best sellers: ${JSON.stringify(report.bestSellers)}`);
+  }
+
+  // Export path: all transactions feed the Sales dataset
+  const all = await req('/api/all', {}, token);
+  if (all.length !== 2) {
+    throw new Error(`expected 2 transactions for export, got ${all.length}`);
+  }
+  if (!all.every((t) => Array.isArray(t.items))) {
+    throw new Error('expected every transaction to carry an items array for export');
+  }
+  const exportedQty = all
+    .filter((t) => t.status === 1)
+    .reduce((n, t) => n + t.items.reduce((m, i) => m + i.quantity, 0), 0);
+  if (exportedQty !== 3) {
+    throw new Error(`expected 3 items in export, got ${exportedQty}`);
+  }
+
+  // Printer settings: defaults, then save a network config
+  const printerDefault = await req('/api/printer/settings', {}, token);
+  if (printerDefault.printer.width !== 58 || printerDefault.printer.interface !== '') {
+    throw new Error(`unexpected default printer settings: ${JSON.stringify(printerDefault)}`);
+  }
+  const printerSaved = await req(
+    '/api/printer/settings',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        interface: 'network',
+        networkHost: '192.168.1.50',
+        networkPort: 9100,
+        width: 80,
+        kotInterface: 'usb',
+        kotUsbDevice: '/dev/usb/lp1',
+        autoPrintKot: true,
+      }),
+    },
+    token
+  );
+  if (
+    printerSaved.printer.interface !== 'network' ||
+    printerSaved.printer.networkHost !== '192.168.1.50' ||
+    printerSaved.printer.width !== 80 ||
+    printerSaved.printer.kotInterface !== 'usb' ||
+    printerSaved.printer.kotUsbDevice !== '/dev/usb/lp1' ||
+    printerSaved.printer.autoPrintKot !== true
+  ) {
+    throw new Error(`printer settings not saved: ${JSON.stringify(printerSaved)}`);
+  }
+
   console.log('SMOKE OK');
   console.log(JSON.stringify({
     health: health.message,
