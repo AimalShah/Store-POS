@@ -1,4 +1,4 @@
-export type RangePreset = 'today' | '7d' | '30d' | '90d';
+export type RangePreset = 'today' | '7d' | '30d' | '90d' | 'custom';
 
 export type DateRange = {
   preset: RangePreset;

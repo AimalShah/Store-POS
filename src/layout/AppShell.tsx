@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   CalendarRange,
@@ -10,24 +10,24 @@ import {
   PlusCircle,
   Printer,
   ReceiptText,
+  Search,
   Settings as SettingsIcon,
   ShoppingCart,
   Store,
   Timer,
+  User,
   UserCog,
   Users,
+  UtensilsCrossed,
   Warehouse,
+  AlertTriangle,
+  Bell,
 } from 'lucide-react';
+import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { Toaster } from '../components/ui/sonner';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
 import {
   Sidebar,
   SidebarContent,
@@ -44,13 +44,30 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from '../components/ui/sidebar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../components/ui/popover';
 import { useAuth } from '../context/AuthContext';
 import { useStoreData } from '../hooks/useStoreData';
 import { getPosBridge } from '../bridge';
 import { getUploadsBase } from '../api/client';
 import { buildLogoUrl } from '../lib/branding';
 import { buildNavGroups, resolveInitialView, type NavItemId, type Permissions } from '../lib/nav';
-import { buildDateRange, type RangePreset } from '../lib/dateRange';
+import { buildDateRange, type DateRange } from '../lib/dateRange';
+import { api, type Transaction } from '../api/client';
+import { DateRangePicker, type PickerValue } from '../components/DateRangePicker';
+import { CommandPalette, type PaletteCommand } from '../components/CommandPalette';
+import { StoreSwitcher, type Outlet } from '../components/StoreSwitcher';
 import CatalogView from '../pages/CatalogView';
 import CustomersView from '../pages/CustomersView';
 import DashboardView from '../pages/DashboardView';
@@ -81,12 +98,40 @@ const ICONS: Record<string, typeof Package> = {
 
 type Mode = 'till' | 'dashboard';
 
+function initials(name: string): string {
+  return name
+    .split(' ')
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+function BrandMark({ logoUrl, name }: { logoUrl?: string | null; name: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      {logoUrl ? (
+        <img src={logoUrl} alt={name} className="size-7 rounded object-contain" />
+      ) : (
+        <Store className="size-6 text-primary" />
+      )}
+      <span className="font-semibold tracking-tight">{name}</span>
+    </div>
+  );
+}
+
 export default function AppShell() {
   const { user, hasPerm, logout } = useAuth();
   const { products, categories, customers, settings, error, reload } = useStoreData();
   const [mode, setMode] = useState<Mode>('till');
   const [holdCount, setHoldCount] = useState(0);
-  const [preset, setPreset] = useState<RangePreset>('today');
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [date, setDate] = useState<PickerValue>({
+    preset: 'today',
+    range: buildDateRange('today'),
+  });
+  const [heldOrders, setHeldOrders] = useState<Transaction[]>([]);
 
   const perms: Permissions = {
     perm_products: hasPerm('perm_products') ? 1 : 0,
@@ -100,14 +145,108 @@ export default function AppShell() {
 
   const visibleIds = groups.flatMap((g) => g.items.map((i) => i.id));
   const activeView = visibleIds.includes(view) ? view : resolveInitialView(groups);
-  const range = buildDateRange(preset);
   const symbol = settings?.symbol || 'Rs';
   const logoUrl = buildLogoUrl(settings?.img, getUploadsBase());
+  const storeName = settings?.store || 'Store POS';
+
+  const lowStockCount = useMemo(
+    () =>
+      products.filter(
+        (p) => p.trackStock && p.quantity <= p.lowStockThreshold
+      ).length,
+    [products]
+  );
+
+  const loadHeld = useCallback(async () => {
+    try {
+      const held = await api.getOnHold().catch(() => [] as Transaction[]);
+      setHeldOrders(held);
+      setHoldCount(held.length);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHeld();
+    const id = setInterval(() => void loadHeld(), 30_000);
+    return () => clearInterval(id);
+  }, [loadHeld]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const goTo = (v: NavItemId) => {
+    setMode('dashboard');
+    setView(v);
+  };
+
+  const outlets: Outlet[] = useMemo(
+    () => [{ id: 'main', name: storeName, logoUrl }],
+    [storeName, logoUrl]
+  );
+
+  const commands: PaletteCommand[] = useMemo(() => {
+    const nav: PaletteCommand[] = groups.flatMap((g) =>
+      g.items.map((item) => ({
+        id: `nav-${item.id}`,
+        label: item.label,
+        group: g.label,
+        icon: (() => {
+          const Icon = ICONS[item.icon] ?? Package;
+          return <Icon className="size-4 text-muted-foreground" />;
+        })(),
+        onSelect: () => goTo(item.id),
+      }))
+    );
+    const actions: PaletteCommand[] = [
+      {
+        id: 'new-sale',
+        label: 'New Sale',
+        group: 'Actions',
+        icon: <PlusCircle className="size-4 text-muted-foreground" />,
+        shortcut: 'N',
+        onSelect: () => setMode('till'),
+      },
+      {
+        id: 'refresh',
+        label: 'Refresh data',
+        group: 'Actions',
+        icon: <BarChart3 className="size-4 text-muted-foreground" />,
+        onSelect: () => reload(),
+      },
+    ];
+    const productCmds: PaletteCommand[] = products.slice(0, 40).map((p) => ({
+      id: `product-${p._id}`,
+      label: p.name,
+      group: 'Products',
+      keywords: `product sku ${p.category}`,
+      icon: <Package className="size-4 text-muted-foreground" />,
+      onSelect: () => goTo('catalog'),
+    }));
+    return [...nav, ...actions, ...productCmds];
+  }, [groups, products, reload]);
 
   function renderView() {
     switch (activeView) {
       case 'dashboard':
-        return <DashboardView settings={settings} range={range} />;
+        return (
+          <DashboardView
+            settings={settings}
+            range={date.range}
+            onQuickSale={() => setMode('till')}
+            onHeldClick={() => goTo('sales')}
+            onLowStockClick={() => goTo('catalog')}
+          />
+        );
       case 'catalog':
         return (
           <CatalogView
@@ -150,21 +289,101 @@ export default function AppShell() {
     }
   }
 
+  function UserMenu() {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-full border border-transparent px-1 pr-2 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
+          <Avatar size="sm">
+            <AvatarFallback className="bg-primary/10 text-primary">
+              {user ? initials(user.fullname) : 'U'}
+            </AvatarFallback>
+          </Avatar>
+          <span className="hidden text-sm font-medium sm:inline">{user?.fullname}</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel className="flex flex-col">
+            <span>{user?.fullname}</span>
+            <span className="text-xs font-normal text-muted-foreground">@{user?.username}</span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => goTo('settings')}>
+            <User className="size-4" /> Profile
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => goTo('settings')}>
+            <SettingsIcon className="size-4" /> Settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => {
+              void logout();
+            }}
+          >
+            <LogOut className="size-4" /> Sign out
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => getPosBridge().quit()}
+          >
+            <Home className="size-4" /> Quit
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  function HeldBell() {
+    return (
+      <Popover>
+        <PopoverTrigger className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
+          <Bell className="size-4" />
+          {heldOrders.length > 0 && (
+            <Badge className="absolute -top-1 -right-1 size-4 justify-center rounded-full p-0 text-[10px]">
+              {heldOrders.length}
+            </Badge>
+          )}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-72">
+          <div className="flex items-center justify-between">
+            <p className="font-medium">Held orders</p>
+            <Badge variant="secondary">{heldOrders.length}</Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Orders parked at the till, waiting to resume.
+          </p>
+          {heldOrders.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">No held orders.</p>
+          ) : (
+            <ul className="mt-3 flex max-h-64 flex-col gap-1.5 overflow-auto">
+              {heldOrders.map((o) => (
+                <li key={o._id}>
+                  <button
+                    type="button"
+                    onClick={() => setMode('till')}
+                    className="flex w-full items-center justify-between rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent"
+                  >
+                    <span className="truncate">{o.customer_name || 'Walk-in'}</span>
+                    <span className="font-medium">{symbol}{Number(o.total || 0).toFixed(2)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   function TopBar({ withTrigger }: { withTrigger: boolean }) {
     return (
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
         {withTrigger && <SidebarTrigger />}
-        <Separator orientation="vertical" className="h-4" />
-        <div className="flex items-center gap-2">
-          {logoUrl ? (
-            <img src={logoUrl} alt={settings?.store || 'Store'} className="size-7 rounded object-contain" />
-          ) : (
-            <Store className="size-5 text-primary" />
-          )}
-          <span className="font-semibold">{settings?.store || 'Store POS'}</span>
-        </div>
 
-        <div className="ml-2 flex rounded-md border p-0.5">
+        <BrandMark logoUrl={logoUrl} name={storeName} />
+
+        <Separator orientation="vertical" className="h-5" />
+
+        <div className="flex rounded-md border p-0.5">
           <Button
             variant={mode === 'till' ? 'default' : 'ghost'}
             size="sm"
@@ -184,42 +403,46 @@ export default function AppShell() {
         </div>
 
         {mode === 'dashboard' && (
-          <div className="ml-2 flex items-center gap-2">
-            <CalendarRange className="size-4 text-muted-foreground" />
-            <Select value={preset} onValueChange={(v) => setPreset(v as RangePreset)}>
-              <SelectTrigger className="h-8 w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="7d">7 days</SelectItem>
-                <SelectItem value="30d">30 days</SelectItem>
-                <SelectItem value="90d">90 days</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <>
+            <Separator orientation="vertical" className="h-5" />
+            <DateRangePicker value={date} onChange={setDate} />
+          </>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setMode('till')}>
-            <PlusCircle className="size-4" />
-            New Sale
-          </Button>
-          <span className="text-sm text-muted-foreground">{user?.fullname}</span>
+        <div className="ml-auto flex items-center gap-1.5">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            onClick={() => {
-              void logout();
-            }}
+            className="h-8 gap-1.5 text-muted-foreground"
+            onClick={() => setCommandOpen(true)}
           >
-            <LogOut className="size-4" />
-            Sign out
+            <Search className="size-4" />
+            <span className="hidden md:inline">Search</span>
+            <kbd className="ml-1 hidden rounded border bg-muted px-1 text-[10px] font-medium text-muted-foreground md:inline">
+              ⌘K
+            </kbd>
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => getPosBridge().quit()}>
-            <Home className="size-4" />
-            Quit
+
+          <HeldBell />
+
+          {lowStockCount > 0 && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-amber-600 hover:text-amber-700"
+              title={`${lowStockCount} products low on stock`}
+              onClick={() => goTo('catalog')}
+            >
+              <AlertTriangle className="size-4" />
+            </Button>
+          )}
+
+          <Button size="sm" onClick={() => setMode('till')}>
+            <PlusCircle className="size-4" />
+            <span className="hidden sm:inline">New Sale</span>
           </Button>
+
+          <UserMenu />
         </div>
       </header>
     );
@@ -245,31 +468,52 @@ export default function AppShell() {
             onRefresh={reload}
           />
         </main>
+        <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
+        <Toaster />
       </div>
     );
   }
 
   return (
     <SidebarProvider>
-      <Sidebar>
+      <Sidebar collapsible="icon">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton className="text-base" tooltip="Till" onClick={() => setMode('till')}>
+              <SidebarMenuButton
+                className="text-base"
+                tooltip="Till"
+                onClick={() => setMode('till')}
+                size="lg"
+              >
                 {logoUrl ? (
                   <img src={logoUrl} alt="" className="size-5 rounded object-contain" />
                 ) : (
-                  <ShoppingCart className="size-5" />
+                  <Store className="size-5 text-primary" />
                 )}
-                <span className="font-semibold">{settings?.store || 'Store POS'}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
         <SidebarContent>
+          <SidebarMenu className="px-2 pt-2">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Quick New Order"
+                onClick={() => setMode('till')}
+                className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                size="lg"
+              >
+                <UtensilsCrossed />
+                <span>Quick New Order</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           {groups.map((group) => (
             <SidebarGroup key={group.id}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupLabel className="px-2 uppercase tracking-wider text-[11px] font-semibold text-muted-foreground">
+                {group.label}
+              </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {group.items.map((item) => {
@@ -280,6 +524,7 @@ export default function AppShell() {
                           isActive={activeView === item.id}
                           onClick={() => setView(item.id)}
                           tooltip={item.label}
+                          className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
                         >
                           <Icon />
                           <span>{item.label}</span>
@@ -292,29 +537,8 @@ export default function AppShell() {
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip="Sign out"
-                onClick={() => {
-                  void logout();
-                }}
-              >
-                <LogOut />
-                <span>Sign out</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton tooltip="Quit" onClick={() => getPosBridge().quit()}>
-                <Home />
-                <span>Quit</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-          <div className="px-4 py-2 text-xs text-muted-foreground">
-            {user?.fullname} · {user?.username}
-          </div>
+        <SidebarFooter className="gap-2">
+          <StoreSwitcher outlets={outlets} activeId="main" />
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
@@ -328,6 +552,7 @@ export default function AppShell() {
         )}
         <main className="min-h-0 flex-1 overflow-auto p-6">{renderView()}</main>
       </SidebarInset>
+      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
       <Toaster />
     </SidebarProvider>
   );

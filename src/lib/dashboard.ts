@@ -68,7 +68,7 @@ export function computeKpis({ transactions, previous, held, products }: KpiInput
   };
 }
 
-export type TrendPoint = { label: string; total: number };
+export type TrendPoint = { label: string; total: number; orders: number; profit: number };
 
 function formatDay(d: Date): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
@@ -79,22 +79,35 @@ function formatDay(d: Date): string {
  * "Today" is bucketed hourly; longer ranges are daily.
  */
 export function buildTrendSeries(transactions: Transaction[], range: DateRange): TrendPoint[] {
-  if (range.preset === 'today') {
-    const buckets = new Array(24).fill(0);
+  const spanDays =
+    (new Date(range.end).getTime() - new Date(range.start).getTime()) / 86_400_000;
+  const hourly = range.preset === 'today' || (range.preset === 'custom' && spanDays <= 1);
+  if (hourly) {
+    const totalBuckets = new Array(24).fill(0);
+    const orderBuckets = new Array(24).fill(0);
+    const profitBuckets = new Array(24).fill(0);
     for (const t of transactions) {
       const h = new Date(t.date).getUTCHours();
-      buckets[h] += Number(t.total || 0);
+      totalBuckets[h] += Number(t.total || 0);
+      orderBuckets[h] += 1;
+      profitBuckets[h] += t.items.reduce((s, it) => s + lineItemProfit(it), 0);
     }
-    return buckets.map((total, h) => ({
+    return totalBuckets.map((total, h) => ({
       label: `${String(h).padStart(2, '0')}:00`,
       total,
+      orders: orderBuckets[h],
+      profit: profitBuckets[h],
     }));
   }
 
-  const sums = new Map<string, number>();
+  const sums = new Map<string, { total: number; orders: number; profit: number }>();
   for (const t of transactions) {
     const key = new Date(t.date).toISOString().slice(0, 10);
-    sums.set(key, (sums.get(key) || 0) + Number(t.total || 0));
+    const cur = sums.get(key) ?? { total: 0, orders: 0, profit: 0 };
+    cur.total += Number(t.total || 0);
+    cur.orders += 1;
+    cur.profit += t.items.reduce((s, it) => s + lineItemProfit(it), 0);
+    sums.set(key, cur);
   }
 
   const points: TrendPoint[] = [];
@@ -104,7 +117,8 @@ export function buildTrendSeries(transactions: Transaction[], range: DateRange):
   last.setUTCHours(0, 0, 0, 0);
   while (cur <= last) {
     const key = cur.toISOString().slice(0, 10);
-    points.push({ label: formatDay(cur), total: sums.get(key) || 0 });
+    const v = sums.get(key) ?? { total: 0, orders: 0, profit: 0 };
+    points.push({ label: formatDay(cur), total: v.total, orders: v.orders, profit: v.profit });
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return points;

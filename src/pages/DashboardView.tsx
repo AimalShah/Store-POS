@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Receipt, Package, Wallet, PieChart as PieChartIcon, CheckCircle2, Inbox, BarChart3 } from 'lucide-react';
 import {
-  BarChart,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  ShoppingCart,
+  Receipt,
+  Package,
+  Wallet,
+  PieChart as PieChartIcon,
+  CheckCircle2,
+  Inbox,
+  BarChart3,
+  AlertTriangle,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  Area,
+  AreaChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   XAxis,
   YAxis,
-  CartesianGrid,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
 } from 'recharts';
 import {
   ChartContainer,
@@ -23,9 +37,13 @@ import {
 
 import { api, Category, Product, Settings, Transaction } from '../api/client';
 import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Skeleton } from '../components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sparkline } from '@/components/Sparkline';
+import { LiveOrderQueue } from '@/components/LiveOrderQueue';
 import { useAuth } from '../context/AuthContext';
 import { buildDateRange, previousRange, type DateRange } from '../lib/dateRange';
 import {
@@ -44,6 +62,7 @@ type LowStockItem = { name: string; quantity: number; id: number; threshold: num
 type DashboardState = {
   kpis: Kpis | null;
   trend: TrendPoint[];
+  prevTrend: TrendPoint[];
   categorySlices: CategorySlice[];
   topProducts: TopProduct[];
   lowStock: LowStockItem[];
@@ -56,6 +75,7 @@ const RANGE_LABELS: Record<string, string> = {
   '7d': 'Last 7 days',
   '30d': 'Last 30 days',
   '90d': 'Last 90 days',
+  custom: 'Custom range',
 };
 
 function getGreeting() {
@@ -65,31 +85,47 @@ function getGreeting() {
   return 'Good evening';
 }
 
+function compactCurrency(n: number, symbol: string) {
+  if (n >= 1000) return `${symbol}${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return `${symbol}${Math.round(n)}`;
+}
+
 export default function DashboardView({
   settings,
   range,
+  onQuickSale,
+  onHeldClick,
+  onLowStockClick,
 }: {
   settings: Settings | null;
   range?: DateRange;
+  onQuickSale?: () => void;
+  onHeldClick?: () => void;
+  onLowStockClick?: () => void;
 }) {
   const [state, setState] = useState<DashboardState>({
     kpis: null,
     trend: [],
+    prevTrend: [],
     categorySlices: [],
     topProducts: [],
     lowStock: [],
     loading: true,
     error: null,
   });
+  const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
   const { hasPerm } = useAuth();
   const symbol = settings?.symbol || 'Rs';
   const fmt = (n: number) => `${symbol}${Number(n).toFixed(2)}`;
   const greeting = useMemo(() => getGreeting(), []);
   const fmtTooltip = (
-    value: number | string | readonly (number | string)[] | undefined,
+    value: number | string | readonly (number | string)[] | undefined
   ) => fmt(Number(Array.isArray(value) ? value[0] : value));
 
-  const trendConfig = { total: { label: 'Sales', color: 'var(--chart-1)' } } satisfies ChartConfig;
+  const trendConfig = {
+    total: { label: 'Sales', color: 'var(--chart-1)' },
+    previous: { label: 'Previous', color: 'var(--chart-4)' },
+  } satisfies ChartConfig;
   const topConfig = { revenue: { label: 'Revenue', color: 'var(--chart-2)' } } satisfies ChartConfig;
   const categoryConfig = useMemo<ChartConfig>(() => {
     const cfg: ChartConfig = {};
@@ -121,6 +157,7 @@ export default function DashboardView({
 
       const kpis = computeKpis({ transactions: current, previous: prevTx, held, products });
       const trend = buildTrendSeries(current, activeRange);
+      const prevTrend = buildTrendSeries(prevTx, prev);
       const categorySlices = buildCategoryBreakdown(current, categories);
       const topProducts = buildTopProducts(current, 5);
 
@@ -132,12 +169,14 @@ export default function DashboardView({
       setState({
         kpis,
         trend,
+        prevTrend,
         categorySlices,
         topProducts,
         lowStock: lowStockItems,
         loading: false,
         error: null,
       });
+      setUpdatedAt(Date.now());
     } catch (err) {
       setState((s) => ({
         ...s,
@@ -150,6 +189,8 @@ export default function DashboardView({
 
   useEffect(() => {
     void loadData();
+    const id = setInterval(() => void loadData(), 60_000);
+    return () => clearInterval(id);
   }, [loadData]);
 
   if (state.error) {
@@ -169,23 +210,124 @@ export default function DashboardView({
   const k = state.kpis;
   const rangeLabel = RANGE_LABELS[range?.preset ?? 'today'];
 
-  const deltaCards = k
+  const activity = state.trend.map((p, i) => ({
+    label: p.label,
+    total: p.total,
+    previous: state.prevTrend[i]?.total ?? 0,
+  }));
+  const maxTotal = Math.max(1, ...state.trend.map((p) => p.total));
+
+  const aovSeries = state.trend.map((p) =>
+    p.orders > 0 ? p.total / p.orders : 0
+  );
+
+  const cards: CardDef[] = k
     ? [
-        { title: "Today's Sales", value: fmt(k.sales), pct: k.salesDeltaPct, hint: 'vs previous period', icon: DollarSign },
-        { title: 'Orders', value: String(k.orders), pct: k.ordersDeltaPct, hint: 'completed sales', icon: ShoppingCart },
-        { title: 'Avg Order Value', value: fmt(k.aov), pct: k.aovDeltaPct, hint: 'per order', icon: Receipt },
+        {
+          title: "Today's Sales",
+          value: fmt(k.sales),
+          pct: k.salesDeltaPct,
+          hint: 'vs previous period',
+          icon: <DollarSign className="size-4 text-muted-foreground" />,
+          spark: state.trend.map((p) => p.total),
+          sparkColor: 'var(--chart-1)',
+        },
+        {
+          title: 'Orders',
+          value: String(k.orders),
+          pct: k.ordersDeltaPct,
+          hint: 'completed sales',
+          icon: <ShoppingCart className="size-4 text-muted-foreground" />,
+          spark: state.trend.map((p) => p.orders),
+          sparkColor: 'var(--chart-2)',
+        },
+        {
+          title: 'Avg Order Value',
+          value: fmt(k.aov),
+          pct: k.aovDeltaPct,
+          hint: 'per order',
+          icon: <Receipt className="size-4 text-muted-foreground" />,
+          spark: aovSeries,
+          sparkColor: 'var(--chart-3)',
+        },
+        {
+          title: 'Held Orders',
+          value: String(k.heldOrders),
+          hint: k.heldOrders > 0 ? 'needs attention' : 'all clear',
+          icon: <ShoppingCart className="size-4 text-muted-foreground" />,
+          badge: {
+            label: k.heldOrders > 0 ? `${k.heldOrders} held` : 'none',
+            variant: k.heldOrders > 0 ? 'destructive' : 'secondary',
+          },
+          onClick: onHeldClick,
+        },
+        {
+          title: 'Low Stock',
+          value: String(k.lowStock),
+          hint: 'items below threshold',
+          icon: <Package className="size-4 text-muted-foreground" />,
+          badge: {
+            label: k.lowStock > 0 ? `${k.lowStock} low` : 'ok',
+            variant: k.lowStock > 0 ? 'default' : 'secondary',
+          },
+          onClick: onLowStockClick,
+        },
+        {
+          title: 'Profit & Margin',
+          value: fmt(k.profit),
+          hint: `Margin ${(k.marginPct ?? 0).toFixed(1)}% of sales`,
+          icon: <Wallet className="size-4 text-muted-foreground" />,
+          spark: state.trend.map((p) => p.profit),
+          sparkColor: 'var(--chart-5)',
+        },
       ]
     : [];
+
+  const categoryTotal = state.categorySlices.reduce((s, c) => s + c.revenue, 0);
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8">
       {/* Page header */}
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">{greeting}</h1>
-        <p className="text-sm text-muted-foreground">
-          {settings?.store || 'Store POS'} · {rangeLabel} overview
-        </p>
+      <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{greeting}</h1>
+          <p className="text-sm text-muted-foreground">
+            {settings?.store || 'Store POS'} · {rangeLabel} overview
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+          </span>
+          Live · updated {Math.round((Date.now() - updatedAt) / 1000)}s ago
+          <Button variant="outline" size="sm" className="ml-1 h-7 gap-1" onClick={loadData}>
+            <RefreshCw className="size-3.5" /> Refresh
+          </Button>
+        </div>
       </header>
+
+      {/* Low stock alert banner */}
+      {!state.loading && k && k.lowStock > 0 && (
+        <button
+          type="button"
+          onClick={onLowStockClick}
+          className="flex w-full items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-left transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:hover:bg-amber-950/60"
+        >
+          <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+              {k.lowStock} product{k.lowStock > 1 ? 's' : ''} low on stock
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-300/80">
+              Restock before the rush — tap to open the catalog.
+            </p>
+          </div>
+          <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-200">
+            View
+          </Badge>
+        </button>
+      )}
 
       {/* Performance */}
       <section className="space-y-3">
@@ -193,8 +335,8 @@ export default function DashboardView({
           Performance
         </h2>
         {state.loading && !k ? (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader className="pb-2">
                   <Skeleton className="h-4 w-24" />
@@ -207,23 +349,10 @@ export default function DashboardView({
             ))}
           </div>
         ) : (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-            {deltaCards.map((c) => (
-              <KpiCard key={c.title} title={c.title} value={c.value} pct={c.pct} hint={c.hint} icon={<c.icon className="size-4 text-muted-foreground" />} />
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            {cards.map((c) => (
+              <KpiCard key={c.title} {...c} />
             ))}
-            <KpiCard
-              title="Low Stock"
-              value={String(k?.lowStock ?? 0)}
-              hint="items below threshold"
-              warn={(k?.lowStock ?? 0) > 0}
-              icon={<Package className="size-4 text-muted-foreground" />}
-            />
-            <KpiCard
-              title="Profit & Margin"
-              value={fmt(k?.profit ?? 0)}
-              hint={`Margin ${(k?.marginPct ?? 0).toFixed(1)}% of sales`}
-              icon={<Wallet className="size-4 text-muted-foreground" />}
-            />
           </div>
         )}
       </section>
@@ -238,7 +367,7 @@ export default function DashboardView({
           <Card>
             <CardHeader>
               <CardTitle>Daily Selling Activity</CardTitle>
-              <p className="text-xs text-muted-foreground">{rangeLabel}</p>
+              <p className="text-xs text-muted-foreground">{rangeLabel} vs previous period</p>
             </CardHeader>
             <CardContent>
               {state.loading ? (
@@ -247,15 +376,19 @@ export default function DashboardView({
                 <EmptyInline
                   icon={<BarChart3 className="size-6" />}
                   title="No sales in this period"
-                  description="Completed sales will appear here as a daily trend."
+                  description="Completed sales will appear here as a trend against the previous period."
                 />
               ) : (
                 <ChartContainer config={trendConfig} className="h-[280px] w-full">
-                  <AreaChart data={state.trend} margin={{ left: 8, right: 8 }}>
+                  <AreaChart data={activity} margin={{ left: 4, right: 8, top: 8 }}>
                     <defs>
                       <linearGradient id="fillActivity" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="var(--color-total)" stopOpacity={0.9} />
-                        <stop offset="95%" stopColor="var(--color-total)" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="var(--color-total)" stopOpacity={0.2} />
+                      </linearGradient>
+                      <linearGradient id="fillPrevious" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-previous)" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="var(--color-previous)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -268,10 +401,12 @@ export default function DashboardView({
                       fontSize={12}
                     />
                     <YAxis
-                      tickFormatter={(v: number) => `${symbol}${Number(v)}`}
+                      tickFormatter={(v: number) => compactCurrency(v, symbol)}
                       tickLine={false}
                       axisLine={false}
                       fontSize={12}
+                      width={56}
+                      domain={[0, (max: number) => Math.ceil(max * 1.1)]}
                     />
                     <ChartTooltip
                       content={<ChartTooltipContent formatter={fmtTooltip} />}
@@ -279,11 +414,22 @@ export default function DashboardView({
                     />
                     <Area
                       type="monotone"
+                      dataKey="previous"
+                      stroke="var(--color-previous)"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      fill="url(#fillPrevious)"
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
                       dataKey="total"
                       stroke="var(--color-total)"
                       strokeWidth={2}
                       fill="url(#fillActivity)"
+                      isAnimationActive={false}
                     />
+                    <ChartLegend content={<ChartLegendContent />} />
                   </AreaChart>
                 </ChartContainer>
               )}
@@ -291,7 +437,7 @@ export default function DashboardView({
           </Card>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            {/* Category donut */}
+            {/* Category donut with side legend */}
             <Card>
               <CardHeader>
                 <CardTitle>Sales by Category</CardTitle>
@@ -306,37 +452,61 @@ export default function DashboardView({
                     description="Sales by product category will appear here."
                   />
                 ) : (
-                  <ChartContainer config={categoryConfig} className="mx-auto h-[260px] w-[260px]">
-                    <PieChart>
-                      <ChartTooltip
-                        content={
-                          <ChartTooltipContent nameKey="category" formatter={fmtTooltip} />
-                        }
-                      />
-                      <Pie
-                        data={state.categorySlices}
-                        dataKey="revenue"
-                        nameKey="category"
-                        innerRadius={55}
-                        outerRadius={90}
-                        paddingAngle={2}
-                      >
-                        {state.categorySlices.map((s) => (
-                          <Cell key={s.category} fill={`var(--color-${s.category})`} />
-                        ))}
-                      </Pie>
-                      <ChartLegend content={<ChartLegendContent nameKey="category" />} />
-                    </PieChart>
-                  </ChartContainer>
+                  <div className="flex flex-col items-center gap-4 sm:flex-row">
+                    <ChartContainer
+                      config={categoryConfig}
+                      className="mx-auto h-[220px] w-[220px] shrink-0"
+                    >
+                      <PieChart>
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent nameKey="category" formatter={fmtTooltip} />
+                          }
+                        />
+                        <Pie
+                          data={state.categorySlices}
+                          dataKey="revenue"
+                          nameKey="category"
+                          innerRadius={50}
+                          outerRadius={85}
+                          paddingAngle={2}
+                        >
+                          {state.categorySlices.map((s) => (
+                            <Cell key={s.category} fill={`var(--color-${s.category})`} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ChartContainer>
+                    <ul className="flex w-full flex-col gap-1.5">
+                      {state.categorySlices.map((s, i) => {
+                        const pct = categoryTotal ? (s.revenue / categoryTotal) * 100 : 0;
+                        return (
+                          <li key={s.category} className="flex items-center gap-2 text-sm">
+                            <span
+                              className="size-2.5 shrink-0 rounded-full"
+                              style={{ background: `var(--chart-${(i % 5) + 1})` }}
+                            />
+                            <span className="flex-1 truncate">{s.category}</span>
+                            <span className="tabular-nums text-muted-foreground">
+                              {pct.toFixed(0)}%
+                            </span>
+                            <span className="w-20 text-right font-medium tabular-nums">
+                              {compactCurrency(s.revenue, symbol)}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Top products */}
+            {/* Top products with revenue / quantity toggle */}
             <Card>
               <CardHeader>
                 <CardTitle>Best Sellers</CardTitle>
-                <p className="text-xs text-muted-foreground">By revenue</p>
+                <p className="text-xs text-muted-foreground">Top 5 products · revenue vs quantity</p>
               </CardHeader>
               <CardContent>
                 {state.loading ? (
@@ -345,34 +515,14 @@ export default function DashboardView({
                   <EmptyInline
                     icon={<Package className="size-6" />}
                     title="No product sales yet"
-                    description="Your best sellers by revenue will appear here."
+                    description="Your best sellers will appear here."
                   />
                 ) : (
-                  <ChartContainer
+                  <BestSellersChart
+                    products={state.topProducts}
+                    symbol={symbol}
                     config={topConfig}
-                    className="w-full"
-                    style={{ height: Math.max(220, state.topProducts.length * 56) }}
-                  >
-                    <BarChart data={state.topProducts} layout="vertical" margin={{ left: 8, right: 16 }}>
-                      <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                      <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                        width={120}
-                      />
-                      <ChartTooltip content={<ChartTooltipContent formatter={fmtTooltip} />} cursor={false} />
-                      <Bar
-                        dataKey="revenue"
-                        fill="var(--color-revenue)"
-                        radius={[0, 4, 4, 0]}
-                        barSize={20}
-                      />
-                    </BarChart>
-                  </ChartContainer>
+                  />
                 )}
               </CardContent>
             </Card>
@@ -380,126 +530,207 @@ export default function DashboardView({
         </div>
       </section>
 
-      {/* Inventory */}
+      {/* Live + Inventory */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Inventory
+          Operations
         </h2>
-        <Card>
-          <CardHeader>
-            <CardTitle>Low Stock Items</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {state.loading && <Skeleton className="h-8 w-full" />}
-            {!state.loading && state.lowStock.length === 0 && hasPerm('perm_products') && (
-              <EmptyInline
-                icon={<CheckCircle2 className="size-6" />}
-                title="All stocked up"
-                description="No tracked products are below their individual low-stock thresholds. Great job!"
-              />
-            )}
-            {!state.loading && !hasPerm('perm_products') && (
-              <EmptyInline
-                icon={<Inbox className="size-6" />}
-                title="Permission needed"
-                description="Product permissions must be granted to see low-stock alerts."
-                action={{ label: 'Open Team settings', onAction: () => {} }}
-              />
-            )}
-            {!state.loading && state.lowStock.length > 0 && (
-              <ScrollArea className="h-56">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="pb-2 pl-2 text-left font-medium text-muted-foreground">Product</th>
-                      <th className="pb-2 text-center font-medium text-muted-foreground">Qty Left</th>
-                      <th className="pb-2 text-right font-medium text-muted-foreground">Threshold</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state.lowStock.map((item) => (
-                      <tr key={item.id} className="border-b last:border-b-0">
-                        <td className="py-2 pl-2">{item.name}</td>
-                        <td className="py-2 text-center">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              item.quantity === 0
-                                ? 'bg-destructive/10 text-destructive'
-                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-                            }`}
-                          >
-                            {item.quantity}
-                          </span>
-                        </td>
-                        <td className="py-2 text-right text-xs text-muted-foreground">{item.threshold}</td>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <LiveOrderQueue symbol={symbol} onResume={() => onQuickSale?.()} />
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Low Stock Items</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Tracked products at or below their threshold
+              </p>
+            </CardHeader>
+            <CardContent>
+              {state.loading && <Skeleton className="h-8 w-full" />}
+              {!state.loading && state.lowStock.length === 0 && hasPerm('perm_products') && (
+                <EmptyInline
+                  icon={<CheckCircle2 className="size-6" />}
+                  title="All stocked up"
+                  description="No tracked products are below their individual low-stock thresholds. Great job!"
+                />
+              )}
+              {!state.loading && !hasPerm('perm_products') && (
+                <EmptyInline
+                  icon={<Inbox className="size-6" />}
+                  title="Permission needed"
+                  description="Product permissions must be granted to see low-stock alerts."
+                  action={{ label: 'Open Team settings', onAction: () => {} }}
+                />
+              )}
+              {!state.loading && state.lowStock.length > 0 && (
+                <ScrollArea className="h-56">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="pb-2 pl-2 text-left font-medium text-muted-foreground">Product</th>
+                        <th className="pb-2 text-center font-medium text-muted-foreground">Qty Left</th>
+                        <th className="pb-2 text-right font-medium text-muted-foreground">Threshold</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
+                    </thead>
+                    <tbody>
+                      {state.lowStock.map((item) => (
+                        <tr key={item.id} className="border-b last:border-b-0">
+                          <td className="py-2 pl-2">{item.name}</td>
+                          <td className="py-2 text-center">
+                            <Badge
+                              variant={item.quantity === 0 ? 'destructive' : 'outline'}
+                              className={item.quantity === 0 ? '' : 'border-amber-400 text-amber-700 dark:text-amber-300'}
+                            >
+                              {item.quantity}
+                            </Badge>
+                          </td>
+                          <td className="py-2 text-right text-xs text-muted-foreground">{item.threshold}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </section>
     </div>
   );
 }
 
-/* ── KPI card with trend ─────────────────────────────────── */
+/* ── KPI card with trend + sparkline ─────────────────── */
 
-function KpiCard({
-  title,
-  value,
-  pct,
-  hint,
-  warn,
-  icon,
-}: {
+type CardDef = {
   title: string;
   value: string;
   pct?: number;
   hint?: string;
-  warn?: boolean;
   icon?: ReactNode;
-}) {
+  spark?: number[];
+  sparkColor?: string;
+  badge?: { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' };
+  onClick?: () => void;
+};
+
+function KpiCard({ title, value, pct, hint, icon, spark, sparkColor, badge, onClick }: CardDef) {
   const hasTrend = typeof pct === 'number';
   const up = (pct ?? 0) >= 0;
+  const Wrapper = onClick ? 'button' : 'div';
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 pb-1">
-        <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent className="p-3 pt-0">
-        <div className="text-2xl font-bold leading-none">{value}</div>
-        <div className="mt-1.5 flex items-center gap-1 text-[11px]">
-          {hasTrend &&
-            (up ? (
-              <TrendingUp className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-            ) : (
-              <TrendingDown className="size-3.5 text-red-600 dark:text-red-400" />
-            ))}
-          {hasTrend && (
-            <span
-              className={
-                up
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-red-600 dark:text-red-400'
-              }
-            >
-              {up ? '+' : ''}
-              {(pct as number).toFixed(0)}%
-            </span>
+    <Wrapper
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={
+        'text-left' +
+        (onClick ? ' rounded-xl outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring' : '')
+      }
+    >
+      <Card className={onClick ? 'h-full' : ''}>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 pb-1">
+          <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
+          {icon}
+        </CardHeader>
+        <CardContent className="p-3 pt-0">
+          <div className="text-2xl font-bold leading-none">{value}</div>
+          <div className="mt-1.5 flex items-center gap-1 text-[11px]">
+            {hasTrend &&
+              (up ? (
+                <TrendingUp className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <TrendingDown className="size-3.5 text-red-600 dark:text-red-400" />
+              ))}
+            {hasTrend && (
+              <span className={up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                {up ? '+' : ''}
+                {(pct as number).toFixed(0)}%
+              </span>
+            )}
+            {badge && (
+              <Badge variant={badge.variant} className="ml-0.5">
+                {badge.label}
+              </Badge>
+            )}
+            {hint && <span className="text-muted-foreground">{hint}</span>}
+          </div>
+          {spark && spark.length > 0 && (
+            <Sparkline
+              data={spark}
+              color={sparkColor ?? 'var(--chart-1)'}
+              className="mt-2 h-8 w-full"
+            />
           )}
-          {!hasTrend && warn && (
-            <span className="rounded-full bg-yellow-100 px-2 py-0.5 font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-              needs attention
-            </span>
-          )}
-          {hint && <span className="text-muted-foreground">{hint}</span>}
+        </CardContent>
+      </Card>
+    </Wrapper>
+  );
+}
+
+/* ── Best sellers with revenue / quantity toggle ─────── */
+
+function BestSellersChart({
+  products,
+  symbol,
+  config,
+}: {
+  products: TopProduct[];
+  symbol: string;
+  config: ChartConfig;
+}) {
+  const [metric, setMetric] = useState<'revenue' | 'quantity'>('revenue');
+  return (
+    <div>
+      <Tabs value={metric} onValueChange={(v) => setMetric(v as 'revenue' | 'quantity')} className="w-full">
+        <div className="mb-2 flex justify-end">
+          <TabsList className="h-7">
+            <TabsTrigger value="revenue" className="h-5 px-2 text-xs">Revenue</TabsTrigger>
+            <TabsTrigger value="quantity" className="h-5 px-2 text-xs">Quantity</TabsTrigger>
+          </TabsList>
         </div>
-      </CardContent>
-    </Card>
+      </Tabs>
+      <ChartContainer
+        config={config}
+        className="w-full"
+        style={{ height: Math.max(220, products.length * 56) }}
+      >
+        <BarChart data={products} layout="vertical" margin={{ left: 8, right: 16 }}>
+          <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+          <XAxis
+            type="number"
+            tickLine={false}
+            axisLine={false}
+            fontSize={12}
+            tickFormatter={(v: number) => (metric === 'revenue' ? compactCurrency(v, symbol) : String(v))}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tickLine={false}
+            axisLine={false}
+            fontSize={12}
+            width={120}
+          />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                formatter={(value) =>
+                  metric === 'revenue'
+                    ? `${symbol}${Number(value).toFixed(2)}`
+                    : `${value} sold`
+                }
+              />
+            }
+            cursor={false}
+          />
+          <Bar
+            dataKey={metric}
+            fill="var(--color-revenue)"
+            radius={[0, 4, 0, 4]}
+            barSize={20}
+          />
+        </BarChart>
+      </ChartContainer>
+    </div>
   );
 }
 
