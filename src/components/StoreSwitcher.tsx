@@ -3,7 +3,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -44,7 +43,9 @@ export function StoreSwitcher({
         side="top"
         className="w-[--anchor-width] min-w-56"
       >
-        <DropdownMenuLabel>Outlets</DropdownMenuLabel>
+        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+          Outlets
+        </div>
         <DropdownMenuSeparator />
         {outlets.map((o) => (
           <DropdownMenuItem

@@ -48,7 +48,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
@@ -301,10 +300,10 @@ export default function AppShell() {
           <span className="hidden text-sm font-medium sm:inline">{user?.fullname}</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel className="flex flex-col">
+          <div className="flex flex-col px-2 py-1.5 text-xs font-medium">
             <span>{user?.fullname}</span>
-            <span className="text-xs font-normal text-muted-foreground">@{user?.username}</span>
-          </DropdownMenuLabel>
+            <span className="font-normal text-muted-foreground">@{user?.username}</span>
+          </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => goTo('settings')}>
             <User className="size-4" /> Profile
