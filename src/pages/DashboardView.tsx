@@ -4,7 +4,6 @@ import {
   TrendingDown,
   DollarSign,
   ShoppingCart,
-  Receipt,
   Package,
   Wallet,
   PieChart as PieChartIcon,
@@ -217,10 +216,6 @@ export default function DashboardView({
   }));
   const maxTotal = Math.max(1, ...state.trend.map((p) => p.total));
 
-  const aovSeries = state.trend.map((p) =>
-    p.orders > 0 ? p.total / p.orders : 0
-  );
-
   const cards: CardDef[] = k
     ? [
         {
@@ -240,26 +235,6 @@ export default function DashboardView({
           icon: <ShoppingCart className="size-4 text-muted-foreground" />,
           spark: state.trend.map((p) => p.orders),
           sparkColor: 'var(--chart-2)',
-        },
-        {
-          title: 'Avg Order Value',
-          value: fmt(k.aov),
-          pct: k.aovDeltaPct,
-          hint: 'per order',
-          icon: <Receipt className="size-4 text-muted-foreground" />,
-          spark: aovSeries,
-          sparkColor: 'var(--chart-3)',
-        },
-        {
-          title: 'Held Orders',
-          value: String(k.heldOrders),
-          hint: k.heldOrders > 0 ? 'needs attention' : 'all clear',
-          icon: <ShoppingCart className="size-4 text-muted-foreground" />,
-          badge: {
-            label: k.heldOrders > 0 ? `${k.heldOrders} held` : 'none',
-            variant: k.heldOrders > 0 ? 'destructive' : 'secondary',
-          },
-          onClick: onHeldClick,
         },
         {
           title: 'Low Stock',
@@ -335,21 +310,22 @@ export default function DashboardView({
           Performance
         </h2>
         {state.loading && !k ? (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
               <Card key={i}>
-                <CardHeader className="pb-2">
-                  <Skeleton className="h-4 w-24" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-9 w-32" />
-                  <Skeleton className="mt-2 h-3 w-20" />
+                <CardContent className="flex h-full flex-col gap-3 p-4">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="size-9 rounded-lg" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                  <Skeleton className="h-7 w-28" />
+                  <Skeleton className="h-3 w-24" />
                 </CardContent>
               </Card>
             ))}
           </div>
         ) : (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             {cards.map((c) => (
               <KpiCard key={c.title} {...c} />
             ))}
@@ -626,26 +602,29 @@ function KpiCard({ title, value, pct, hint, icon, spark, sparkColor, badge, onCl
         (onClick ? ' rounded-xl outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring' : '')
       }
     >
-      <Card className={onClick ? 'h-full' : ''}>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 pb-1">
-          <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
-          {icon}
-        </CardHeader>
-        <CardContent className="p-3 pt-0">
-          <div className="text-2xl font-bold leading-none">{value}</div>
-          <div className="mt-1.5 flex items-center gap-1 text-[11px]">
+      <Card className={'h-full' + (onClick ? '' : '')}>
+        <CardContent className="flex h-full flex-col gap-3 p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              {icon}
+            </span>
+            <span className="text-sm font-medium text-muted-foreground">{title}</span>
+          </div>
+          <div className="text-2xl font-bold leading-none tracking-tight">{value}</div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
             {hasTrend &&
               (up ? (
-                <TrendingUp className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                  <TrendingUp className="size-3.5" />
+                  {up ? '+' : ''}
+                  {(pct as number).toFixed(0)}%
+                </span>
               ) : (
-                <TrendingDown className="size-3.5 text-red-600 dark:text-red-400" />
+                <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400">
+                  <TrendingDown className="size-3.5" />
+                  {(pct as number).toFixed(0)}%
+                </span>
               ))}
-            {hasTrend && (
-              <span className={up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
-                {up ? '+' : ''}
-                {(pct as number).toFixed(0)}%
-              </span>
-            )}
             {badge && (
               <Badge variant={badge.variant} className="ml-0.5">
                 {badge.label}
@@ -657,7 +636,7 @@ function KpiCard({ title, value, pct, hint, icon, spark, sparkColor, badge, onCl
             <Sparkline
               data={spark}
               color={sparkColor ?? 'var(--chart-1)'}
-              className="mt-2 h-8 w-full"
+              className="mt-auto h-8 w-full"
             />
           )}
         </CardContent>
