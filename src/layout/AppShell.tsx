@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   CalendarRange,
@@ -56,6 +56,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import { useAuth } from '../context/AuthContext';
 import { useStoreData } from '../hooks/useStoreData';
 import { getPosBridge } from '../bridge';
@@ -132,6 +142,26 @@ export default function AppShell() {
   });
   const [heldOrders, setHeldOrders] = useState<Transaction[]>([]);
 
+  // Confirmation gate for leaving the current mode/screen.
+  const pendingAction = useRef<(() => void) | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMsg, setConfirmMsg] = useState('');
+  const [confirmTitle, setConfirmTitle] = useState('');
+
+  const requestConfirm = useCallback((title: string, message: string, action: () => void) => {
+    setConfirmTitle(title);
+    setConfirmMsg(message);
+    pendingAction.current = action;
+    setConfirmOpen(true);
+  }, []);
+
+  const runConfirmed = useCallback(() => {
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    setConfirmOpen(false);
+    action?.();
+  }, []);
+
   const perms: Permissions = {
     perm_products: hasPerm('perm_products') ? 1 : 0,
     perm_categories: hasPerm('perm_categories') ? 1 : 0,
@@ -147,6 +177,12 @@ export default function AppShell() {
   const symbol = settings?.symbol || 'Rs';
   const logoUrl = buildLogoUrl(settings?.img, getUploadsBase());
   const storeName = settings?.store || 'Store POS';
+
+  const labelFor = useCallback(
+    (id: NavItemId) =>
+      groups.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? String(id),
+    [groups]
+  );
 
   const lowStockCount = useMemo(
     () =>
@@ -183,10 +219,37 @@ export default function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const goTo = (v: NavItemId) => {
-    setMode('dashboard');
-    setView(v);
-  };
+  const switchMode = useCallback(
+    (target: Mode) => {
+      if (target === mode) return;
+      requestConfirm(
+        target === 'till' ? 'Switch to the Till?' : 'Switch to the Dashboard?',
+        target === 'till'
+          ? 'This leaves the management dashboard. The till will open for a new sale.'
+          : 'The current till view will be hidden. Any in-progress order will be parked.',
+        () => setMode(target)
+      );
+    },
+    [mode, requestConfirm]
+  );
+
+  const goTo = useCallback(
+    (v: NavItemId) => {
+      if (mode === 'dashboard') {
+        setView(v);
+        return;
+      }
+      requestConfirm(
+        'Leave the till?',
+        `You'll switch to the management dashboard and open ${labelFor(v)}. Any in-progress order will be parked.`,
+        () => {
+          setMode('dashboard');
+          setView(v);
+        }
+      );
+    },
+    [mode, requestConfirm, labelFor]
+  );
 
   const outlets: Outlet[] = useMemo(
     () => [{ id: 'main', name: storeName, logoUrl }],
@@ -232,7 +295,7 @@ export default function AppShell() {
       onSelect: () => goTo('catalog'),
     }));
     return [...nav, ...actions, ...productCmds];
-  }, [groups, products, reload]);
+  }, [groups, products, reload, goTo]);
 
   function renderView() {
     switch (activeView) {
@@ -373,33 +436,12 @@ export default function AppShell() {
     );
   }
 
-  function TopBar({ withTrigger }: { withTrigger: boolean }) {
+  function TopBar() {
     return (
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
-        {withTrigger && <SidebarTrigger />}
+        <SidebarTrigger />
 
         <BrandMark logoUrl={logoUrl} name={storeName} />
-
-        <Separator orientation="vertical" className="h-5" />
-
-        <div className="flex rounded-md border p-0.5">
-          <Button
-            variant={mode === 'till' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setMode('till')}
-          >
-            <ShoppingCart className="size-4" />
-            Till
-          </Button>
-          <Button
-            variant={mode === 'dashboard' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setMode('dashboard')}
-          >
-            <LayoutDashboard className="size-4" />
-            Dashboard
-          </Button>
-        </div>
 
         {mode === 'dashboard' && (
           <>
@@ -447,52 +489,11 @@ export default function AppShell() {
     );
   }
 
-  if (mode === 'till') {
-    return (
-      <div className="flex h-screen flex-col bg-background">
-        <TopBar withTrigger={false} />
-        {error && (
-          <div className="border-b bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-        <main className="min-h-0 flex-1">
-          <TillView
-            products={products}
-            categories={categories}
-            customers={customers}
-            settings={settings}
-            holdCount={holdCount}
-            onHoldCount={setHoldCount}
-            onRefresh={reload}
-          />
-        </main>
-        <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
-        <Toaster />
-      </div>
-    );
-  }
-
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
         <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="text-base"
-                tooltip="Till"
-                onClick={() => setMode('till')}
-                size="lg"
-              >
-                {logoUrl ? (
-                  <img src={logoUrl} alt="" className="size-5 rounded object-contain" />
-                ) : (
-                  <Store className="size-5 text-primary" />
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <StoreSwitcher outlets={outlets} activeId="main" />
         </SidebarHeader>
         <SidebarContent>
           <SidebarMenu className="px-2 pt-2">
@@ -520,8 +521,8 @@ export default function AppShell() {
                     return (
                       <SidebarMenuItem key={item.id}>
                         <SidebarMenuButton
-                          isActive={activeView === item.id}
-                          onClick={() => setView(item.id)}
+                          isActive={mode === 'dashboard' && activeView === item.id}
+                          onClick={() => goTo(item.id)}
                           tooltip={item.label}
                           className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
                         >
@@ -536,23 +537,76 @@ export default function AppShell() {
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter className="gap-2">
-          <StoreSwitcher outlets={outlets} activeId="main" />
+        <SidebarFooter className="gap-1">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={mode === 'till'}
+                onClick={() => switchMode('till')}
+                tooltip="Till"
+                className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
+              >
+                <ShoppingCart />
+                <span>Till</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={mode === 'dashboard'}
+                onClick={() => switchMode('dashboard')}
+                tooltip="Dashboard"
+                className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
+              >
+                <LayoutDashboard />
+                <span>Dashboard</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
 
       <SidebarInset>
-        <TopBar withTrigger />
+        <TopBar />
         {error && (
           <div className="border-b bg-destructive/10 px-4 py-2 text-sm text-destructive">
             {error}
           </div>
         )}
-        <main className="min-h-0 flex-1 overflow-auto p-6">{renderView()}</main>
+        <main className="min-h-0 flex-1 overflow-hidden">
+          {mode === 'till' ? (
+            <TillView
+              products={products}
+              categories={categories}
+              customers={customers}
+              settings={settings}
+              holdCount={holdCount}
+              onHoldCount={setHoldCount}
+              onRefresh={reload}
+            />
+          ) : (
+            <div className="h-full overflow-auto p-6">{renderView()}</div>
+          )}
+        </main>
       </SidebarInset>
+
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
       <Toaster />
+
+      <AlertDialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmMsg}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={runConfirmed}>Switch</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }
