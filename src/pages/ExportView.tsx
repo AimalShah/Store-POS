@@ -5,6 +5,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Loader2,
   Package,
   ReceiptText,
   Users,
@@ -15,6 +16,7 @@ import { getPosBridge, isElectronBridge } from '../bridge';
 import { Checkbox } from '../components/ui/checkbox';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { Label } from '../components/ui/label';
 import {
   buildCsv,
@@ -218,10 +220,21 @@ export default function ExportView() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button onClick={runExport} disabled={exporting} className="gap-2">
-              <Download className="size-4" />
-              {exporting ? 'Exporting…' : 'Export'}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    onClick={runExport}
+                    disabled={exporting}
+                    size="icon"
+                    aria-label="Export"
+                  >
+                    {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                  </Button>
+                }
+              />
+              <TooltipContent>Export</TooltipContent>
+            </Tooltip>
             {format === 'xlsx' && (
               <span className="text-xs text-muted-foreground">One workbook with a sheet per dataset.</span>
             )}

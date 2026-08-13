@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Filter, Loader2, Printer } from 'lucide-react';
 import { api, Settings, Transaction, User } from '../api/client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -14,6 +15,8 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { highlight } from '../lib/highlight';
 import Invoice from './Invoice';
 
 type Props = {
@@ -160,9 +163,16 @@ export default function TransactionsModal({
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={load} disabled={loading}>
-          {loading ? 'Loading…' : 'Filter'}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="outline" size="icon" aria-label="Filter" onClick={load} disabled={loading}>
+                {loading ? <Loader2 className="size-4 animate-spin" /> : <Filter className="size-4" />}
+              </Button>
+            }
+          />
+          <TooltipContent>Filter</TooltipContent>
+        </Tooltip>
       </div>
 
       {rows.length === 0 && !loading ? (
@@ -193,12 +203,10 @@ export default function TransactionsModal({
                 <TableCell>{r.till}</TableCell>
                 <TableCell>{r.customer_name}</TableCell>
                 <TableCell className="text-right">
-                  {symbol}
-                  {Number(r.total).toFixed(2)}
+                  <span className={highlight.green}>{symbol}{Number(r.total).toFixed(2)}</span>
                 </TableCell>
                 <TableCell className="text-right">
-                  {symbol}
-                  {Number(r.paid).toFixed(2)}
+                  <span className={highlight.blue}>{symbol}{Number(r.paid).toFixed(2)}</span>
                 </TableCell>
                 <TableCell>
                   {r.status === 1 ? (
@@ -209,9 +217,16 @@ export default function TransactionsModal({
                 </TableCell>
                 <TableCell>
                   {r.status === 1 && (
-                    <Button variant="outline" size="sm" onClick={() => setInvoice(r)}>
-                      Print
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button variant="outline" size="icon" aria-label="Print invoice" onClick={() => setInvoice(r)}>
+                            <Printer className="size-4" />
+                          </Button>
+                        }
+                      />
+                      <TooltipContent>Print invoice</TooltipContent>
+                    </Tooltip>
                   )}
                 </TableCell>
               </TableRow>
@@ -233,7 +248,16 @@ export default function TransactionsModal({
           <Button variant="outline" onClick={() => setInvoice(null)}>
             Close
           </Button>
-          <Button onClick={() => window.print()}>Print</Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="outline" size="icon" aria-label="Print invoice" onClick={() => window.print()}>
+                  <Printer className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipContent>Print invoice</TooltipContent>
+          </Tooltip>
         </DialogFooter>
       </DialogContent>
     </Dialog>

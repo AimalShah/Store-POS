@@ -172,8 +172,9 @@ router.post('/new', (req, res) => {
       .prepare(
         `INSERT INTO transactions (
           ref_number, customer, customer_name, status, user_id, user_name, till,
-          discount, subtotal, tax, total, paid, change, payment_type, payment_breakdown_json, items_json, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          discount, subtotal, tax, total, paid, change, payment_type, payment_breakdown_json, items_json, date,
+          fulfillment, delivery_name, delivery_contact, delivery_address
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         ref,
@@ -192,7 +193,11 @@ router.post('/new', (req, res) => {
         parseInt(body.payment_type, 10) || 1,
         JSON.stringify(paymentBreakdown),
         JSON.stringify(items),
-        saleDate
+        saleDate,
+        body.fulfillment || 'takeaway',
+        body.delivery_name || '',
+        body.delivery_contact || '',
+        body.delivery_address || ''
       );
 
     if (isPaid) {
@@ -230,7 +235,8 @@ router.put('/new/:id', (req, res) => {
     db.prepare(
       `UPDATE transactions SET
         ref_number = ?, customer = ?, customer_name = ?, status = ?, user_id = ?, user_name = ?, till = ?,
-        discount = ?, subtotal = ?, tax = ?, total = ?, paid = ?, change = ?, payment_type = ?, payment_breakdown_json = ?, items_json = ?, date = ?
+        discount = ?, subtotal = ?, tax = ?, total = ?, paid = ?, change = ?, payment_type = ?, payment_breakdown_json = ?, items_json = ?, date = ?,
+        fulfillment = ?, delivery_name = ?, delivery_contact = ?, delivery_address = ?
        WHERE id = ?`
     ).run(
       ref,
@@ -250,6 +256,10 @@ router.put('/new/:id', (req, res) => {
       JSON.stringify(paymentBreakdown),
       JSON.stringify(items),
       saleDate,
+      body.fulfillment || 'takeaway',
+      body.delivery_name || '',
+      body.delivery_contact || '',
+      body.delivery_address || '',
       id
     );
 

@@ -5,6 +5,8 @@ type Props = {
   onChange: (value: string) => void;
   due: number;
   symbol: string;
+  showQuickCash?: boolean;
+  showNumpad?: boolean;
 };
 
 const SA_NOTES = [10, 20, 50, 100, 200];
@@ -13,7 +15,14 @@ function formatAmount(n: number) {
   return n.toFixed(2);
 }
 
-export default function PaymentPad({ value, onChange, due, symbol }: Props) {
+export default function PaymentPad({
+  value,
+  onChange,
+  due,
+  symbol,
+  showQuickCash = true,
+  showNumpad = true,
+}: Props) {
   // After Exact / note pick, the next digit replaces instead of appending.
   const replaceNext = useRef(false);
 
@@ -60,33 +69,51 @@ export default function PaymentPad({ value, onChange, due, symbol }: Props) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
   return (
-    <>
-      <div className="quick-cash">
-        <button type="button" className="btn" onClick={() => setAmount(due)}>
-          Exact
-        </button>
-        {SA_NOTES.map((note) => (
+    <div className="space-y-3">
+      {showQuickCash && (
+        <div className="flex flex-wrap gap-2">
           <button
-            key={note}
             type="button"
-            className="btn"
-            onClick={() => setAmount(note)}
+            onClick={() => setAmount(due)}
+            className="rounded-md border-2 border-border bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-[3px_3px_0_0] shadow-black/20 transition-all hover:-translate-y-0.5 active:translate-y-0"
           >
-            {symbol}
-            {note}
+            Exact ({symbol}
+            {due.toFixed(2)})
           </button>
-        ))}
-      </div>
-      <div className="numpad">
-        {keys.map((k) => (
-          <button key={k} type="button" onClick={() => append(k)}>
-            {k}
+          {SA_NOTES.map((note) => (
+            <button
+              key={note}
+              type="button"
+              onClick={() => setAmount(note)}
+              className="rounded-md border-2 border-border bg-card px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0] shadow-black/15 transition-all hover:-translate-y-0.5 active:translate-y-0"
+            >
+              {symbol}
+              {note}
+            </button>
+          ))}
+        </div>
+      )}
+      {showNumpad && (
+        <div className="grid grid-cols-3 gap-2">
+          {keys.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => append(k)}
+              className="flex h-14 items-center justify-center rounded-lg border-2 border-border bg-card text-lg font-bold shadow-[3px_3px_0_0] shadow-black/15 transition-all hover:-translate-y-0.5 active:translate-y-0"
+            >
+              {k}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => append('C')}
+            className="col-span-3 flex h-11 items-center justify-center rounded-lg border-2 border-border bg-card text-sm font-semibold text-muted-foreground shadow-[3px_3px_0_0] shadow-black/15 transition-all hover:-translate-y-0.5 active:translate-y-0"
+          >
+            Clear
           </button>
-        ))}
-        <button type="button" className="numpad-clear" onClick={() => append('C')}>
-          Clear
-        </button>
-      </div>
-    </>
+        </div>
+      )}
+    </div>
   );
 }

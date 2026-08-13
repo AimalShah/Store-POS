@@ -93,6 +93,17 @@ export async function initDatabase(filePath) {
 
     CREATE INDEX IF NOT EXISTS idx_product_components_parent ON product_components(parent_product_id);
 
+    CREATE TABLE IF NOT EXISTS product_sizes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      price REAL NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_product_sizes_product ON product_sizes(product_id);
+
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -216,6 +227,31 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     if (!cols.some((c) => c.name === 'cost')) {
       db.prepare("ALTER TABLE products ADD COLUMN cost REAL NOT NULL DEFAULT 0").run();
     }
+    if (!cols.some((c) => c.name === 'variants_json')) {
+      db.prepare("ALTER TABLE products ADD COLUMN variants_json TEXT NOT NULL DEFAULT '[]'").run();
+    }
+    if (!cols.some((c) => c.name === 'modifiers_json')) {
+      db.prepare("ALTER TABLE products ADD COLUMN modifiers_json TEXT NOT NULL DEFAULT '[]'").run();
+    }
+    if (!cols.some((c) => c.name === 'hot')) {
+      db.prepare("ALTER TABLE products ADD COLUMN hot INTEGER NOT NULL DEFAULT 0").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: add fulfillment + delivery columns to transactions if missing
+  try {
+    const txCols = db.prepare('PRAGMA table_info(transactions)').all();
+    const addTxCol = (name, def) => {
+      if (!txCols.some((c) => c.name === name)) {
+        db.prepare(`ALTER TABLE transactions ADD COLUMN ${name} ${def}`).run();
+      }
+    };
+    addTxCol('fulfillment', "TEXT NOT NULL DEFAULT 'takeaway'");
+    addTxCol('delivery_name', "TEXT NOT NULL DEFAULT ''");
+    addTxCol('delivery_contact', "TEXT NOT NULL DEFAULT ''");
+    addTxCol('delivery_address', "TEXT NOT NULL DEFAULT ''");
   } catch {
     /* ignore */
   }
@@ -454,6 +490,10 @@ export function mapTransaction(row) {
     items,
     date: row.date,
     shift_id: row.shift_id,
+    fulfillment: row.fulfillment,
+    delivery_name: row.delivery_name,
+    delivery_contact: row.delivery_contact,
+    delivery_address: row.delivery_address,
   };
 }
 

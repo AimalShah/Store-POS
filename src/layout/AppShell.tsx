@@ -23,12 +23,14 @@ import {
   Warehouse,
   AlertTriangle,
   Bell,
+  ChevronDown,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { Toaster } from '../components/ui/sonner';
 import { Badge } from '../components/ui/badge';
+import { applyTheme, isThemeId, DEFAULT_THEME } from '../lib/theme';
 import {
   Sidebar,
   SidebarContent,
@@ -175,6 +177,11 @@ export default function AppShell() {
     pendingAction.current = action;
     setConfirmOpen(true);
   }, []);
+
+  // Apply the saved theme preset (or the default) whenever settings load or change.
+  useEffect(() => {
+    applyTheme(isThemeId(settings?.theme) ? settings.theme : DEFAULT_THEME);
+  }, [settings?.theme]);
 
   const runConfirmed = useCallback(() => {
     const action = pendingAction.current;
@@ -375,13 +382,14 @@ export default function AppShell() {
   function UserMenu() {
     return (
       <DropdownMenu>
-        <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-full border border-transparent px-1 pr-2 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
+        <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-full border px-1 pr-2 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
           <Avatar size="sm">
             <AvatarFallback className="bg-primary/10 text-primary">
               {user ? initials(user.fullname) : 'U'}
             </AvatarFallback>
           </Avatar>
           <span className="hidden text-sm font-medium sm:inline">{user?.fullname}</span>
+          <ChevronDown className="size-4 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <div className="flex flex-col px-2 py-1.5 text-xs font-medium">

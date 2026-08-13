@@ -9,6 +9,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Separator } from '../components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { highlight } from '../lib/highlight';
 import { AlertCircle, Banknote, CreditCard, Smartphone, Calculator, ReceiptText } from 'lucide-react';
 
 type Props = {
@@ -214,11 +216,11 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
                     <TableCell>{getStatusBadge(shift.status)}</TableCell>
                     <TableCell className="text-sm">{formatDateTime(shift.openedAt)}</TableCell>
                     <TableCell className="text-sm">{shift.closedAt ? formatDateTime(shift.closedAt) : '—'}</TableCell>
-                    <TableCell className="font-medium">{symbol}{shift.floatAmount.toFixed(2)}</TableCell>
-                    <TableCell className="font-medium">{shift.countedCash != null ? `${symbol}${shift.countedCash.toFixed(2)}` : '—'}</TableCell>
+                    <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{shift.floatAmount.toFixed(2)}</span></TableCell>
+                    <TableCell className="font-medium"><span className={highlight.blue}>{shift.countedCash != null ? `${symbol}${shift.countedCash.toFixed(2)}` : '—'}</span></TableCell>
                     <TableCell className="font-medium">
                       {shift.zReport && shift.zReport.difference !== undefined ? (
-                        <span className={shift.zReport.difference >= 0 ? 'text-green-600' : 'text-destructive'}>
+                        <span className={shift.zReport.difference >= 0 ? highlight.green : highlight.red}>
                           {shift.zReport.difference >= 0 ? '+' : ''}{symbol}{shift.zReport.difference.toFixed(2)}
                         </span>
                       ) : (
@@ -424,10 +426,16 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
               )}
 
               <div className="flex justify-end pt-4 border-t">
-                <Button variant="outline" onClick={() => window.print()}>
-                  <ReceiptText className="size-3.5 mr-1.5" />
-                  Print Report
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button variant="outline" size="icon" aria-label="Print Report" onClick={() => window.print()}>
+                        <ReceiptText className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Print Report</TooltipContent>
+                </Tooltip>
               </div>
             </div>
           )}
@@ -535,10 +543,16 @@ export default function ShiftView({ settings, onShiftChange }: Props) {
               </Card>
 
               <div className="flex justify-end pt-4 border-t">
-                <Button variant="outline" onClick={() => window.print()}>
-                  <ReceiptText className="size-3.5 mr-1.5" />
-                  Print Z Report
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button variant="outline" size="icon" aria-label="Print Z Report" onClick={() => window.print()}>
+                        <ReceiptText className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Print Z Report</TooltipContent>
+                </Tooltip>
               </div>
             </div>
           )}

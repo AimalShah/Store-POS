@@ -124,10 +124,10 @@ export default function CustomerSelect({
   };
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className="relative w-full" ref={rootRef}>
       <button
         type="button"
-        className={`flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm hover:bg-accent ${open ? 'ring-1 ring-primary' : ''}`}
+        className={`flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 text-left text-sm hover:bg-accent ${open ? 'ring-1 ring-primary' : ''}`}
         onClick={() => {
           setOpen((v) => !v);
           setTimeout(() => inputRef.current?.focus(), 0);
@@ -136,9 +136,6 @@ export default function CustomerSelect({
         <span className={avatar}>{selected.name.slice(0, 1).toUpperCase()}</span>
         <span className={meta}>
           <strong className={metaName}>{selected.name}</strong>
-          <span className={metaSub}>
-            {selected.phone || (selected.id === '0' ? 'No account' : 'No phone')}
-          </span>
         </span>
         <span className="ml-auto text-muted-foreground">▾</span>
       </button>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
 import { api, Settings } from '../api/client';
 import PhotoPicker from '../components/PhotoPicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -7,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
 import { Checkbox } from '../components/ui/checkbox';
+import { applyTheme, isThemeId, DEFAULT_THEME, THEME_IDS, THEME_LABELS } from '../lib/theme';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +37,7 @@ export default function SettingsView({ settings, onSaved }: Props) {
     charge_tax: false,
     footer: '',
     img: '',
+    theme: DEFAULT_THEME,
   });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +56,7 @@ export default function SettingsView({ settings, onSaved }: Props) {
       charge_tax: !!settings?.charge_tax,
       footer: settings?.footer || '',
       img: settings?.img || '',
+      theme: isThemeId(settings?.theme) ? settings.theme : DEFAULT_THEME,
     });
   }, [settings]);
 
@@ -65,6 +69,7 @@ export default function SettingsView({ settings, onSaved }: Props) {
         if (k === 'charge_tax') fd.append(k, form.charge_tax ? '1' : '0');
         else fd.append(k, String(v));
       });
+      applyTheme(isThemeId(form.theme) ? form.theme : 'mono');
 
       await api.saveSettings(fd);
 
@@ -183,6 +188,29 @@ export default function SettingsView({ settings, onSaved }: Props) {
                 value={form.symbol}
                 onChange={(e) => setForm({ ...form, symbol: e.target.value })}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Theme preset</Label>
+              <div className="flex gap-2">
+                {THEME_IDS.map((id) => {
+                  const selected = form.theme === id;
+                  return (
+                    <Button
+                      key={id}
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      onClick={() => {
+                        setForm({ ...form, theme: id });
+                        applyTheme(id);
+                      }}
+                      className={`flex-1 gap-1.5 ${selected ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+                    >
+                      {selected && <Check className="size-4" />}
+                      {THEME_LABELS[id]}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox

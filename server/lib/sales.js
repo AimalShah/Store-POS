@@ -1,0 +1,150 @@
+import { getDb } from '../db.js';
+
+const METHOD_BY_TYPE = { 1: 'cash', 2: 'card', 3: 'mobile' };
+
+export function parseJson(raw, fallback) {
+  try {
+    return JSON.parse(raw || '[]');
+  } catch {
+    return fallback;
+  }
+}
+
+export function itemLineTotal(item) {
+  const base = Number(item.price) * Number(item.quantity);
+  if (!item.discountValue || item.discountValue <= 0) return base;
+  if (item.discountType === 'percent') {
+    return Math.max(0, base * (1 - Number(item.discountValue) / 100));
+  }
+  return Math.max(0, base - Number(item.discountValue));
+}
+
+// Paid sales over an optional window, optionally scoped to a till.
+export function loadSales({ start, end, till } = {}) {
+  const db = getDb();
+  let sql = `SELECT * FROM transactions WHERE status = 1`;
+  const params = [];
+  if (start) {
+    sql += ' AND date >= ?';
+    params.push(start.toISOString());
+  }
+  if (end) {
+    sql += ' AND date <= ?';
+    params.push(end.toISOString());
+  }
+  if (till) {
+    sql += ' AND till = ?';
+    params.push(till);
+  }
+  sql += ' ORDER BY date ASC';
+  return db.prepare(sql).all(...params);
+}
+
+export function computeBestSellers({ start, end, till, limit } = {}) {
+  const db = getDb();
+  const rows = loadSales({ start, end, till });
+  const bestSellers = new Map();
+
+  for (const row of rows) {
+    const items = parseJson(row.items_json, []);
+    for (const item of items) {
+      const qty = Number(item.quantity) || 0;
+      const productId = parseInt(item.id ?? item._id, 10);
+      const key = productId || item.name || 'Unknown';
+      const current =
+        bestSellers.get(key) ||
+        {
+          id: productId || null,
+          name: item.name || 'Unknown',
+          quantity: 0,
+          revenue: 0,
+        };
+      current.quantity += qty;
+      current.revenue += itemLineTotal(item);
+      bestSellers.set(key, current);
+    }
+  }
+
+  const ranked = [...bestSellers.values()].sort(
+    (a, b) => b.quantity - a.quantity || b.revenue - a.revenue
+  );
+  return typeof limit === 'number' ? ranked.slice(0, limit) : ranked;
+}
+
+export function computeSalesSummary({ start, end, till } = {}) {
+  const db = getDb();
+  const rows = loadSales({ start, end, till });
+
+  const productCats = new Map(
+    db.prepare('SELECT id, category FROM products').all().map((p) => [p.id, p.category])
+  );
+
+  let saleCount = 0;
+  let itemsSold = 0;
+  let subtotal = 0;
+  let discount = 0;
+  let tax = 0;
+  let totalSales = 0;
+
+  const byCategory = new Map();
+  const byPayment = new Map();
+  const bestSellers = new Map();
+
+  for (const row of rows) {
+    saleCount += 1;
+    subtotal += row.subtotal || 0;
+    discount += row.discount || 0;
+    tax += row.tax || 0;
+    totalSales += row.total || 0;
+
+    let breakdown = parseJson(row.payment_breakdown_json, []);
+    if (!breakdown.length) {
+      breakdown = [
+        { method: METHOD_BY_TYPE[row.payment_type] || 'cash', amount: row.total || 0 },
+      ];
+    }
+    for (const pb of breakdown) {
+      const method = pb.method || METHOD_BY_TYPE[row.payment_type] || 'cash';
+      const current = byPayment.get(method) || { method, count: 0, amount: 0 };
+      current.count += 1;
+      current.amount += Number(pb.amount) || 0;
+      byPayment.set(method, current);
+    }
+
+    const items = parseJson(row.items_json, []);
+    for (const item of items) {
+      const lineTotal = itemLineTotal(item);
+      const qty = Number(item.quantity) || 0;
+      itemsSold += qty;
+
+      const productId = parseInt(item.id ?? item._id, 10);
+      const category = (productId && productCats.get(productId)) || 'Uncategorized';
+      const catCurrent = byCategory.get(category) || { category, count: 0, revenue: 0 };
+      catCurrent.count += qty;
+      catCurrent.revenue += lineTotal;
+      byCategory.set(category, catCurrent);
+
+      const sellerKey = productId || item.name || 'Unknown';
+      const sellerCurrent =
+        bestSellers.get(sellerKey) ||
+        {
+          id: productId || null,
+          name: item.name || 'Unknown',
+          quantity: 0,
+          revenue: 0,
+        };
+      sellerCurrent.quantity += qty;
+      sellerCurrent.revenue += lineTotal;
+      bestSellers.set(sellerKey, sellerCurrent);
+    }
+  }
+
+  return {
+    summary: { saleCount, itemsSold, subtotal, discount, tax, totalSales },
+    byCategory: [...byCategory.values()].sort((a, b) => b.revenue - a.revenue),
+    byPaymentMethod: [...byPayment.values()].sort((a, b) => b.amount - a.amount),
+    bestSellers: [...bestSellers.values()].sort(
+      (a, b) => b.quantity - a.quantity || b.revenue - a.revenue
+    ),
+  };
+}

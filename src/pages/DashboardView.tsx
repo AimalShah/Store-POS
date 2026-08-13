@@ -36,6 +36,7 @@ import {
 
 import { api, Category, Product, Settings, Transaction } from '../api/client';
 import { Button } from '../components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -223,7 +224,8 @@ export default function DashboardView({
           value: fmt(k.sales),
           pct: k.salesDeltaPct,
           hint: 'vs previous period',
-          icon: <DollarSign className="size-4 text-muted-foreground" />,
+          icon: <DollarSign className="size-4 text-green-600" />,
+          iconBg: 'bg-green-100',
           spark: state.trend.map((p) => p.total),
           sparkColor: 'var(--chart-1)',
         },
@@ -232,7 +234,8 @@ export default function DashboardView({
           value: String(k.orders),
           pct: k.ordersDeltaPct,
           hint: 'completed sales',
-          icon: <ShoppingCart className="size-4 text-muted-foreground" />,
+          icon: <ShoppingCart className="size-4 text-blue-600" />,
+          iconBg: 'bg-blue-100',
           spark: state.trend.map((p) => p.orders),
           sparkColor: 'var(--chart-2)',
         },
@@ -240,7 +243,8 @@ export default function DashboardView({
           title: 'Low Stock',
           value: String(k.lowStock),
           hint: 'items below threshold',
-          icon: <Package className="size-4 text-muted-foreground" />,
+          icon: <Package className="size-4 text-amber-600" />,
+          iconBg: 'bg-amber-100',
           badge: {
             label: k.lowStock > 0 ? `${k.lowStock} low` : 'ok',
             variant: k.lowStock > 0 ? 'default' : 'secondary',
@@ -251,7 +255,8 @@ export default function DashboardView({
           title: 'Profit & Margin',
           value: fmt(k.profit),
           hint: `Margin ${(k.marginPct ?? 0).toFixed(1)}% of sales`,
-          icon: <Wallet className="size-4 text-muted-foreground" />,
+          icon: <Wallet className="size-4 text-purple-600" />,
+          iconBg: 'bg-purple-100',
           spark: state.trend.map((p) => p.profit),
           sparkColor: 'var(--chart-5)',
         },
@@ -276,9 +281,16 @@ export default function DashboardView({
             <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
           </span>
           Live · updated {Math.round((Date.now() - updatedAt) / 1000)}s ago
-          <Button variant="outline" size="sm" className="ml-1 h-7 gap-1" onClick={loadData}>
-            <RefreshCw className="size-3.5" /> Refresh
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="outline" size="icon-sm" className="ml-1" aria-label="Refresh" onClick={loadData}>
+                  <RefreshCw className="size-3.5" />
+                </Button>
+              }
+            />
+            <TooltipContent>Refresh</TooltipContent>
+          </Tooltip>
         </div>
       </header>
 
@@ -583,13 +595,14 @@ type CardDef = {
   pct?: number;
   hint?: string;
   icon?: ReactNode;
+  iconBg?: string;
   spark?: number[];
   sparkColor?: string;
   badge?: { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' };
   onClick?: () => void;
 };
 
-function KpiCard({ title, value, pct, hint, icon, spark, sparkColor, badge, onClick }: CardDef) {
+function KpiCard({ title, value, pct, hint, icon,iconBg, spark, sparkColor, badge, onClick }: CardDef) {
   const hasTrend = typeof pct === 'number';
   const up = (pct ?? 0) >= 0;
   const Wrapper = onClick ? 'button' : 'div';
@@ -603,15 +616,11 @@ function KpiCard({ title, value, pct, hint, icon, spark, sparkColor, badge, onCl
       }
     >
       <Card className={'h-full' + (onClick ? '' : '')}>
-        <CardContent className="flex h-full flex-col gap-3 p-4">
-          <div className="flex items-center gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <CardContent className="flex h-full flex-col gap-4 px-4 py-0">
+          <div className="flex justify-between items-center gap-3">
+            <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBg ?? 'bg-muted'} text-muted-foreground`}>
               {icon}
             </span>
-            <span className="text-sm font-medium text-muted-foreground">{title}</span>
-          </div>
-          <div className="text-2xl font-bold leading-none tracking-tight">{value}</div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
             {hasTrend &&
               (up ? (
                 <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
@@ -625,20 +634,11 @@ function KpiCard({ title, value, pct, hint, icon, spark, sparkColor, badge, onCl
                   {(pct as number).toFixed(0)}%
                 </span>
               ))}
-            {badge && (
-              <Badge variant={badge.variant} className="ml-0.5">
-                {badge.label}
-              </Badge>
-            )}
-            {hint && <span className="text-muted-foreground">{hint}</span>}
           </div>
-          {spark && spark.length > 0 && (
-            <Sparkline
-              data={spark}
-              color={sparkColor ?? 'var(--chart-1)'}
-              className="mt-auto h-8 w-full"
-            />
-          )}
+          <div>
+          <span className="text-sm font-normal text-muted-foreground">{title}</span>
+          </div>
+          <div className="text-2xl font-bold leading-none tracking-tight">{value}</div>
         </CardContent>
       </Card>
     </Wrapper>

@@ -2,18 +2,27 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Banknote,
+  Beef,
+  Bike,
   Check,
+  ChefHat,
   Clock,
+  Cookie,
   CreditCard,
+  CupSoda,
   Minus,
+  Pizza,
   Plus,
   Printer,
   Receipt,
   Search,
   ShoppingBag,
   Smartphone,
+  Soup,
+  Tag,
   Trash2,
   Timer,
+  Utensils,
 } from 'lucide-react';
 import {
   api,
@@ -21,6 +30,8 @@ import {
   Category,
   Customer,
   Product,
+  SelectedVariant,
+  SelectedModifier,
   Settings,
   Shift,
   Transaction,
@@ -31,9 +42,98 @@ import CustomerSelect from '../components/CustomerSelect';
 import Invoice from '../components/Invoice';
 import PaymentPad from '../components/PaymentPad';
 import { printReceipt } from '../lib/printing';
+import { highlight } from '../lib/highlight';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '../components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  Pizzas: Pizza,
+  Burgers: Beef,
+  Chinese: ChefHat,
+  Soup: Soup,
+  Snacks: Cookie,
+  Drinks: CupSoda,
+  Deals: Tag,
+};
+
+type TabStyle = { active: string; inactive: string; icon: string };
+
+const CATEGORY_STYLE: Record<string, TabStyle> = {
+  Pizzas: {
+    active: 'border-purple-400 bg-purple-100 text-purple-700 shadow-purple-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-purple-300',
+    icon: 'text-purple-600',
+  },
+  Burgers: {
+    active: 'border-green-400 bg-green-100 text-green-700 shadow-green-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-green-300',
+    icon: 'text-green-600',
+  },
+  Chinese: {
+    active: 'border-pink-400 bg-pink-100 text-pink-700 shadow-pink-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-pink-300',
+    icon: 'text-pink-600',
+  },
+  Soup: {
+    active: 'border-teal-400 bg-teal-100 text-teal-700 shadow-teal-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-teal-300',
+    icon: 'text-teal-600',
+  },
+  Snacks: {
+    active: 'border-amber-400 bg-amber-100 text-amber-700 shadow-amber-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-amber-300',
+    icon: 'text-amber-600',
+  },
+  Drinks: {
+    active: 'border-blue-400 bg-blue-100 text-blue-700 shadow-blue-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-blue-300',
+    icon: 'text-blue-600',
+  },
+  Deals: {
+    active: 'border-indigo-400 bg-indigo-100 text-indigo-700 shadow-indigo-400/40',
+    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-indigo-300',
+    icon: 'text-indigo-600',
+  },
+};
+
+const CATEGORY_DEFAULT: TabStyle = {
+  active: 'border-foreground bg-foreground text-background shadow-black/40',
+  inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-foreground/40',
+  icon: 'text-foreground',
+};
+
+const CATEGORY_CARD: Record<string, string> = {
+  Pizzas: 'shadow-[6px_6px_0_0] shadow-purple-400/30 hover:border-purple-400 hover:shadow-purple-400/60',
+  Burgers: 'shadow-[6px_6px_0_0] shadow-green-400/30 hover:border-green-400 hover:shadow-green-400/60',
+  Chinese: 'shadow-[6px_6px_0_0] shadow-pink-400/30 hover:border-pink-400 hover:shadow-pink-400/60',
+  Soup: 'shadow-[6px_6px_0_0] shadow-teal-400/30 hover:border-teal-400 hover:shadow-teal-400/60',
+  Snacks: 'shadow-[6px_6px_0_0] shadow-amber-400/30 hover:border-amber-400 hover:shadow-amber-400/60',
+  Drinks: 'shadow-[6px_6px_0_0] shadow-blue-400/30 hover:border-blue-400 hover:shadow-blue-400/60',
+  Deals: 'shadow-[6px_6px_0_0] shadow-indigo-400/30 hover:border-indigo-400 hover:shadow-indigo-400/60',
+};
+
+const CARD_DEFAULT = 'shadow-[6px_6px_0_0] shadow-black/20 hover:border-foreground/40 hover:shadow-black/40';
+
+const CATEGORY_ACCENT: Record<string, string> = {
+  Pizzas: 'border-l-purple-400',
+  Burgers: 'border-l-green-400',
+  Chinese: 'border-l-pink-400',
+  Soup: 'border-l-teal-400',
+  Snacks: 'border-l-amber-400',
+  Drinks: 'border-l-blue-400',
+  Deals: 'border-l-indigo-400',
+};
+
+const CART_ACCENT_DEFAULT = 'border-l-foreground/30';
+
 import {
   Dialog,
   DialogContent,
@@ -87,6 +187,14 @@ export default function TillView({
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [customerId, setCustomerId] = useState('0');
   const [discount, setDiscount] = useState(0);
+  const [fulfillment, setFulfillment] = useState<'takeaway' | 'dine-in' | 'delivery'>('takeaway');
+  const [deliveryName, setDeliveryName] = useState('');
+  const [deliveryContact, setDeliveryContact] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [showVoid, setShowVoid] = useState(false);
+  const [popupProduct, setPopupProduct] = useState<Product | null>(null);
+  const [selSize, setSelSize] = useState<number>(-1);
+  const [selModifiers, setSelModifiers] = useState<boolean[][]>([]);
   const [activeHoldId, setActiveHoldId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showHolds, setShowHolds] = useState(false);
@@ -160,11 +268,14 @@ export default function TillView({
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
     return products.filter((p) => {
-      const catOk = categoryFilter === 'all' || p.category === categoryFilter;
+      const catOk =
+        categoryFilter === 'all' || categoryFilter === 'search' || p.category === categoryFilter;
       if (!q) return catOk;
       return catOk && (p.name.toLowerCase().includes(q) || String(p.id).includes(q));
     });
   }, [products, query, categoryFilter]);
+
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   const getLineTotal = (item: CartItem) => {
     const base = item.price * item.quantity;
@@ -191,22 +302,26 @@ export default function TillView({
     return sum;
   }, 0);
 
-  const stockBadge = (p: Product) => {
-    if (!p.stock) return null;
-    if (p.quantity <= 0) {
-      return <Badge variant="destructive">Out of stock</Badge>;
-    }
-    if (p.quantity <= 5) {
-      return <Badge variant="secondary" className="bg-amber-100 text-amber-800">{p.quantity} left</Badge>;
-    }
-    return <Badge variant="outline" className="text-muted-foreground">{p.quantity} in stock</Badge>;
-  };
-
   const addToCart = (product: Product) => {
     if (product.stock && product.quantity <= 0) {
       setError(`${product.name} is out of stock`);
       return;
     }
+    if ((product.sizes && product.sizes.length) || (product.modifiers && product.modifiers.length)) {
+      openVariantPopup(product);
+      return;
+    }
+    setError(null);
+    addInstant(product);
+  };
+
+  const openVariantPopup = (product: Product) => {
+    setPopupProduct(product);
+    setSelSize(-1);
+    setSelModifiers((product.modifiers || []).map((g) => g.options.map(() => false)));
+  };
+
+  const addInstant = (product: Product) => {
     setError(null);
     setCart((prev) => {
       const existing = prev.find((i) => i.id === product.id);
@@ -226,9 +341,60 @@ export default function TillView({
           quantity: 1,
           stock: product.quantity,
           components: product.components,
+          categoryName: product.category,
         },
       ];
     });
+  };
+
+  const popupUnitPrice = () => {
+    const product = popupProduct;
+    if (!product) return 0;
+    const sizePrice = product.sizes?.length ? (selSize >= 0 ? product.sizes[selSize].price : 0) : Number(product.price);
+    const modDelta = (product.modifiers || []).reduce(
+      (sum, g, gi) => sum + g.options.reduce((s, o, oi) => s + (selModifiers[gi]?.[oi] ? o.priceDelta : 0), 0),
+      0
+    );
+    return sizePrice + modDelta;
+  };
+
+  const confirmVariantPopup = () => {
+    const product = popupProduct;
+    if (!product) return;
+    const sizes = product.sizes || [];
+    if (sizes.length && selSize < 0) {
+      setError('Please choose a size');
+      return;
+    }
+    const selectedVariants: SelectedVariant[] = sizes.length
+      ? [{ group: 'Size', name: sizes[selSize].name, priceDelta: sizes[selSize].price - Number(product.price) }]
+      : [];
+    const modifiers = product.modifiers || [];
+    const selectedModifiers: SelectedModifier[] = [];
+    modifiers.forEach((g, gi) => {
+      g.options.forEach((o, oi) => {
+        if (selModifiers[gi]?.[oi]) selectedModifiers.push({ name: o.name, priceDelta: o.priceDelta });
+      });
+    });
+    const unitPrice = popupUnitPrice();
+    setError(null);
+    setCart((prev) => [
+      ...prev,
+      {
+        id: product.id,
+        name: product.name,
+        price: unitPrice,
+        basePrice: Number(product.price),
+        quantity: 1,
+        stock: product.quantity,
+        components: product.components,
+        selectedVariants,
+        selectedModifiers,
+        categoryName: product.category,
+      },
+    ]);
+    setPopupProduct(null);
+    scanRef.current?.focus();
   };
 
   const setQty = (id: number, quantity: number) => {
@@ -239,12 +405,8 @@ export default function TillView({
     );
   };
 
-  const setItemNote = (id: number, note: string) => {
-    setCart((prev) => prev.map((i) => (i.id === id ? { ...i, note } : i)));
-  };
-
-  const setItemDiscount = (id: number, discountType: 'flat' | 'percent', discountValue: number) => {
-    setCart((prev) => prev.map((i) => (i.id === id ? { ...i, discountType, discountValue } : i)));
+  const removeLine = (id: number) => {
+    setCart((prev) => prev.filter((i) => i.id !== id));
   };
 
   const clearCart = () => {
@@ -252,6 +414,10 @@ export default function TillView({
     setDiscount(0);
     setActiveHoldId(null);
     setCustomerId('0');
+    setFulfillment('takeaway');
+    setDeliveryName('');
+    setDeliveryContact('');
+    setDeliveryAddress('');
     setError(null);
     scanRef.current?.focus();
   };
@@ -338,6 +504,10 @@ export default function TillView({
       items: cart,
       date: new Date().toISOString(),
       shift_id: currentShift?.id,
+      fulfillment,
+      delivery_name: deliveryName,
+      delivery_contact: deliveryContact,
+      delivery_address: deliveryAddress,
     };
   };
 
@@ -411,6 +581,10 @@ export default function TillView({
       items: cart,
       date: new Date().toISOString(),
       shift_id: currentShift.id,
+      fulfillment,
+      delivery_name: deliveryName,
+      delivery_contact: deliveryContact,
+      delivery_address: deliveryAddress,
     };
 
     try {
@@ -441,7 +615,6 @@ export default function TillView({
       setShowPay(false);
       await onRefresh();
       await refreshHolds();
-      void printReceipt(savedTx, settings, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sale completion failed');
     }
@@ -457,6 +630,10 @@ export default function TillView({
     setCustomerId(String(order.customer || '0'));
     setDiscount(order.discount || 0);
     setActiveHoldId(order.id);
+    setFulfillment((order.fulfillment as 'takeaway' | 'dine-in' | 'delivery') || 'takeaway');
+    setDeliveryName(order.delivery_name || '');
+    setDeliveryContact(order.delivery_contact || '');
+    setDeliveryAddress(order.delivery_address || '');
     setShowHolds(false);
     scanRef.current?.focus();
   };
@@ -471,7 +648,7 @@ export default function TillView({
   };
 
   return (
-    <div className="flex h-full flex-col lg:flex-row gap-4 p-4 bg-muted/20">
+    <div className="flex h-full flex-col lg:flex-row gap-3 p-3 overflow-hidden bg-muted/20">
       {error && (
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-md bg-destructive px-4 py-3 text-destructive-foreground shadow-md">
           <AlertCircle className="size-5 shrink-0" />
@@ -487,12 +664,46 @@ export default function TillView({
         </div>
       )}
 
-      {/* Left Panel: Product Grid & Search */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-        {/* Search Bar & Category Chips */}
-        <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+      {/* Menu surface: search + tabs + grid in one panel */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
+        <div className="flex flex-col gap-2 border-b p-3">
+          <ScrollArea className="w-full">
+            <div className="flex gap-2 pb-1">
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('search')}
+                className={`group flex w-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-3 text-center shadow-[4px_4px_0_0] transition-all hover:-translate-y-0.5 ${
+                  categoryFilter === 'search'
+                    ? 'border-foreground bg-foreground text-background shadow-black/40'
+                    : 'border-border bg-card text-foreground shadow-black/10 hover:border-foreground/40'
+                }`}
+              >
+                <Search className="size-6" />
+                <span className="text-xs font-bold leading-tight">Search</span>
+              </button>
+              {categories.map((c) => {
+                const Icon = CATEGORY_ICONS[c.name] || Utensils;
+                const style = CATEGORY_STYLE[c.name] || CATEGORY_DEFAULT;
+                const active = categoryFilter === c.name;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCategoryFilter(c.name)}
+                    className={`group flex w-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-3 text-center shadow-[4px_4px_0_0] transition-all hover:-translate-y-0.5 ${
+                      active ? style.active : style.inactive
+                    }`}
+                  >
+                    <Icon className={`size-6 ${style.icon}`} />
+                    <span className="text-xs font-bold leading-tight">{c.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+
+          {categoryFilter === 'search' && (
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={scanRef}
@@ -501,77 +712,49 @@ export default function TillView({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onScan();
                 }}
-                placeholder="Scan barcode or search product — Enter to add"
+                placeholder="search all items — Enter to add"
                 className="pl-9 h-11 text-base"
                 autoFocus
               />
             </div>
-            <Button onClick={onScan} className="h-11 px-6 text-base">
-              Add
-            </Button>
-          </div>
-
-          <ScrollArea className="w-full whitespace-nowrap">
-            <div className="flex gap-2 pb-1">
-              <Button
-                variant={categoryFilter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                className="h-9 px-4 text-sm rounded-full"
-                onClick={() => setCategoryFilter('all')}
-              >
-                All Categories
-              </Button>
-              {categories.map((c) => (
-                <Button
-                  key={c.id}
-                  variant={categoryFilter === c.name ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-9 px-4 text-sm rounded-full"
-                  onClick={() => setCategoryFilter(c.name)}
-                >
-                  {c.name}
-                </Button>
-              ))}
-            </div>
-          </ScrollArea>
+          )}
         </div>
 
         {/* Product Grid */}
-        <ScrollArea className="min-h-0 flex-1 rounded-lg border bg-card p-4 shadow-sm">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+        <ScrollArea className="min-h-0 flex-1 p-0">
+          <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {filteredProducts.map((p) => {
               const isOut = !!p.stock && p.quantity <= 0;
+              const hasVariants = (p.sizes?.length || 0) > 0;
+              const hasModifiers = (p.modifiers?.length || 0) > 0;
+              const cardColor = CATEGORY_CARD[p.category] || CARD_DEFAULT;
               return (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => addToCart(p)}
                   disabled={isOut}
-                  className={`group relative flex flex-col justify-between rounded-lg border p-3 text-left transition-all hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                    isOut ? 'opacity-50 cursor-not-allowed bg-muted/30' : 'bg-card'
+                  className={`group relative flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary ${cardColor} ${
+                    isOut ? 'cursor-not-allowed opacity-50 hover:translate-y-0 hover:border-border hover:shadow-black/20' : ''
                   }`}
                 >
-                  <div className="aspect-square w-full overflow-hidden rounded-md bg-muted mb-2 flex items-center justify-center">
-                    {p.img ? (
-                      <img
-                        src={`${uploads}/${p.img}`}
-                        alt={p.name}
-                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                      />
-                    ) : (
-                      <ShoppingBag className="size-10 text-muted-foreground/40" />
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-bold leading-tight md:text-base">{p.name}</h3>
+                    {(hasVariants || hasModifiers) && (
+                      <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold leading-tight text-primary-foreground">
+                        Options
+                      </span>
                     )}
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-sm line-clamp-2 leading-tight mb-1">{p.name}</h3>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="font-bold text-base text-primary">
-                        {symbol}
-                        {Number(p.price).toFixed(2)}
-                      </span>
-                      {stockBadge(p)}
+                  <span className="font-extrabold text-primary text-lg tabular-nums md:text-xl">
+                    {symbol}
+                    {Number(p.price).toFixed(2)}
+                  </span>
+                  {isOut && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                      <Badge variant="destructive">Out of stock</Badge>
                     </div>
-                  </div>
+                  )}
                 </button>
               );
             })}
@@ -585,48 +768,92 @@ export default function TillView({
       </div>
 
       {/* Right Panel: Cart Card */}
-      <Card className="flex min-h-0 w-full flex-col lg:w-[420px] shrink-0 h-full shadow-sm">
+      <Card className="flex min-h-0 w-full flex-col lg:w-[480px] shrink-0 h-full shadow-sm">
         <CardHeader className="pb-3 border-b space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <CustomerSelect
-              customers={customers}
-              value={customerId}
-              onChange={setCustomerId}
-              onCustomersChanged={onRefresh}
-            />
-            <Button variant="outline" size="sm" onClick={openHolds} className="relative gap-1.5 h-10">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <CustomerSelect
+                customers={customers}
+                value={customerId}
+                onChange={setCustomerId}
+                onCustomersChanged={onRefresh}
+              />
+            </div>
+            <Select
+              value={fulfillment}
+              onValueChange={(v) => setFulfillment(v as 'takeaway' | 'dine-in' | 'delivery')}
+            >
+              <SelectTrigger className="h-10 w-44 shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dine-in">
+                  <span className="flex items-center gap-2">
+                    <Utensils className="size-4" /> Dine-in
+                  </span>
+                </SelectItem>
+                <SelectItem value="takeaway">
+                  <span className="flex items-center gap-2">
+                    <ShoppingBag className="size-4" /> Takeaway
+                  </span>
+                </SelectItem>
+                <SelectItem value="delivery">
+                  <span className="flex items-center gap-2">
+                    <Bike className="size-4" /> Delivery
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {invoice && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setShowInvoice(true)}
+                title="Last Receipt"
+              >
+                <Receipt className="size-4" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="lg"
+              onClick={openHolds}
+              className="relative h-10 shrink-0 gap-1.5 bg-blue-600 text-white shadow-[3px_3px_0_0] shadow-blue-600/40 transition-all hover:-translate-y-0.5 hover:bg-blue-700"
+            >
               <Clock className="size-4" />
               <span>Held</span>
               {holdCount > 0 && (
-                <Badge variant="default" className="ml-1 px-1.5 py-0.5 text-xs">
+                <Badge variant="default" className="ml-1 bg-white/20 px-1.5 py-0.5 text-xs">
                   {holdCount}
                 </Badge>
               )}
             </Button>
-            {invoice && (
-              <Button variant="ghost" size="icon" onClick={() => setShowInvoice(true)} title="Last Receipt">
-                <Receipt className="size-4" />
-              </Button>
-            )}
           </div>
 
-          {/* Shift Status */}
-          <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 border">
-            <div className="flex items-center gap-2">
-              <Timer className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium">
-                {shiftLoading ? (
-                  'Loading shift...'
-                ) : currentShift ? (
-                  <>
-                    Shift #{currentShift.id} — {currentShift.userName} — Float: {symbol}{currentShift.floatAmount.toFixed(2)}
-                  </>
-                ) : (
-                  <span className="text-destructive">No shift open — Open a shift to start selling</span>
-                )}
-              </span>
+          {fulfillment === 'delivery' && (
+            <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/40 p-3">
+              <Input
+                value={deliveryName}
+                onChange={(e) => setDeliveryName(e.target.value)}
+                placeholder="Customer name"
+                className="h-10 text-sm"
+              />
+              <Input
+                value={deliveryContact}
+                onChange={(e) => setDeliveryContact(e.target.value)}
+                placeholder="Contact number"
+                inputMode="tel"
+                className="h-10 text-sm"
+              />
+              <Input
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                placeholder="Delivery address"
+                className="col-span-2 h-10 text-sm"
+              />
             </div>
-          </div>
+          )}
         </CardHeader>
 
         {/* Cart Item List */}
@@ -635,131 +862,62 @@ export default function TillView({
             <div className="flex flex-col gap-3">
               {cart.map((item) => {
                 const lineTotal = getLineTotal(item);
-                const hasDiscount = item.discountValue && item.discountValue > 0;
+                const accent = CATEGORY_ACCENT[item.categoryName || ''] || CART_ACCENT_DEFAULT;
                 return (
                   <div
                     key={item.id}
-                    className="flex flex-col gap-2 rounded-lg border p-3 bg-card/60 hover:bg-accent/10 transition-colors"
+                    className={`flex items-center gap-2 rounded-lg border border-l-4 bg-card p-1.5 shadow-[2px_2px_0_0] shadow-black/10 ${accent}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <span className="font-medium text-sm block leading-tight">{item.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {symbol}
-                          {item.price.toFixed(2)} each
-                        </span>
-                      </div>
-                      <span className="font-bold text-sm">
-                        {symbol}
-                        {lineTotal.toFixed(2)}
-                      </span>
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold leading-tight">{item.name}</span>
+                      {(item.selectedVariants?.length || item.selectedModifiers?.length) && (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {item.selectedVariants?.map((v, vi) => (
+                            <span key={vi} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {v.name}
+                            </span>
+                          ))}
+                          {item.selectedModifiers?.map((m, mi) => (
+                            <span key={mi} className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                              + {m.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    {(item.note || hasDiscount) && (
-                      <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                        {item.note && (
-                          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-900 border-amber-200">
-                            Note: {item.note}
-                          </Badge>
-                        )}
-                        {hasDiscount && (
-                          <Badge variant="outline" className="text-xs bg-green-50 text-green-900 border-green-200">
-                            Discount: {item.discountType === 'percent' ? `${item.discountValue}%` : `${symbol}${item.discountValue}`}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-1 border-t border-border/40">
-                      <div className="flex items-center gap-1">
-                        <Popover>
-                          <PopoverTrigger
-                            type="button"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground rounded-md transition-colors"
-                          >
-                            + Note
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64 p-3" align="start">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-semibold">Item Note</Label>
-                              <Input
-                                value={item.note || ''}
-                                onChange={(e) => setItemNote(item.id, e.target.value)}
-                                placeholder="e.g. Extra sauce, no onion"
-                                className="h-8 text-xs"
-                              />
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-
-                        <Popover>
-                          <PopoverTrigger
-                            type="button"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground rounded-md transition-colors"
-                          >
-                            + Discount
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64 p-3" align="start">
-                            <div className="space-y-3">
-                              <Label className="text-xs font-semibold">Line Discount</Label>
-                              <div className="flex gap-2">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant={item.discountType === 'flat' ? 'default' : 'outline'}
-                                  onClick={() => setItemDiscount(item.id, 'flat', item.discountValue || 0)}
-                                  className="flex-1 h-8 text-xs"
-                                >
-                                  Flat ({symbol})
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant={item.discountType === 'percent' ? 'default' : 'outline'}
-                                  onClick={() => setItemDiscount(item.id, 'percent', item.discountValue || 0)}
-                                  className="flex-1 h-8 text-xs"
-                                >
-                                  Percent (%)
-                                </Button>
-                              </div>
-                              <Input
-                                type="number"
-                                min={0}
-                                value={item.discountValue || ''}
-                                onChange={(e) =>
-                                  setItemDiscount(
-                                    item.id,
-                                    item.discountType || 'flat',
-                                    Number(e.target.value) || 0
-                                  )
-                                }
-                                placeholder="Discount amount"
-                                className="h-8 text-xs"
-                              />
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className="text-sm font-bold tabular-nums">{symbol}{lineTotal.toFixed(2)}</span>
+                      <div className="flex items-center gap-0.5 rounded-md border bg-muted/50 p-0.5">
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="icon"
-                          className="size-7"
+                          className="size-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           onClick={() => setQty(item.id, item.quantity - 1)}
+                          aria-label="Decrease quantity"
                         >
-                          <Minus className="size-3" />
+                          <Minus className="size-3.5" />
                         </Button>
-                        <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
+                        <span className="w-5 text-center text-sm font-bold tabular-nums">{item.quantity}</span>
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="icon"
-                          className="size-7"
+                          className="size-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           onClick={() => setQty(item.id, item.quantity + 1)}
+                          aria-label="Increase quantity"
                         >
-                          <Plus className="size-3" />
+                          <Plus className="size-3.5" />
                         </Button>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => removeLine(item.id)}
+                        aria-label="Remove item"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
                     </div>
                   </div>
                 );
@@ -871,8 +1029,7 @@ export default function TillView({
                     <TableCell>{h.customer_name}</TableCell>
                     <TableCell>{(h.items || []).reduce((n, i) => n + i.quantity, 0)}</TableCell>
                     <TableCell className="font-semibold">
-                      {symbol}
-                      {Number(h.total).toFixed(2)}
+                      <span className={highlight.green}>{symbol}{Number(h.total).toFixed(2)}</span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(h.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -905,13 +1062,134 @@ export default function TillView({
         </DialogContent>
       </Dialog>
 
+      {/* Void Order Confirmation Dialog */}
+      <Dialog open={showVoid} onOpenChange={setShowVoid}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Void this order?</DialogTitle>
+            <DialogDescription>
+              This discards the entire current order. It cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowVoid(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                clearCart();
+                setShowVoid(false);
+              }}
+            >
+              Void Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Variant / Modifier Selection Dialog */}
+      <Dialog
+        open={!!popupProduct}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPopupProduct(null);
+            setError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{popupProduct?.name}</DialogTitle>
+            <DialogDescription>
+              {symbol}
+              {popupProduct ? Number(popupProduct.price).toFixed(2) : '0.00'} base
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[50vh] overflow-auto pr-1">
+            {(popupProduct?.sizes || []).length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Size <span className="text-xs font-normal text-muted-foreground">(choose one)</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {(popupProduct?.sizes || []).map((s, si) => (
+                    <button
+                      key={si}
+                      type="button"
+                      onClick={() => setSelSize(si)}
+                      className={`flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors ${
+                        selSize === si ? 'border-primary bg-primary/10' : 'hover:bg-muted'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">{s.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {symbol}
+                        {Number(s.price).toFixed(2)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(popupProduct?.modifiers || []).map((group, gi) => (
+              <div key={gi} className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  {group.name} <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <div className="grid gap-1">
+                  {group.options.map((opt, oi) => (
+                    <button
+                      key={oi}
+                      type="button"
+                      onClick={() =>
+                        setSelModifiers((prev) =>
+                          prev.map((row, r) =>
+                            r === gi ? row.map((c, c2) => (c2 === oi ? !c : c)) : row
+                          )
+                        )
+                      }
+                      className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm text-left transition-colors ${
+                        selModifiers[gi]?.[oi]
+                          ? 'border-primary bg-primary/10'
+                          : 'hover:bg-muted'
+                      }`}
+                    >
+                      <span>{opt.name}</span>
+                      <span className="text-muted-foreground">
+                        {opt.priceDelta ? `+${symbol}${opt.priceDelta.toFixed(2)}` : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {error && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => { setPopupProduct(null); setError(null); }}>
+              Cancel
+            </Button>
+            <Button onClick={confirmVariantPopup} className="px-8 font-semibold">
+              Add · {symbol}
+              {popupUnitPrice().toFixed(2)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Multi-method Split Checkout Dialog */}
       <Dialog open={showPay} onOpenChange={setShowPay}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-7xl">
           <DialogHeader>
             <DialogTitle>Checkout</DialogTitle>
             <DialogDescription>
-              Total Due: <span className="font-bold text-foreground">{symbol}{total.toFixed(2)}</span>
+              Total to pay: <span className="font-bold text-foreground">{symbol}{total.toFixed(2)}</span>
             </DialogDescription>
           </DialogHeader>
 
@@ -947,83 +1225,102 @@ export default function TillView({
               </Button>
             </div>
 
-            {/* Input & Add Line */}
-            <div className="grid gap-2">
-              <Label>Tendered / Line Amount ({symbol})</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d.]/g, ''))}
-                  placeholder={`Remaining due: ${symbol}${remainingDue.toFixed(2)}`}
-                  className="h-11 font-mono text-base text-right"
-                  autoFocus
-                />
-                <Button type="button" onClick={addPaymentLine} className="h-11 px-4">
-                  + Add Line
-                </Button>
-              </div>
-            </div>
-
-            {selectedMethod === 'cash' && (
-              <PaymentPad
-                value={amountInput}
-                onChange={setAmountInput}
-                due={remainingDue}
-                symbol={symbol}
-              />
-            )}
-
-            {/* Added Payment Lines */}
-            {paymentLines.length > 0 && (
-              <div className="space-y-2 border rounded-md p-3 bg-muted/20">
-                <Label className="text-xs font-semibold text-muted-foreground">Payment Breakdown</Label>
-                {paymentLines.map((line, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-sm py-1 border-b last:border-b-0">
-                    <span className="capitalize font-medium">{line.method}</span>
-                    <div className="flex items-center gap-2">
-                      <span>
-                        {symbol}{line.amount.toFixed(2)}
-                        {line.tendered && line.tendered > line.amount ? ` (Tendered: ${symbol}${line.tendered.toFixed(2)})` : ''}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 text-muted-foreground hover:text-destructive"
-                        onClick={() => removePaymentLine(idx)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
+            <div className={`grid gap-4 ${selectedMethod === 'cash' ? 'md:grid-cols-2' : ''}`}>
+              {/* Left: amount, payment lines, summary */}
+              <div className="space-y-4">
+                {/* Input & Add Line */}
+                <div className="grid gap-2">
+                  <Label>Amount paid ({symbol})</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={amountInput}
+                      onChange={(e) => setAmountInput(e.target.value.replace(/[^\d.]/g, ''))}
+                      placeholder={`Amount still owed: ${symbol}${remainingDue.toFixed(2)}`}
+                      className="h-11 font-mono text-base text-right"
+                      autoFocus
+                    />
+                    <Button type="button" onClick={addPaymentLine} className="h-11 px-4">
+                      Add
+                    </Button>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
 
-            {/* Summary */}
-            <div className="flex flex-col gap-1 rounded-lg border p-3 bg-muted/40 text-sm">
-              <div className="flex justify-between">
-                <span>Remaining Due:</span>
-                <span className={`font-bold ${remainingDue > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                  {symbol}{remainingDue.toFixed(2)}
-                </span>
+                {selectedMethod === 'cash' && (
+                  <PaymentPad
+                    value={amountInput}
+                    onChange={setAmountInput}
+                    due={remainingDue}
+                    symbol={symbol}
+                    showNumpad={false}
+                  />
+                )}
+
+                {/* Added Payment Lines */}
+                {paymentLines.length > 0 && (
+                  <div className="space-y-2 border rounded-md p-3 bg-muted/20">
+                    <Label className="text-xs font-semibold text-muted-foreground">Payments added</Label>
+                    {paymentLines.map((line, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-sm py-1 border-b last:border-b-0">
+                        <span className="capitalize font-medium">{line.method}</span>
+                        <div className="flex items-center gap-2">
+                          <span>
+                            {symbol}{line.amount.toFixed(2)}
+                            {line.tendered && line.tendered > line.amount ? ` (Tendered: ${symbol}{line.tendered.toFixed(2)})` : ''}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-6 text-muted-foreground hover:text-destructive"
+                            onClick={() => removePaymentLine(idx)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Summary */}
+                <div className="flex flex-col gap-1 rounded-lg border p-3 bg-muted/40 text-sm">
+                  <div className="flex justify-between">
+                    <span>Still owed:</span>
+                    <span className={`font-bold ${remainingDue > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                      {symbol}{remainingDue.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Change back:</span>
+                    <span>{symbol}{totalChange.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Change (Cash lines only):</span>
-                <span>{symbol}{totalChange.toFixed(2)}</span>
-              </div>
+
+              {/* Right: number pad */}
+              {selectedMethod === 'cash' && (
+                <div>
+                  <PaymentPad
+                    value={amountInput}
+                    onChange={setAmountInput}
+                    due={remainingDue}
+                    symbol={symbol}
+                    showQuickCash={false}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setShowPay(false)}>
               Cancel
             </Button>
             <Button
               onClick={completeSale}
               disabled={paymentLines.length === 0 && remainingDue > 0 && !(parseFloat(amountInput) >= total)}
-              className="px-8 font-semibold"
+              className="flex-1 font-semibold"
             >
-              Complete Sale
+              Pay Now
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1035,19 +1332,19 @@ export default function TillView({
           <DialogHeader>
             <DialogTitle>Sale Complete &amp; Receipt</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[420px] overflow-auto border p-4 rounded-md bg-white text-black">
+          <div className="border p-4 rounded-md bg-white text-black">
             {invoice && <Invoice tx={invoice} settings={settings} symbol={symbol} />}
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setShowInvoice(false)}>
               Close
             </Button>
             <Button
+              className="flex-1"
               onClick={() => (invoice ? void printReceipt(invoice, settings, false) : window.print())}
-              className="gap-2"
             >
               <Printer className="size-4" />
-              Print Receipt
+              Print
             </Button>
           </DialogFooter>
         </DialogContent>

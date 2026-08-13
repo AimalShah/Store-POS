@@ -74,6 +74,7 @@ The app is split into two experiences reached from a **launcher home screen** (t
 - **Status:** shadcn `Badge` for out-of-stock, held, shift state, etc.
 - **Charts:** shadcn `Chart` (recharts), used on the Dashboard.
 - **Icons:** lucide-react, consistent size/weight (default `size-4`, `size-5` on buttons).
+- **Action buttons use icons, not words.** Where a lucide icon unambiguously represents the action (print, edit, delete/trash, refresh/reload, download, save, plus/add, filter, search, close, copy, settings/gear, log-out), render the icon — not a text label. Keep a short text label only when an icon would be ambiguous or the action needs emphasis (e.g. a primary "Pay" button). Icon-only action buttons must carry an `aria-label` (and ideally a `Tooltip`) so they stay accessible. Do not spell out "Print", "Edit", "Delete", etc. in button text when an icon conveys it.
 
 ## States
 
@@ -99,4 +100,6 @@ npx shadcn@latest add button card sidebar dialog table form chart ...
 - [ ] No third-party UI kit or copied component
 - [ ] Light theme, zinc neutrals, orange primary, Inter font
 - [ ] Buttons ≥ `h-12` on the till; management UI uses standard `h-9`/`h-10`
+- [ ] Action buttons use icons, not words, where an icon is unambiguous (`aria-label` + optional tooltip present)
+- [ ] Account/dropdown triggers show a chevron (`ChevronDown`/`ChevronsUpDown`) affordance
 - [ ] No `alert()`/`confirm()`, no hand-rolled modal

@@ -8,10 +8,12 @@ import {
   ReceiptText,
   ShoppingBag,
   Trophy,
+  Car,
 } from 'lucide-react';
 import { api, ReportSummary } from '../api/client';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Skeleton } from '../components/ui/skeleton';
@@ -25,6 +27,7 @@ import {
 } from '../components/ui/table';
 import { localInputToIso, monthRange } from '../lib/dates';
 import { downloadCsv } from '../lib/export';
+import { highlight } from '../lib/highlight';
 
 type Props = {
   symbol: string;
@@ -100,41 +103,53 @@ export default function ReportsView({ symbol }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+       <div className="space-y-4 ">
+         <h1 className='text-2xl font-semibold'>Reports</h1>
+         <p className='text-muted-foreground text-sm font-normal'>
+           Sales totals by category and payment method, plus best sellers, for the chosen date range.
+         </p>
+       </div>
       <Card>
-        <CardHeader>
-          <CardTitle>Reports</CardTitle>
-          <CardDescription>
-            Sales totals by category and payment method, plus best sellers, for the chosen date range.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="report-from">From</Label>
-            <Input
-              id="report-from"
-              type="datetime-local"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="w-56"
-            />
+        <CardContent className="flex flex-wrap items-center justify-center gap-x-6 gap-y-4 py-4">
+          <div className='text-left w-full'>
+           <CardTitle>Select Date Range</CardTitle>
+           <CardDescription>select a date range to view your sales report</CardDescription>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="report-to">To</Label>
-            <Input
-              id="report-to"
-              type="datetime-local"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className="w-56"
-            />
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="report-from">From</Label>
+              <Input
+                id="report-from"
+                type="datetime-local"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className="w-56"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="report-to">To</Label>
+              <Input
+                id="report-to"
+                type="datetime-local"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                className="w-56"
+              />
+            </div>
+            <Button onClick={load} disabled={loading}>
+              {loading ? 'Loading…' : 'Apply'}
+            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="outline" size="icon" aria-label="Export CSV" onClick={exportCsv} disabled={!report || loading}>
+                    <Download className="size-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Export CSV</TooltipContent>
+            </Tooltip>
           </div>
-          <Button onClick={load} disabled={loading}>
-            {loading ? 'Loading…' : 'Apply'}
-          </Button>
-          <Button variant="outline" onClick={exportCsv} disabled={!report || loading} className="gap-2">
-            <Download className="size-4" />
-            Export CSV
-          </Button>
         </CardContent>
       </Card>
 
@@ -178,29 +193,30 @@ export default function ReportsView({ symbol }: Props) {
               </CardHeader>
               <CardContent>
                 {report.bestSellers.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">#</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Revenue</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {report.bestSellers.map((b, i) => (
-                        <TableRow key={b.productId ?? b.name}>
-                          <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                          <TableCell className="font-medium">{b.name}</TableCell>
-                          <TableCell className="text-right">{b.quantity}</TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {symbol}
-                            {b.revenue.toFixed(2)}
-                          </TableCell>
+                  <div className="max-h-72 overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">#</TableHead>
+                          <TableHead>Item</TableHead>
+                          <TableHead className="text-right">Qty</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {report.bestSellers.map((b, i) => (
+                          <TableRow key={b.productId ?? b.name}>
+                            <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                            <TableCell className="font-medium">{b.name}</TableCell>
+                            <TableCell className="text-right"><span className={highlight.blue}>{b.quantity}</span></TableCell>
+                            <TableCell className="text-right font-semibold">
+                              <span className={highlight.green}>{symbol}{b.revenue.toFixed(2)}</span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : (
                   <p className="py-8 text-center text-sm text-muted-foreground">No sales in this range.</p>
                 )}
@@ -231,8 +247,7 @@ export default function ReportsView({ symbol }: Props) {
                           <TableCell className="capitalize font-medium">{p.method}</TableCell>
                           <TableCell className="text-right">{p.count}</TableCell>
                           <TableCell className="text-right font-semibold">
-                            {symbol}
-                            {p.amount.toFixed(2)}
+                            <span className={highlight.green}>{symbol}{p.amount.toFixed(2)}</span>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -273,11 +288,10 @@ export default function ReportsView({ symbol }: Props) {
                             <TableCell className="font-medium">{c.category}</TableCell>
                             <TableCell className="text-right">{c.count}</TableCell>
                             <TableCell className="text-right font-semibold">
-                              {symbol}
-                              {c.revenue.toFixed(2)}
+                              <span className={highlight.green}>{symbol}{c.revenue.toFixed(2)}</span>
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground">
-                              {share.toFixed(1)}%
+                              <span className={highlight.blue}>{share.toFixed(1)}%</span>
                             </TableCell>
                           </TableRow>
                         );

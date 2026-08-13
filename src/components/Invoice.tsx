@@ -63,6 +63,37 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         ))}
       </div>
 
+      {tx.fulfillment ? (
+        <div className="mt-1 space-y-0.5">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Fulfillment</span>
+            <span className="capitalize">{tx.fulfillment}</span>
+          </div>
+          {tx.fulfillment === 'delivery' && (
+            <>
+              {tx.delivery_name ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Name</span>
+                  <span>{tx.delivery_name}</span>
+                </div>
+              ) : null}
+              {tx.delivery_contact ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Contact</span>
+                  <span>{tx.delivery_contact}</span>
+                </div>
+              ) : null}
+              {tx.delivery_address ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Address</span>
+                  <span>{tx.delivery_address}</span>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
+
       <div className="my-2 border-t" />
 
       <table className="w-full text-sm">
@@ -96,6 +127,32 @@ export default function Invoice({ tx, settings, symbol }: Props) {
                       </td>
                       <td className="py-0.5 text-right text-xs text-muted-foreground">
                         {symbol}0.00
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              )}
+              {item.selectedVariants && item.selectedVariants.length > 0 && (
+                <React.Fragment>
+                  {item.selectedVariants.map((v, vi) => (
+                    <tr key={`v-${vi}`} className="bg-muted/50">
+                      <td className="py-0.5 text-center text-xs">·</td>
+                      <td className="py-0.5 pl-5 text-xs text-muted-foreground">{v.name}</td>
+                      <td className="py-0.5 text-right text-xs text-muted-foreground">
+                        {v.priceDelta ? `+${symbol}${v.priceDelta.toFixed(2)}` : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              )}
+              {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                <React.Fragment>
+                  {item.selectedModifiers.map((m, mi) => (
+                    <tr key={`m-${mi}`} className="bg-muted/50">
+                      <td className="py-0.5 text-center text-xs">·</td>
+                      <td className="py-0.5 pl-5 text-xs text-muted-foreground">+ {m.name}</td>
+                      <td className="py-0.5 text-right text-xs text-muted-foreground">
+                        {m.priceDelta ? `+${symbol}${m.priceDelta.toFixed(2)}` : ''}
                       </td>
                     </tr>
                   ))}

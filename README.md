@@ -7,13 +7,17 @@ Modern desktop Point of Sale for a single register, completely offline. Version 
 ### Till
 - Barcode scan / search (Enter to add)
 - Category filter chips
-- Product tiles with photos, price, and stock status
-- Cart with quantity controls, discount, and tax
+- Compact product tiles with thumbnail, price, and stock status
+- **Fulfillment selector** — Dine-in / Takeaway / Delivery (default Takeaway, resets per new order)
+- **Delivery details** — name, contact number, and address captured when Delivery is selected
+- **Variants & modifiers** — products with options open a selection popup (variants are single-choice required, modifiers/toppings are multi-choice optional); line price updates with price deltas
+- Cart with quantity controls, per-item note/discount, and tax
 - Customer picker with quick-add
 - Hold / resume orders
+- **Void Order** — confirmed destructive discard of the whole order; **Clear** stays instant for quick resets
 - Cash payment pad with South African note shortcuts (R10–R200) plus Exact
 - Change / still-due display
-- Printable receipt with a sequential daily invoice number
+- Printable receipt with a sequential daily invoice number, including chosen variants and modifiers
 
 ### PIN Login
 - Fast numeric PIN entry for returning cashiers
@@ -29,6 +33,8 @@ Modern desktop Point of Sale for a single register, completely offline. Version 
 - Products and categories
 - Inventory tracking (opt-in per product)
 - Photo picker (local uploads to a media library)
+- **Variants** — single-choice option groups (e.g. Size) with per-option price deltas; required at the till
+- **Modifiers / toppings** — multi-choice option groups (e.g. Extra cheese) with per-option price deltas; optional at the till
 - **Seed demo** sample catalog (SA-style products & customers)
 - Multi-select **bulk delete**
 

@@ -6,6 +6,7 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { highlight } from '../lib/highlight';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -151,12 +152,13 @@ export default function CustomersView({ customers, onChanged }: Props) {
         <CardHeader>
           <CardTitle>Customers</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {list.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
+            <p className="p-8 text-center text-sm text-muted-foreground">
               No customers yet. Add one to get started.
             </p>
           ) : (
+            <div className="max-h-[80vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -170,7 +172,7 @@ export default function CustomersView({ customers, onChanged }: Props) {
               <TableBody>
                 {list.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="font-medium"><span className={highlight.blue}>{c.name}</span></TableCell>
                     <TableCell>{c.phone || '—'}</TableCell>
                     <TableCell>{c.email || '—'}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{c.address || '—'}</TableCell>
@@ -194,6 +196,7 @@ export default function CustomersView({ customers, onChanged }: Props) {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

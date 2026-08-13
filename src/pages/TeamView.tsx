@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { highlight } from '../lib/highlight';
 
 type UserRow = Awaited<ReturnType<typeof api.getUsers>>[number];
 
@@ -193,7 +194,7 @@ export default function TeamView() {
             <TableBody>
               {list.map((u) => (
                 <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.username}</TableCell>
+                  <TableCell className="font-medium"><span className={highlight.blue}>{u.username}</span></TableCell>
                   <TableCell>{u.fullname}</TableCell>
                   <TableCell>{u.has_pin ? 'Set' : '—'}</TableCell>
                   <TableCell className="text-right">

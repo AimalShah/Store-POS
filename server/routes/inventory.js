@@ -15,6 +15,11 @@ function mapProductWithComponents(row, db) {
        WHERE pc.parent_product_id = ?`
     )
     .all(row.id);
+  const sizes = db
+    .prepare(
+      `SELECT id, name, price, position FROM product_sizes WHERE product_id = ? ORDER BY position, id`
+    )
+    .all(row.id);
   return {
     _id: row.id,
     id: row.id,
@@ -27,8 +32,21 @@ function mapProductWithComponents(row, db) {
     trackStock: !!row.stock,
     lowStockThreshold: row.low_stock_threshold || 10,
     img: row.img,
+    hot: !!row.hot,
     components,
+    sizes,
+    modifiers: safeParseJson(row.modifiers_json),
   };
+}
+
+function safeParseJson(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapStockMovement(row) {
@@ -46,6 +64,18 @@ function mapStockMovement(row) {
     userName: row.user_name,
     createdAt: row.created_at,
   };
+}
+
+function saveSizes(db, productId, sizes) {
+  db.prepare('DELETE FROM product_sizes WHERE product_id = ?').run(productId);
+  const insertSize = db.prepare(
+    'INSERT INTO product_sizes (product_id, name, price, position) VALUES (?, ?, ?, ?)'
+  );
+  (sizes || []).forEach((s, i) => {
+    const name = String(s.name || '').trim();
+    if (!name) return;
+    insertSize.run(productId, name, parseFloat(s.price) || 0, parseInt(s.position, 10) || i);
+  });
 }
 
 export default function inventoryRouter(uploadsPath) {
@@ -113,11 +143,31 @@ export default function inventoryRouter(uploadsPath) {
         }
       }
 
+      let sizes = [];
+      if (body.sizes) {
+        try {
+          sizes = JSON.parse(body.sizes);
+        } catch {
+          sizes = [];
+        }
+      }
+
+      let modifiers = [];
+      if (body.modifiers) {
+        try {
+          modifiers = JSON.parse(body.modifiers);
+        } catch {
+          modifiers = [];
+        }
+      }
+
+      const hot = body.hot === '1' || body.hot === 1 || body.hot === true || body.hot === 'true' ? 1 : 0;
+
       if (!body.id) {
         const result = db
           .prepare(
-            `INSERT INTO products (name, price, cost, category, quantity, stock, img)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO products (name, price, cost, category, quantity, stock, img, variants_json, modifiers_json, hot)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             body.name,
@@ -126,7 +176,10 @@ export default function inventoryRouter(uploadsPath) {
             body.category || '',
             quantity,
             stock,
-            image
+            image,
+            '[]',
+            JSON.stringify(modifiers),
+            hot
           );
         const productId = result.lastInsertRowid;
 
@@ -140,13 +193,15 @@ export default function inventoryRouter(uploadsPath) {
           }
         }
 
+        saveSizes(db, productId, sizes);
+
         const row = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
         return res.json(mapProductWithComponents(row, db));
       }
 
       const id = parseInt(body.id, 10);
       db.prepare(
-        `UPDATE products SET name = ?, price = ?, cost = ?, category = ?, quantity = ?, stock = ?, img = ?
+        `UPDATE products SET name = ?, price = ?, cost = ?, category = ?, quantity = ?, stock = ?, img = ?, variants_json = ?, modifiers_json = ?, hot = ?
          WHERE id = ?`
       ).run(
         body.name,
@@ -156,6 +211,9 @@ export default function inventoryRouter(uploadsPath) {
         quantity,
         stock,
         image,
+        '[]',
+        JSON.stringify(modifiers),
+        hot,
         id
       );
 
@@ -170,7 +228,23 @@ export default function inventoryRouter(uploadsPath) {
         }
       }
 
+      saveSizes(db, id, sizes);
+
       res.sendStatus(200);
+    }
+  );
+
+  router.post(
+    '/product/:productId/hot',
+    requirePerm('perm_products'),
+    (req, res) => {
+      const id = parseInt(req.params.productId, 10);
+      const hot = req.body?.hot ? 1 : 0;
+      const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+      if (!row) return res.sendStatus(404);
+      db.prepare('UPDATE products SET hot = ? WHERE id = ?').run(hot, id);
+      const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+      res.json(mapProductWithComponents(updated, db));
     }
   );
 

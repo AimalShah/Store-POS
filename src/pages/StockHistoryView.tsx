@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
+import { highlight } from '../lib/highlight';
 import { Calendar } from 'lucide-react';
 
 type Props = {
@@ -200,9 +201,11 @@ export default function StockHistoryView({ products, symbol }: Props) {
                     <TableCell className="font-medium">{m.productName || ''}</TableCell>
                     <TableCell>{getTypeBadge(m.type)}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
-                      {m.quantityChange > 0 ? '+' : ''}{m.quantityChange}
+                      <span className={m.quantityChange > 0 ? highlight.green : m.quantityChange < 0 ? highlight.red : highlight.slate}>
+                        {m.quantityChange > 0 ? '+' : ''}{m.quantityChange}
+                      </span>
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">{m.quantityAfter}</TableCell>
+                    <TableCell className="text-right font-mono text-sm"><span className={highlight.blue}>{m.quantityAfter}</span></TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                       {m.reason || '—'}
                     </TableCell>

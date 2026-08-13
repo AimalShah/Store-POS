@@ -24,6 +24,18 @@ _Avoid_: Item
 A line on an order — one product with a quantity and optional note.
 _Avoid_: Product
 
+**Fulfillment**:
+How an order is handed to the customer — one of `dine-in`, `takeaway`, or `delivery`. A property of the Order (and carried onto the Sale), distinct from payment type. `takeaway` and `dine-in` currently capture no extra data (`dine-in` table number is a deferred future addition). `delivery` carries customer name, contact number, and address.
+_Avoid_: order type, service type, dining option
+
+**Variant**:
+A single-choice attribute of a Product that alters its price (e.g. Size: Small/Medium/Large). A Product may have zero or more variant groups; when present, exactly one option must be selected per group before the item is added. Products with no variants add to the order instantly (no selection popup).
+_Avoid_: option, size
+
+**Modifier** (a.k.a. topping):
+A multi-choice add-on to a Product, each with its own price, applied on top of the base (e.g. extra cheese, mushrooms). Zero or more may be selected. Distinct from a Variant, which replaces the base configuration rather than adding to it.
+_Avoid_: topping (use only as the common example)
+
 **Stock**:
 The on-hand sellable quantity of a product, optionally tracked. Off by default because most food is cooked to order; turned on per product (e.g. chicken) when pre-stocked goods matter.
 
@@ -32,6 +44,14 @@ A logged change to a product's stock — a sale deduction, a restock, or a wasta
 
 **Combo**:
 A product sold at a bundle price that carries an informational list of component products (printed on the receipt). Components are not stock-linked.
+
+**Hot Item**:
+A Product manually flagged `hot` by a manager in the catalog to surface it as a promoted/daily-special in the till's "Hot & Best Sellers" tab. Curated, instant, not derived from sales.
+_Avoid_: featured, popular
+
+**Best Seller**:
+A Product ranked into the till's "Hot & Best Sellers" tab by a computed top-N over historical sales (units sold in the trailing window, e.g. last 30 days). Derived, shifts as sales data changes.
+_Avoid_: top product, popular item
 
 **Receipt**:
 The customer-facing document generated when an order is completed. Carries the sequential invoice number and prints on thermal (58/80mm) or PDF/A4.

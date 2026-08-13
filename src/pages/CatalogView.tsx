@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Separator } from '../components/ui/separator';
 import { toast } from 'sonner';
+import { highlight } from '../lib/highlight';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,6 +39,10 @@ type ComponentForm = {
   quantity: string;
 };
 
+type OptionForm = { name: string; priceDelta: string };
+type GroupForm = { name: string; options: OptionForm[] };
+type SizeForm = { name: string; price: string };
+
 const emptyProduct = {
   id: '',
   name: '',
@@ -47,14 +52,19 @@ const emptyProduct = {
   quantity: '0',
   trackStock: false,
   lowStockThreshold: 10,
+  hot: false,
   img: '',
   components: [] as ComponentForm[],
+  sizes: [] as SizeForm[],
+  modifiers: [] as GroupForm[],
 };
 
 const emptyComponent = {
   id: '',
   quantity: '1',
 };
+
+const emptyOption: OptionForm = { name: '', priceDelta: '0' };
 
 export default function CatalogView({
   products,
@@ -103,8 +113,30 @@ export default function CatalogView({
     fd.append('category', form.category);
     fd.append('quantity', form.quantity || '0');
     fd.append('stock', form.trackStock ? '1' : 'on');
+    fd.append('hot', form.hot ? '1' : '0');
     fd.append('img', form.img);
     fd.append('components', JSON.stringify(form.components.filter((c) => c.id).map((c) => ({ id: Number(c.id), quantity: Number(c.quantity) || 1 }))));
+    fd.append(
+      'sizes',
+      JSON.stringify(
+        form.sizes
+          .filter((s) => s.name.trim())
+          .map((s, i) => ({ name: s.name.trim(), price: parseFloat(s.price) || 0, position: i }))
+      )
+    );
+    fd.append(
+      'modifiers',
+      JSON.stringify(
+        form.modifiers
+          .filter((g) => g.name.trim())
+          .map((g) => ({
+            name: g.name.trim(),
+            options: g.options
+              .filter((o) => o.name.trim())
+              .map((o) => ({ name: o.name.trim(), priceDelta: parseFloat(o.priceDelta) || 0 })),
+          }))
+      )
+    );
     await api.saveProduct(fd);
     setForm(emptyProduct);
     await onChanged();
@@ -165,6 +197,62 @@ export default function CatalogView({
     }));
   };
 
+  const addGroup = (kind: 'modifiers') => {
+    setForm((prev) => ({
+      ...prev,
+      [kind]: [...prev[kind], { name: '', options: [{ name: '', priceDelta: '0' }] }],
+    }));
+  };
+
+  const removeGroup = (kind: 'modifiers', index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      [kind]: prev[kind].filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateGroup = (kind: 'modifiers', index: number, field: 'name', value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      [kind]: prev[kind].map((g, i) => (i === index ? { ...g, [field]: value } : g)),
+    }));
+  };
+
+  const addOption = (kind: 'modifiers', groupIndex: number) => {
+    setForm((prev) => ({
+      ...prev,
+      [kind]: prev[kind].map((g, i) =>
+        i === groupIndex ? { ...g, options: [...g.options, { ...emptyOption }] } : g
+      ),
+    }));
+  };
+
+  const removeOption = (kind: 'modifiers', groupIndex: number, optionIndex: number) => {
+    setForm((prev) => ({
+      ...prev,
+      [kind]: prev[kind].map((g, i) =>
+        i === groupIndex ? { ...g, options: g.options.filter((_, j) => j !== optionIndex) } : g
+      ),
+    }));
+  };
+
+  const updateOption = (
+    kind: 'modifiers',
+    groupIndex: number,
+    optionIndex: number,
+    field: 'name' | 'priceDelta',
+    value: string
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      [kind]: prev[kind].map((g, i) =>
+        i === groupIndex
+          ? { ...g, options: g.options.map((o, j) => (j === optionIndex ? { ...o, [field]: value } : o)) }
+          : g
+      ),
+    }));
+  };
+
   const editProduct = (p: Product) => {
     setForm({
       id: String(p.id),
@@ -175,10 +263,19 @@ export default function CatalogView({
       quantity: String(p.quantity),
       trackStock: !!p.trackStock,
       lowStockThreshold: p.lowStockThreshold || 10,
+      hot: !!p.hot,
       img: p.img || '',
       components: (p.components || []).map((c) => ({
         id: String(c.id),
         quantity: String(c.quantity),
+      })),
+      sizes: (p.sizes || []).map((s) => ({
+        name: s.name,
+        price: String(s.price),
+      })),
+      modifiers: (p.modifiers || []).map((g) => ({
+        name: g.name,
+        options: g.options.map((o) => ({ name: o.name, priceDelta: String(o.priceDelta) })),
       })),
     });
     setTab('products');
@@ -379,6 +476,15 @@ export default function CatalogView({
                 <Label htmlFor="track-stock">Track inventory</Label>
               </div>
 
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="product-hot"
+                  checked={form.hot}
+                  onCheckedChange={(checked) => setForm({ ...form, hot: !!checked })}
+                />
+                <Label htmlFor="product-hot">Hot Item (promote as daily special)</Label>
+              </div>
+
               {form.trackStock && (
                 <div className="space-y-2">
                   <Label htmlFor="product-quantity">Quantity on hand</Label>
@@ -466,6 +572,133 @@ export default function CatalogView({
 
               <Separator />
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>
+                    Sizes
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      each size has its own price
+                    </span>
+                  </Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setForm((prev) => ({ ...prev, sizes: [...prev.sizes, { name: '', price: '' }] }))}
+                  >
+                    + Add Size
+                  </Button>
+                </div>
+                {form.sizes.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No sizes. The product sells at its base price only.
+                  </p>
+                )}
+                {form.sizes.map((s, si) => (
+                  <div key={si} className="flex items-center gap-2">
+                    <Input
+                      value={s.name}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          sizes: prev.sizes.map((x, i) => (i === si ? { ...x, name: e.target.value } : x)),
+                        }))
+                      }
+                      placeholder="e.g. Large"
+                      className="h-9 flex-1"
+                    />
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground">{symbol}</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={s.price}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            sizes: prev.sizes.map((x, i) => (i === si ? { ...x, price: e.target.value } : x)),
+                          }))
+                        }
+                        placeholder="0.00"
+                        className="h-9 w-24"
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setForm((prev) => ({ ...prev, sizes: prev.sizes.filter((_, i) => i !== si) }))}
+                      aria-label="Remove size"
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              {(['modifiers'] as const).map((kind) => (
+                <div key={kind} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>
+                      Modifiers (toppings)
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        multiple choice, optional
+                      </span>
+                    </Label>
+                    <Button variant="outline" size="sm" onClick={() => addGroup(kind)}>
+                      + Add Modifier Group
+                    </Button>
+                  </div>
+                  {form[kind].length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      No modifiers. Products without these add to an order instantly.
+                    </p>
+                  )}
+                  {form[kind].map((group, gi) => (
+                    <div key={gi} className="rounded-lg border p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={group.name}
+                          onChange={(e) => updateGroup(kind, gi, 'name', e.target.value)}
+                          placeholder="e.g. Toppings"
+                          className="h-9 flex-1"
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => removeGroup(kind, gi)} aria-label="Remove group">
+                          ✕
+                        </Button>
+                      </div>
+                      {group.options.map((opt, oi) => (
+                        <div key={oi} className="flex items-center gap-2 pl-2">
+                          <Input
+                            value={opt.name}
+                            onChange={(e) => updateOption(kind, gi, oi, 'name', e.target.value)}
+                            placeholder="Option name"
+                            className="h-9 flex-1"
+                          />
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">{symbol}</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={opt.priceDelta}
+                              onChange={(e) => updateOption(kind, gi, oi, 'priceDelta', e.target.value)}
+                              placeholder="0.00"
+                              className="h-9 w-24"
+                            />
+                          </div>
+                          <Button variant="ghost" size="icon" onClick={() => removeOption(kind, gi, oi)} aria-label="Remove option">
+                            ✕
+                          </Button>
+                        </div>
+                      ))}
+                      <Button variant="outline" size="sm" onClick={() => addOption(kind, gi)}>
+                        + Add Option
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              <Separator />
+
               <div className="flex gap-2">
                 <Button onClick={saveProduct} className="flex-1">
                   {form.id ? 'Update' : 'Add'} product
@@ -491,6 +724,7 @@ export default function CatalogView({
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              <div className="max-h-[80vh] overflow-auto">
               <Table>
 <TableHeader>
                   <TableRow>
@@ -536,11 +770,11 @@ export default function CatalogView({
                         <div className="font-medium">{p.name}</div>
                         <div className="text-xs text-muted-foreground">{p.category || 'Uncategorized'}</div>
                       </TableCell>
-                      <TableCell className="font-medium">{symbol}{Number(p.price).toFixed(2)}</TableCell>
+                        <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{Number(p.price).toFixed(2)}</span></TableCell>
                       <TableCell>
                         {p.trackStock ? (
                           <>
-                            <span className={p.quantity <= 0 ? 'text-destructive font-medium' : ''}>
+                            <span className={p.quantity <= 0 ? highlight.red : p.quantity <= (p.lowStockThreshold || 10) ? highlight.amber : highlight.green}>
                               {p.quantity}
                             </span>
                             {p.quantity <= 0 && <Badge variant="destructive" className="ml-1 text-xs">Out of stock</Badge>}
@@ -596,6 +830,7 @@ export default function CatalogView({
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -649,6 +884,7 @@ export default function CatalogView({
                   No categories yet. Add one above.
                 </p>
               ) : (
+                <div className="max-h-[80vh] overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -659,7 +895,7 @@ export default function CatalogView({
                   <TableBody>
                     {cats.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell className="font-medium"><span className={highlight.blue}>{c.name}</span></TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-1">
                             <Button
@@ -688,6 +924,7 @@ export default function CatalogView({
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>

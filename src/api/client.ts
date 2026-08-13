@@ -27,7 +27,17 @@ export type Product = {
   trackStock: boolean;
   lowStockThreshold: number;
   img: string;
+  hot: boolean;
   components?: ProductComponent[];
+  sizes?: ProductSize[];
+  modifiers?: ModifierGroup[];
+};
+
+export type ProductSize = {
+  id?: number;
+  name: string;
+  price: number;
+  position?: number;
 };
 
 export type ProductComponent = {
@@ -36,6 +46,13 @@ export type ProductComponent = {
   price: number;
   quantity: number;
 };
+
+export type VariantOption = { name: string; priceDelta: number };
+export type VariantGroup = { name: string; options: VariantOption[] };
+export type ModifierOption = { name: string; priceDelta: number };
+export type ModifierGroup = { name: string; options: ModifierOption[] };
+export type SelectedVariant = { group: string; name: string; priceDelta: number };
+export type SelectedModifier = { name: string; priceDelta: number };
 
 export type StockMovement = {
   id: number;
@@ -85,6 +102,7 @@ export type Settings = {
   footer: string;
   img: string;
   till: number;
+  theme?: string;
 };
 
 export type PrinterSettings = {
@@ -115,14 +133,18 @@ export type CartItem = {
   id: number;
   name: string;
   price: number;
+  basePrice?: number;
   quantity: number;
   stock: number;
   cost?: number;
   categoryId?: number;
+  categoryName?: string;
   note?: string;
   discountType?: 'flat' | 'percent';
   discountValue?: number;
   components?: ProductComponent[];
+  selectedVariants?: SelectedVariant[];
+  selectedModifiers?: SelectedModifier[];
 };
 
 export type Transaction = {
@@ -146,6 +168,10 @@ export type Transaction = {
   items: CartItem[];
   date: string;
   shift_id?: number;
+  fulfillment?: 'dine-in' | 'takeaway' | 'delivery';
+  delivery_name?: string;
+  delivery_contact?: string;
+  delivery_address?: string;
 };
 
 export type Shift = {
@@ -199,6 +225,13 @@ export type ReportSummary = {
   byCategory: { category: string; count: number; revenue: number }[];
   byPaymentMethod: { method: string; count: number; amount: number }[];
   bestSellers: { productId: number | null; name: string; quantity: number; revenue: number }[];
+};
+
+export type BestSeller = {
+  id: number | null;
+  name: string;
+  quantity: number;
+  revenue: number;
 };
 
 let baseUrl = 'http://127.0.0.1:8001/api';
@@ -319,6 +352,14 @@ export const api = {
     request(`/users/user/${id}`, { method: 'DELETE' }),
 
   getProducts: () => request<Product[]>('/inventory/products'),
+
+  getBestSellers: (params?: { till?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.till) qs.set('till', String(params.till));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const q = qs.toString();
+    return request<BestSeller[]>(`/reports/best-sellers${q ? `?${q}` : ''}`);
+  },
 
   saveProduct: (form: FormData) =>
     request('/inventory/product', { method: 'POST', body: form }),
