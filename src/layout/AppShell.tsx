@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   CalendarRange,
+  Check,
+  ChevronsUpDown,
   Download,
   Home,
   LayoutDashboard,
@@ -13,7 +15,6 @@ import {
   Search,
   Settings as SettingsIcon,
   ShoppingCart,
-  Store,
   Timer,
   User,
   UserCog,
@@ -31,7 +32,6 @@ import { Badge } from '../components/ui/badge';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -117,16 +117,37 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function BrandMark({ logoUrl, name }: { logoUrl?: string | null; name: string }) {
+function ModeSwitcher({
+  mode,
+  onSelect,
+}: {
+  mode: Mode;
+  onSelect: (m: Mode) => void;
+}) {
+  const current =
+    mode === 'till'
+      ? { label: 'Till', icon: <ShoppingCart className="size-4" /> }
+      : { label: 'Dashboard', icon: <LayoutDashboard className="size-4" /> };
   return (
-    <div className="flex items-center gap-2">
-      {logoUrl ? (
-        <img src={logoUrl} alt={name} className="size-7 rounded object-contain" />
-      ) : (
-        <Store className="size-6 text-primary" />
-      )}
-      <span className="font-semibold tracking-tight">{name}</span>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-md border bg-background px-2.5 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
+        {current.icon}
+        <span>{current.label}</span>
+        <ChevronsUpDown className="size-4 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuItem onClick={() => onSelect('till')}>
+          <ShoppingCart className="size-4" />
+          <span>Till</span>
+          {mode === 'till' && <Check className="ml-auto size-4 text-primary" />}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onSelect('dashboard')}>
+          <LayoutDashboard className="size-4" />
+          <span>Dashboard</span>
+          {mode === 'dashboard' && <Check className="ml-auto size-4 text-primary" />}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -441,7 +462,7 @@ export default function AppShell() {
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
         <SidebarTrigger />
 
-        <BrandMark logoUrl={logoUrl} name={storeName} />
+        <ModeSwitcher mode={mode} onSelect={switchMode} />
 
         {mode === 'dashboard' && (
           <>
@@ -537,32 +558,6 @@ export default function AppShell() {
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter className="gap-1">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={mode === 'till'}
-                onClick={() => switchMode('till')}
-                tooltip="Till"
-                className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
-              >
-                <ShoppingCart />
-                <span>Till</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={mode === 'dashboard'}
-                onClick={() => switchMode('dashboard')}
-                tooltip="Dashboard"
-                className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
-              >
-                <LayoutDashboard />
-                <span>Dashboard</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
 
