@@ -100,9 +100,11 @@ export default function LoginPage() {
           </div>
 
           <Card className="shadow-sm">
-            <CardHeader className="items-center text-center">
-              <div className="mb-1 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Store className="size-6" />
+            <CardHeader className="items-center justify-center text-center">
+              <div className='flex justify-center'>
+                <div className="mb-1 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Store className="size-6" />
+                </div>
               </div>
               <CardTitle className="text-xl">Welcome back</CardTitle>
               <CardDescription>

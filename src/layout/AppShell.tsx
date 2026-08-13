@@ -153,10 +153,83 @@ function ModeSwitcher({
   );
 }
 
+function Landing({
+  storeName,
+  logoUrl,
+  onChoose,
+}: {
+  storeName: string;
+  logoUrl?: string;
+  onChoose: (m: Mode) => void;
+}) {
+  const options: {
+    mode: Mode;
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      mode: 'dashboard',
+      title: 'Dashboard',
+      description: 'Reports, inventory, customers, and settings.',
+      icon: <LayoutDashboard className="size-6" />,
+    },
+    {
+      mode: 'till',
+      title: 'Till / Billing',
+      description: 'Start a sale and take payments at the counter.',
+      icon: <ShoppingCart className="size-6" />,
+    },
+  ];
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
+      <div className="mb-10 flex flex-col items-center text-center">
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt=""
+            className="mb-4 h-14 w-14 rounded-lg object-contain"
+          />
+        )}
+        <h1 className="font-heading text-2xl font-semibold">{storeName}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Where would you like to go?
+        </p>
+      </div>
+      <div className="grid w-full max-w-2xl gap-4 sm:grid-cols-2">
+        {options.map((opt) => (
+          <button
+            key={opt.mode}
+            type="button"
+            onClick={() => onChoose(opt.mode)}
+            className="group flex flex-col items-start gap-3 rounded-xl border bg-card p-6 text-left shadow-sm outline-none transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              {opt.icon}
+            </span>
+            <span className="font-heading text-lg font-semibold">{opt.title}</span>
+            <span className="text-sm text-muted-foreground">{opt.description}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AppShell() {
   const { user, hasPerm, logout } = useAuth();
   const { products, categories, customers, settings, error, reload } = useStoreData();
   const [mode, setMode] = useState<Mode>('till');
+  const [landed, setLanded] = useState(false);
+
+  const enterMode = useCallback(
+    (m: Mode) => {
+      setMode(m);
+      setLanded(true);
+    },
+    []
+  );
   const [holdCount, setHoldCount] = useState(0);
   const [commandOpen, setCommandOpen] = useState(false);
   const [date, setDate] = useState<PickerValue>({
@@ -515,6 +588,16 @@ export default function AppShell() {
           <UserMenu />
         </div>
       </header>
+    );
+  }
+
+  if (!landed) {
+    return (
+      <Landing
+        storeName={storeName}
+        logoUrl={logoUrl}
+        onChoose={enterMode}
+      />
     );
   }
 
