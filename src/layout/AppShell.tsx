@@ -460,7 +460,7 @@ export default function AppShell() {
   function TopBar() {
     return (
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
-        <SidebarTrigger />
+        {mode === 'dashboard' && <SidebarTrigger />}
 
         <ModeSwitcher mode={mode} onSelect={switchMode} />
 
@@ -510,6 +510,48 @@ export default function AppShell() {
     );
   }
 
+  if (mode === 'till') {
+    return (
+      <div className="flex h-screen flex-col bg-background">
+        <TopBar />
+        {error && (
+          <div className="border-b bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+        <main className="min-h-0 flex-1 overflow-hidden">
+          <TillView
+            products={products}
+            categories={categories}
+            customers={customers}
+            settings={settings}
+            holdCount={holdCount}
+            onHoldCount={setHoldCount}
+            onRefresh={reload}
+          />
+        </main>
+
+        <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
+        <Toaster />
+
+        <AlertDialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmOpen(false)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+              <AlertDialogDescription>{confirmMsg}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmOpen(false)}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={runConfirmed}>Switch</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
@@ -542,7 +584,7 @@ export default function AppShell() {
                     return (
                       <SidebarMenuItem key={item.id}>
                         <SidebarMenuButton
-                          isActive={mode === 'dashboard' && activeView === item.id}
+                          isActive={activeView === item.id}
                           onClick={() => goTo(item.id)}
                           tooltip={item.label}
                           className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
@@ -569,19 +611,7 @@ export default function AppShell() {
           </div>
         )}
         <main className="min-h-0 flex-1 overflow-hidden">
-          {mode === 'till' ? (
-            <TillView
-              products={products}
-              categories={categories}
-              customers={customers}
-              settings={settings}
-              holdCount={holdCount}
-              onHoldCount={setHoldCount}
-              onRefresh={reload}
-            />
-          ) : (
-            <div className="h-full overflow-auto p-6">{renderView()}</div>
-          )}
+          <div className="h-full overflow-auto p-6">{renderView()}</div>
         </main>
       </SidebarInset>
 
