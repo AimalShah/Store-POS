@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Store POS — Testing &amp; Accuracy Documentation</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #172033; --text: #e2e8f0;
+    --muted: #94a3b8; --accent: #38bdf8; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  header {
+    padding: 32px 24px; background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+    color: #fff;
+  }
+  header h1 { margin: 0 0 6px; font-size: 26px; }
+  header p { margin: 0; opacity: 0.92; max-width: 900px; }
+  nav {
+    display: flex; gap: 10px; padding: 14px 24px; background: var(--panel2);
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  nav a {
+    color: var(--accent); text-decoration: none; padding: 6px 12px;
+    border: 1px solid var(--border); border-radius: 8px; font-size: 14px;
+  }
+  nav a:hover { background: var(--panel); }
+  main { max-width: 980px; margin: 0 auto; padding: 24px; }
+  h2 { border-left: 4px solid var(--accent); padding-left: 10px; margin-top: 36px; }
+  h3 { color: var(--accent); margin-top: 26px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); color: var(--text); }
+  tr:nth-child(even) td { background: var(--panel2); }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 5px; color: #fca5a5; font-size: 13px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .ok { background: rgba(74,222,128,.15); color: var(--ok); }
+  .warn { background: rgba(251,191,36,.15); color: var(--warn); }
+  .bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin: 16px 0; }
+  .muted { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .stat .n { font-size: 30px; font-weight: 700; color: var(--accent); }
+  .stat .l { color: var(--muted); font-size: 13px; }
+  footer { padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+  a.inline { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Store POS — Testing &amp; Accuracy Documentation</h1>
+  <p>How the Dashboard KPIs and Reports are proven to reflect the <strong>exact, unmanipulated</strong>
+  arithmetic of the underlying paid sales — across unit, behaviour (Gherkin) and end-to-end (Playwright) layers.</p>
+</header>
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="coverage.html">Test Coverage</a>
+  <a href="bugs.html">Bug Log</a>
+</nav>
+<main>
+
+  <div class="grid">
+    <div class="stat"><div class="n">82</div><div class="l">Vitest unit tests (test/*.test.js)</div></div>
+    <div class="stat"><div class="n">81</div><div class="l">Cucumber scenarios (qa/features)</div></div>
+    <div class="stat"><div class="n">19</div><div class="l">Playwright e2e specs (e2e/*.spec.mjs)</div></div>
+  </div>
+
+  <h2>Why this exists</h2>
+  <p>A POS dashboard is only trustworthy if every number a manager sees equals the arithmetic of the real
+  transactions. A single mistake — counting a <em>held</em> order as revenue, leaking a <em>refund</em> into sales,
+  or fabricating a trend from a divide-by-zero — turns the dashboard into fiction. This documentation records the
+  test suite that locks that behaviour in, and the defects that were found and fixed.</p>
+
+  <h2>Three-layer testing strategy</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Tool</th><th>Location</th><th>What it proves</th><th>Speed / scope</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Unit</strong></td>
+        <td>Vitest</td>
+        <td><code>test/*.test.js</code></td>
+        <td>Pure aggregation &amp; KPI maths (no UI). Exact sums, exclusions, date windows, X/Z reconciliation.</td>
+        <td>Fast / logic</td>
+      </tr>
+      <tr>
+        <td><strong>Behaviour</strong></td>
+        <td>Cucumber / Gherkin</td>
+        <td><code>qa/features/*.feature</code></td>
+        <td>Real HTTP API end-to-end: create product → create sale → fetch summary → assert the numbers.</td>
+        <td>Medium / API</td>
+      </tr>
+      <tr>
+        <td><strong>End-to-end</strong></td>
+        <td>Playwright</td>
+        <td><code>e2e/*.spec.mjs</code></td>
+        <td>Real Electron app: seed sales via API, then assert the rendered Dashboard KPI cards &amp; Reports view.</td>
+        <td>Slow / UI</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Where the real bugs were</h2>
+  <p>Two genuine defects were found in the sale write-path and fixed; both are now permanently guarded by the
+  accuracy tests. Full detail, symptoms and fixes are in <a class="inline" href="bugs.html">the Bug Log</a>.</p>
+  <table>
+    <thead><tr><th>ID</th><th>File</th><th>Defect</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>BUG-1</code></td>
+        <td><code>server/routes/transactions.js</code></td>
+        <td><code>shift_id</code> dropped from INSERT/UPDATE → X/Z shift reports could not reconcile to sales.</td>
+        <td><span class="pill ok">Fixed</span></td>
+      </tr>
+      <tr>
+        <td><code>BUG-2</code></td>
+        <td><code>src/api/client.ts</code></td>
+        <td><code>updateTransaction</code> PUT to <code>/new</code> (no id) → refunds/edits via the UI failed.</td>
+        <td><span class="pill ok">Fixed</span></td>
+      </tr>
+      <tr>
+        <td><code>INC-1</code></td>
+        <td><code>e2e/reports.spec.mjs</code></td>
+        <td>First e2e run showed a phantom <code>Rs2312.00 / -65%</code> KPI — a Vite HMR race, not a product bug.</td>
+        <td><span class="pill warn">Lesson</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>How to run</h2>
+  <div class="card">
+    <code># Unit (vitest)</code><br/>
+    <code>npx vitest run</code><br/><br/>
+    <code># Behaviour (cucumber)</code><br/>
+    <code>npm run qa</code><br/><br/>
+    <code># End-to-end (playwright, needs display)</code><br/>
+    <code>npm run e2e</code> &nbsp; (headless Linux: <code>npm run e2e:linux</code>)
+  </div>
+
+  <h2>Test inventory (KPI / Reports focused)</h2>
+  <table>
+    <thead><tr><th>File</th><th>Layer</th><th>Focus</th></tr></thead>
+    <tbody>
+      <tr><td><code>test/reports-accuracy.test.js</code></td><td>Unit</td><td>computeSalesSummary, computeBestSellers, X/Z shift reports, computeKpis</td></tr>
+      <tr><td><code>test/dashboard.test.js</code></td><td>Unit</td><td>Dashboard data shaping</td></tr>
+      <tr><td><code>test/bestSellers.test.js</code>, <code>test/hotProducts.test.js</code></td><td>Unit</td><td>Best-seller / top-product ranking</td></tr>
+      <tr><td><code>test/reports.test.js</code>, <code>test/charts.test.js</code></td><td>Unit</td><td>Report payloads &amp; chart series</td></tr>
+      <tr><td><code>test/dateRange.test.js</code></td><td>Unit</td><td>Date-range presets for filtering</td></tr>
+      <tr><td><code>qa/features/reports-accuracy.feature</code></td><td>Gherkin</td><td>Summary totals, split payments, best sellers, shift reports</td></tr>
+      <tr><td><code>qa/features/reports.feature</code>, <code>qa/features/best-sellers.feature</code></td><td>Gherkin</td><td>Report UI &amp; best-seller behaviour</td></tr>
+      <tr><td><code>e2e/reports.spec.mjs</code></td><td>Playwright</td><td>Dashboard KPI cards &amp; Reports view render the real totals</td></tr>
+      <tr><td><code>e2e/catalog.spec.mjs</code></td><td>Playwright</td><td>Adds a category and a product through the real front-end forms</td></tr>
+      <tr><td><code>e2e/app.spec.mjs</code>, <code>e2e/till.spec.mjs</code></td><td>Playwright</td><td>App boot, sign-in, full till/sale/payment flow</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted">For line-by-line coverage and the bug write-ups, open
+  <a class="inline" href="coverage.html">Test Coverage</a> and
+  <a class="inline" href="bugs.html">Bug Log</a>.</p>
+
+</main>
+<footer>Generated as part of the KPI / Reports accuracy QA initiative · Store POS</footer>
+</body>
+</html>

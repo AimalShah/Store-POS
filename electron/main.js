@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { printKotJob, printReceiptJob, readPrinterConfig } from './thermal.js';
@@ -106,6 +107,30 @@ ipcMain.handle('print-kot', async (_event, payload) => {
   const config = readPrinterConfig();
   if (!config || !config.kot.interface) return { printed: false, fallback: true };
   return printKotJob(payload.tx, config);
+});
+
+// Hand a generated PDF report (sales report, X/Z shift report, invoice) to the
+// system's default PDF viewer. Electron's native `webContents.print` reliably
+// SIGTRAPs under Wayland (zxdg_exporter_v2 surface-role crash), so we sidestep
+// the print pipeline entirely: the renderer already produced a complete PDF, we
+// just persist it and let the OS open it. The user can print or save from there,
+// and the app shell never gets involved (or crashes).
+ipcMain.handle('print-pdf', async (_event, { data }) => {
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  const tmp = path.join(os.tmpdir(), `pos-report-${Date.now()}.pdf`);
+  try {
+    fs.writeFileSync(tmp, buffer);
+  } catch (err) {
+    console.error('Failed to write report PDF', err);
+    return { printed: false };
+  }
+  try {
+    await shell.openPath(tmp);
+  } catch (err) {
+    console.error('Failed to open report PDF', err);
+    return { printed: false };
+  }
+  return { printed: true };
 });
 
 ipcMain.handle('save-file', async (_event, { defaultName, type, data }) => {

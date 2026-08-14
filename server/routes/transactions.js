@@ -173,8 +173,8 @@ router.post('/new', (req, res) => {
         `INSERT INTO transactions (
           ref_number, customer, customer_name, status, user_id, user_name, till,
           discount, subtotal, tax, total, paid, change, payment_type, payment_breakdown_json, items_json, date,
-          fulfillment, delivery_name, delivery_contact, delivery_address
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          fulfillment, delivery_name, delivery_contact, delivery_address, shift_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         ref,
@@ -197,7 +197,8 @@ router.post('/new', (req, res) => {
         body.fulfillment || 'takeaway',
         body.delivery_name || '',
         body.delivery_contact || '',
-        body.delivery_address || ''
+        body.delivery_address || '',
+        parseInt(body.shift_id, 10) || null
       );
 
     if (isPaid) {
@@ -236,7 +237,7 @@ router.put('/new/:id', (req, res) => {
       `UPDATE transactions SET
         ref_number = ?, customer = ?, customer_name = ?, status = ?, user_id = ?, user_name = ?, till = ?,
         discount = ?, subtotal = ?, tax = ?, total = ?, paid = ?, change = ?, payment_type = ?, payment_breakdown_json = ?, items_json = ?, date = ?,
-        fulfillment = ?, delivery_name = ?, delivery_contact = ?, delivery_address = ?
+        fulfillment = ?, delivery_name = ?, delivery_contact = ?, delivery_address = ?, shift_id = ?
        WHERE id = ?`
     ).run(
       ref,
@@ -260,6 +261,7 @@ router.put('/new/:id', (req, res) => {
       body.delivery_name || '',
       body.delivery_contact || '',
       body.delivery_address || '',
+      parseInt(body.shift_id, 10) || null,
       id
     );
 

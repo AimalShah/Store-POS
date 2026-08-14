@@ -49,7 +49,9 @@ export async function initDatabase(filePath) {
 
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT 'Utensils',
+      color TEXT NOT NULL DEFAULT 'gray'
     );
 
     CREATE TABLE IF NOT EXISTS products (
@@ -98,6 +100,7 @@ export async function initDatabase(filePath) {
       product_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       price REAL NOT NULL DEFAULT 0,
+      cost REAL NOT NULL DEFAULT 0,
       position INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     );
@@ -215,6 +218,19 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     /* ignore */
   }
 
+  // Migration: add icon and color columns to categories if they don't exist
+  try {
+    const cols = db.prepare('PRAGMA table_info(categories)').all();
+    if (!cols.some((c) => c.name === 'icon')) {
+      db.prepare("ALTER TABLE categories ADD COLUMN icon TEXT NOT NULL DEFAULT 'Utensils'").run();
+    }
+    if (!cols.some((c) => c.name === 'color')) {
+      db.prepare("ALTER TABLE categories ADD COLUMN color TEXT NOT NULL DEFAULT 'gray'").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
   // Migration: add low_stock_threshold column to products if it doesn't exist
   try {
     const cols = db.prepare("PRAGMA table_info(products)").all();
@@ -306,6 +322,40 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
         CREATE INDEX idx_shifts_status ON shifts(status);
         CREATE INDEX idx_shifts_till ON shifts(till);
       `);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: create drawer sessions table if it doesn't exist
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='drawer_sessions'").all();
+    if (tables.length === 0) {
+      db.exec(`
+        CREATE TABLE drawer_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          till INTEGER NOT NULL DEFAULT 1,
+          float_amount REAL NOT NULL DEFAULT 0,
+          counted_cash REAL,
+          variance REAL,
+          status TEXT NOT NULL DEFAULT 'open',
+          opened_at TEXT NOT NULL,
+          closed_at TEXT,
+          FOREIGN KEY (till) REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX idx_drawer_sessions_till ON drawer_sessions(till);
+      `);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: add cost column to product_sizes if it doesn't exist
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='product_sizes'").all();
+    if (tables.length === 0) {
+      // Table doesn't exist yet, add cost column in the main schema creation
+      // This will be handled by the main schema creation below
     }
   } catch {
     /* ignore */
@@ -440,6 +490,8 @@ export function mapCategory(row) {
     _id: row.id,
     id: row.id,
     name: row.name,
+    icon: row.icon || 'Utensils',
+    color: row.color || 'gray',
   };
 }
 

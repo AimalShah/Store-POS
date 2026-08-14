@@ -83,10 +83,10 @@ import CatalogView from '../pages/CatalogView';
 import CustomersView from '../pages/CustomersView';
 import DashboardView from '../pages/DashboardView';
 import SettingsView from '../pages/SettingsView';
-import ShiftView from '../pages/ShiftView';
 import StockHistoryView from '../pages/StockHistoryView';
 import TeamView from '../pages/TeamView';
 import ReportsView from '../pages/ReportsView';
+import DrawerView from '../pages/DrawerView';
 import ExportView from '../pages/ExportView';
 import PrinterSettingsView from '../pages/PrinterSettingsView';
 import TransactionsModal from '../components/TransactionsModal';
@@ -393,7 +393,7 @@ export default function AppShell() {
       group: 'Products',
       keywords: `product sku ${p.category}`,
       icon: <Package className="size-4 text-muted-foreground" />,
-      onSelect: () => goTo('catalog'),
+      onSelect: () => goTo('menu'),
     }));
     return [...nav, ...actions, ...productCmds];
   }, [groups, products, reload, goTo]);
@@ -407,10 +407,10 @@ export default function AppShell() {
             range={date.range}
             onQuickSale={() => setMode('till')}
             onHeldClick={() => goTo('sales')}
-            onLowStockClick={() => goTo('catalog')}
+            onLowStockClick={() => goTo('menu')}
           />
         );
-      case 'catalog':
+      case 'menu':
         return (
           <CatalogView
             products={products}
@@ -435,10 +435,10 @@ export default function AppShell() {
         return <CustomersView customers={customers} onChanged={reload} />;
       case 'stock-history':
         return <StockHistoryView products={products} symbol={symbol} />;
-      case 'shifts':
-        return <ShiftView settings={settings} onShiftChange={reload} />;
       case 'reports':
         return <ReportsView symbol={symbol} />;
+      case 'drawer':
+        return <DrawerView settings={settings} onDrawerChange={reload} />;
       case 'team':
         return <TeamView />;
       case 'settings':
@@ -574,7 +574,7 @@ export default function AppShell() {
               size="icon-sm"
               className="text-amber-600 hover:text-amber-700"
               title={`${lowStockCount} products low on stock`}
-              onClick={() => goTo('catalog')}
+              onClick={() => goTo('menu')}
             >
               <AlertTriangle className="size-4" />
             </Button>

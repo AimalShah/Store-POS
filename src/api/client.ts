@@ -28,6 +28,7 @@ export type Product = {
   lowStockThreshold: number;
   img: string;
   hot: boolean;
+  featureAsDailySpecial: boolean;
   components?: ProductComponent[];
   sizes?: ProductSize[];
   modifiers?: ModifierGroup[];
@@ -78,6 +79,8 @@ export type Category = {
   _id: number;
   id: number;
   name: string;
+  icon: string;
+  color: string;
 };
 
 export type Customer = {
@@ -381,10 +384,10 @@ export const api = {
 
   getCategories: () => request<Category[]>('/categories/all'),
 
-  saveCategory: (body: { name: string }) =>
+  saveCategory: (body: { name: string; icon: string; color?: string }) =>
     request('/categories/category', { method: 'POST', body: JSON.stringify(body) }),
 
-  updateCategory: (body: { id: number; name: string }) =>
+  updateCategory: (body: { id: number; name: string; icon: string; color?: string }) =>
     request('/categories/category', { method: 'PUT', body: JSON.stringify(body) }),
 
   deleteCategory: (id: number) =>
@@ -439,10 +442,13 @@ export const api = {
     }),
 
   updateTransaction: (body: Record<string, unknown>) =>
-    request<{ ok: boolean; id: number; ref_number: string }>('/new', {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    }),
+    request<{ ok: boolean; id: number; ref_number: string }>(
+      `/new/${body._id ?? body.id}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }
+    ),
 
   deleteTransaction: (orderId: number) =>
     request('/delete', { method: 'POST', body: JSON.stringify({ orderId }) }),
@@ -513,43 +519,14 @@ clearDemo: (options?: {
         `/inventory/product/${productId}/stock-movements?limit=${limit}&offset=${offset}`
       ),
 
-    // Shifts
-    getOpenShift: (till?: number) =>
-      request<Shift | null>(`/shifts/open${till ? `?till=${till}` : ''}`),
+    getPrinterSettings: () =>
+      request<{ printer: PrinterSettings }>('/printer/settings'),
 
-    getShifts: (params?: {
-      status?: string;
-      till?: number;
-      userId?: number;
-      limit?: number;
-      offset?: number;
-    }) => {
-      const q = new URLSearchParams();
-      if (params?.status) q.append('status', params.status);
-      if (params?.till) q.append('till', String(params.till));
-      if (params?.userId) q.append('userId', String(params.userId));
-      if (params?.limit) q.append('limit', String(params.limit));
-      if (params?.offset) q.append('offset', String(params.offset));
-      return request<Shift[]>(`/shifts?${q}`);
-    },
-
-    openShift: (body: { floatAmount: number; till: number }) =>
-      request<Shift>('/shifts/open', {
+    savePrinterSettings: (body: Partial<PrinterSettings>) =>
+      request<{ printer: PrinterSettings }>('/printer/settings', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-
-    closeShift: (shiftId: number, body: { countedCash: number }) =>
-      request<Shift>(`/shifts/${shiftId}/close`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-
-    getXReport: (shiftId: number) =>
-      request<XReport>(`/shifts/${shiftId}/x-report`),
-
-    getZReport: (shiftId: number) =>
-      request<ZReport>(`/shifts/${shiftId}/z-report`),
 
     getReportSummary: (params: { start?: string; end?: string; till?: number }) => {
       const q = new URLSearchParams();
@@ -559,12 +536,24 @@ clearDemo: (options?: {
       return request<ReportSummary>(`/reports/summary?${q}`);
     },
 
-    getPrinterSettings: () =>
-      request<{ printer: PrinterSettings }>('/printer/settings'),
+    getDrawerSessions: (params?: { status?: string; till?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.append('status', params.status);
+      if (params?.till) q.append('till', String(params.till));
+      return request<{ id: number; till: number; float_amount: number; counted_cash: number; variance: number; status: string; opened_at: string; closed_at: string }[]>(
+        `/drawer?${q}`
+      );
+    },
 
-    savePrinterSettings: (body: Partial<PrinterSettings>) =>
-      request<{ printer: PrinterSettings }>('/printer/settings', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
+    openDrawerSession: (body: { floatAmount: number; till: number }) =>
+      request<{ id: number; till: number; float_amount: number; counted_cash: number; variance: number; status: string; opened_at: string; closed_at: string }>(
+        `/drawer/open`,
+        { method: 'POST', body: JSON.stringify(body) }
+      ),
+
+    closeDrawerSession: (sessionId: number, body: { countedCash: number }) =>
+      request<{ id: number; till: number; float_amount: number; counted_cash: number; variance: number; status: string; opened_at: string; closed_at: string }>(
+        `/drawer/${sessionId}/close`,
+        { method: 'POST', body: JSON.stringify(body) }
+      ),
   };

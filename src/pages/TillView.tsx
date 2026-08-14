@@ -23,6 +23,8 @@ import {
   Trash2,
   Timer,
   Utensils,
+  icons,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   api,
@@ -36,12 +38,13 @@ import {
   Shift,
   Transaction,
   getUploadsBase,
+  PrinterSettings,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import CustomerSelect from '../components/CustomerSelect';
 import Invoice from '../components/Invoice';
 import PaymentPad from '../components/PaymentPad';
-import { printReceipt } from '../lib/printing';
+import { printReceipt, printKot } from '../lib/printing';
 import { highlight } from '../lib/highlight';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -54,62 +57,6 @@ import {
   SelectValue,
 } from '../components/ui/select';
 
-const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  Pizzas: Pizza,
-  Burgers: Beef,
-  Chinese: ChefHat,
-  Soup: Soup,
-  Snacks: Cookie,
-  Drinks: CupSoda,
-  Deals: Tag,
-};
-
-type TabStyle = { active: string; inactive: string; icon: string };
-
-const CATEGORY_STYLE: Record<string, TabStyle> = {
-  Pizzas: {
-    active: 'border-purple-400 bg-purple-100 text-purple-700 shadow-purple-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-purple-300',
-    icon: 'text-purple-600',
-  },
-  Burgers: {
-    active: 'border-green-400 bg-green-100 text-green-700 shadow-green-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-green-300',
-    icon: 'text-green-600',
-  },
-  Chinese: {
-    active: 'border-pink-400 bg-pink-100 text-pink-700 shadow-pink-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-pink-300',
-    icon: 'text-pink-600',
-  },
-  Soup: {
-    active: 'border-teal-400 bg-teal-100 text-teal-700 shadow-teal-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-teal-300',
-    icon: 'text-teal-600',
-  },
-  Snacks: {
-    active: 'border-amber-400 bg-amber-100 text-amber-700 shadow-amber-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-amber-300',
-    icon: 'text-amber-600',
-  },
-  Drinks: {
-    active: 'border-blue-400 bg-blue-100 text-blue-700 shadow-blue-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-blue-300',
-    icon: 'text-blue-600',
-  },
-  Deals: {
-    active: 'border-indigo-400 bg-indigo-100 text-indigo-700 shadow-indigo-400/40',
-    inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-indigo-300',
-    icon: 'text-indigo-600',
-  },
-};
-
-const CATEGORY_DEFAULT: TabStyle = {
-  active: 'border-foreground bg-foreground text-background shadow-black/40',
-  inactive: 'border-border bg-card text-foreground shadow-black/10 hover:border-foreground/40',
-  icon: 'text-foreground',
-};
-
 const CATEGORY_CARD: Record<string, string> = {
   Pizzas: 'shadow-[6px_6px_0_0] shadow-purple-400/30 hover:border-purple-400 hover:shadow-purple-400/60',
   Burgers: 'shadow-[6px_6px_0_0] shadow-green-400/30 hover:border-green-400 hover:shadow-green-400/60',
@@ -119,6 +66,17 @@ const CATEGORY_CARD: Record<string, string> = {
   Drinks: 'shadow-[6px_6px_0_0] shadow-blue-400/30 hover:border-blue-400 hover:shadow-blue-400/60',
   Deals: 'shadow-[6px_6px_0_0] shadow-indigo-400/30 hover:border-indigo-400 hover:shadow-indigo-400/60',
 };
+
+const iconLibrary = icons as Record<string, LucideIcon>;
+
+const STICKY_NOTE_ICON_STYLES = [
+  'bg-amber-200 text-amber-950',
+  'bg-red-200 text-red-950',
+  'bg-yellow-200 text-yellow-950',
+  'bg-green-200 text-green-950',
+  'bg-sky-200 text-sky-950',
+  'bg-purple-200 text-purple-950',
+];
 
 const CARD_DEFAULT = 'shadow-[6px_6px_0_0] shadow-black/20 hover:border-foreground/40 hover:shadow-black/40';
 
@@ -200,18 +158,18 @@ export default function TillView({
   const [showHolds, setShowHolds] = useState(false);
   const [holds, setHolds] = useState<Transaction[]>([]);
 
-  // Shift State
-  const [currentShift, setCurrentShift] = useState<Shift | null>(null);
-  const [shiftLoading, setShiftLoading] = useState(true);
+  // Printer State
+  const [printerSettings, setPrinterSettings] = useState<PrinterSettings | null>(null);
+  const [printerLoading, setPrinterLoading] = useState(true);
 
-  const refreshShift = async () => {
+  const loadPrinterSettings = async () => {
     try {
-      const shift = await api.getOpenShift(settings?.till || 1);
-      setCurrentShift(shift);
+      const res = await api.getPrinterSettings();
+      setPrinterSettings(res.printer);
     } catch {
-      setCurrentShift(null);
+      setPrinterSettings(null);
     } finally {
-      setShiftLoading(false);
+      setPrinterLoading(false);
     }
   };
 
@@ -244,14 +202,14 @@ export default function TillView({
   }, []);
 
   useEffect(() => {
-    refreshShift();
+    loadPrinterSettings();
   }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
         e.preventDefault();
-        if (cart.length && currentShift && currentShift.status === 'open') openPay();
+        if (cart.length) openPay();
       }
       if (e.key === 'F4') {
         e.preventDefault();
@@ -263,7 +221,7 @@ export default function TillView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [cart, showPay, currentShift]);
+  }, [cart, showPay]);
 
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -503,7 +461,6 @@ export default function TillView({
       payment_breakdown: paymentLines.length > 0 ? paymentLines : [{ method: selectedMethod, amount: total }],
       items: cart,
       date: new Date().toISOString(),
-      shift_id: currentShift?.id,
       fulfillment,
       delivery_name: deliveryName,
       delivery_contact: deliveryContact,
@@ -528,13 +485,6 @@ export default function TillView({
   };
 
   const completeSale = async () => {
-    // Check if a shift is open
-    if (!currentShift || currentShift.status !== 'open') {
-      setError('No shift is open. Please open a shift before completing a sale.');
-      setShowPay(false);
-      return;
-    }
-
     let currentLines = [...paymentLines];
     if (currentLines.length === 0) {
       const val = parseFloat(amountInput) || total;
@@ -580,7 +530,6 @@ export default function TillView({
       payment_breakdown: currentLines,
       items: cart,
       date: new Date().toISOString(),
-      shift_id: currentShift.id,
       fulfillment,
       delivery_name: deliveryName,
       delivery_contact: deliveryContact,
@@ -615,6 +564,19 @@ export default function TillView({
       setShowPay(false);
       await onRefresh();
       await refreshHolds();
+
+      // Auto-print KOT if configured
+      if (
+        printerSettings?.kotInterface &&
+        printerSettings.autoPrintKot &&
+        savedTx.fulfillment !== 'delivery'
+      ) {
+        try {
+          await printKot(savedTx);
+        } catch {
+          /* KOT print failure falls through to manual reprint */
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sale completion failed');
     }
@@ -671,31 +633,51 @@ export default function TillView({
             <div className="flex gap-2 pb-1">
               <button
                 type="button"
+                data-testid="cat-tab-search"
                 onClick={() => setCategoryFilter('search')}
-                className={`group flex w-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-3 text-center shadow-[4px_4px_0_0] transition-all hover:-translate-y-0.5 ${
+                aria-pressed={categoryFilter === 'search'}
+                className={`group relative flex h-32 w-40 flex-col items-start justify-between rounded-xl border-2 bg-card p-4 text-left shadow-md shadow-zinc-900/15 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
                   categoryFilter === 'search'
-                    ? 'border-foreground bg-foreground text-background shadow-black/40'
-                    : 'border-border bg-card text-foreground shadow-black/10 hover:border-foreground/40'
+                    ? 'border-primary ring-2 ring-primary/25'
+                    : 'border-border hover:border-amber-300'
                 }`}
               >
-                <Search className="size-6" />
-                <span className="text-xs font-bold leading-tight">Search</span>
+                <span className="flex size-10 items-center justify-center rounded-lg bg-amber-200 text-amber-950">
+                  <Search className="size-5" />
+                </span>
+                <span className="text-base font-bold leading-tight">Search</span>
+                {categoryFilter === 'search' && (
+                  <span className="absolute top-3 right-3 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-3" />
+                  </span>
+                )}
               </button>
               {categories.map((c) => {
-                const Icon = CATEGORY_ICONS[c.name] || Utensils;
-                const style = CATEGORY_STYLE[c.name] || CATEGORY_DEFAULT;
+                const Icon = iconLibrary[c.icon] || Utensils;
                 const active = categoryFilter === c.name;
+                const iconStyle = STICKY_NOTE_ICON_STYLES[c.id % STICKY_NOTE_ICON_STYLES.length];
                 return (
                   <button
                     key={c.id}
                     type="button"
+                    data-testid={`cat-tab-${c.name}`}
+                    aria-pressed={active}
                     onClick={() => setCategoryFilter(c.name)}
-                    className={`group flex w-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-3 text-center shadow-[4px_4px_0_0] transition-all hover:-translate-y-0.5 ${
-                      active ? style.active : style.inactive
+                    className={`group relative flex h-32 w-40 flex-col items-start justify-between rounded-xl border-2 bg-card p-4 text-left shadow-md shadow-zinc-900/15 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                      active
+                        ? 'border-primary ring-2 ring-primary/25'
+                        : 'border-border hover:border-primary/50'
                     }`}
                   >
-                    <Icon className={`size-6 ${style.icon}`} />
-                    <span className="text-xs font-bold leading-tight">{c.name}</span>
+                    <span className={`flex size-10 items-center justify-center rounded-lg ${iconStyle}`}>
+                      <Icon className="size-5" />
+                    </span>
+                    <span className="text-base font-bold leading-tight">{c.name}</span>
+                    {active && (
+                      <span className="absolute top-3 right-3 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="size-3" />
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -732,6 +714,7 @@ export default function TillView({
                 <button
                   key={p.id}
                   type="button"
+                  data-testid={`product-${p.id}`}
                   onClick={() => addToCart(p)}
                   disabled={isOut}
                   className={`group relative flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary ${cardColor} ${
@@ -783,7 +766,7 @@ export default function TillView({
               value={fulfillment}
               onValueChange={(v) => setFulfillment(v as 'takeaway' | 'dine-in' | 'delivery')}
             >
-              <SelectTrigger className="h-10 w-44 shrink-0">
+              <SelectTrigger className="h-10 w-44 shrink-0" data-testid="fulfillment-trigger">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -946,11 +929,12 @@ export default function TillView({
                 onChange={(e) => setDiscount(Number(e.target.value))}
                 className="w-24 h-8 text-right text-xs"
                 placeholder="0.00"
+                data-testid="order-discount"
               />
             </div>
             <div className="flex items-center justify-between text-muted-foreground">
               <span>Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'})</span>
-              <span>
+              <span data-testid="cart-subtotal">
                 {symbol}
                 {lineSubtotal.toFixed(2)}
               </span>
@@ -966,7 +950,7 @@ export default function TillView({
             )}
             <div className="flex items-center justify-between text-lg font-bold pt-2 border-t text-foreground">
               <span>Total</span>
-              <span className="text-primary text-xl">
+              <span className="text-primary text-xl" data-testid="cart-total">
                 {symbol}
                 {total.toFixed(2)}
               </span>
@@ -992,7 +976,7 @@ export default function TillView({
             </Button>
             <Button
               onClick={openPay}
-              disabled={!cart.length || !currentShift || currentShift.status !== 'open'}
+              disabled={!cart.length}
               className="h-12 text-base font-semibold"
             >
               Pay
@@ -1238,6 +1222,7 @@ export default function TillView({
                       placeholder={`Amount still owed: ${symbol}${remainingDue.toFixed(2)}`}
                       className="h-11 font-mono text-base text-right"
                       autoFocus
+                      data-testid="pay-amount"
                     />
                     <Button type="button" onClick={addPaymentLine} className="h-11 px-4">
                       Add
@@ -1265,7 +1250,7 @@ export default function TillView({
                         <div className="flex items-center gap-2">
                           <span>
                             {symbol}{line.amount.toFixed(2)}
-                            {line.tendered && line.tendered > line.amount ? ` (Tendered: ${symbol}{line.tendered.toFixed(2)})` : ''}
+                            {line.tendered && line.tendered > line.amount ? ` (Tendered: ${symbol}${line.tendered.toFixed(2)})` : ''}
                           </span>
                           <Button
                             variant="ghost"
@@ -1319,6 +1304,7 @@ export default function TillView({
               onClick={completeSale}
               disabled={paymentLines.length === 0 && remainingDue > 0 && !(parseFloat(amountInput) >= total)}
               className="flex-1 font-semibold"
+              data-testid="pay-now"
             >
               Pay Now
             </Button>
@@ -1339,6 +1325,17 @@ export default function TillView({
             <Button variant="outline" onClick={() => setShowInvoice(false)}>
               Close
             </Button>
+            {printerSettings?.kotInterface && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => invoice && void printKot(invoice)}
+              >
+                <Printer className="size-3.5 mr-1.5" />
+                Reprint Kitchen Ticket
+              </Button>
+            )}
             <Button
               className="flex-1"
               onClick={() => (invoice ? void printReceipt(invoice, settings, false) : window.print())}

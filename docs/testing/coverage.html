@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Store POS — Test Coverage</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #172033; --text: #e2e8f0;
+    --muted: #94a3b8; --accent: #38bdf8; --ok: #4ade80; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.55; }
+  header { padding: 28px 24px; background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%); color: #fff; }
+  header h1 { margin: 0; font-size: 24px; }
+  nav { display: flex; gap: 10px; padding: 14px 24px; background: var(--panel2); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  nav a { color: var(--accent); text-decoration: none; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  main { max-width: 980px; margin: 0 auto; padding: 24px; }
+  h2 { border-left: 4px solid var(--accent); padding-left: 10px; margin-top: 34px; }
+  h3 { color: var(--accent); margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); }
+  tr:nth-child(even) td { background: var(--panel2); }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 5px; color: #fca5a5; font-size: 13px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 14px 0; }
+  ul { margin: 8px 0 8px 2px; padding-left: 20px; }
+  li { margin: 4px 0; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 6px; background: rgba(56,189,248,.15); color: var(--accent); margin-right: 6px; }
+  .muted { color: var(--muted); }
+  a.inline { color: var(--accent); }
+</style>
+</head>
+<body>
+<header><h1>Test Coverage — KPIs &amp; Reports Accuracy</h1></header>
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="coverage.html">Test Coverage</a>
+  <a href="bugs.html">Bug Log</a>
+</nav>
+<main>
+
+  <h2>1. Unit — aggregation maths <span class="muted">(test/reports-accuracy.test.js)</span></h2>
+
+  <h3>computeSalesSummary — exact aggregation over real sales</h3>
+  <div class="card">
+    <p><span class="tag">UNIT</span> Seeds categories/products through the live API, posts real sales, then calls
+    <code>computeSalesSummary({})</code> and asserts the arithmetic.</p>
+    <ul>
+      <li><strong>Sums paid sales by category, payment method and product</strong> — 2 sales (Cola×2@5 + Burger×1@10, then Cola×1@5).
+        Asserts <code>saleCount=2</code>, <code>itemsSold=4</code>, <code>subtotal=25</code>, <code>tax=2.5</code>,
+        <code>totalSales=27.5</code>; Drinks revenue 15 (3 units), Food revenue 10; cash 22 / card 5.5; best-seller Cola qty 3 / rev 15.</li>
+      <li><strong>Excludes held orders (status 0) and refunds (status 2)</strong> — a paid sale (Cola×2) plus a held order (Cola×99) and a refund (Cola×3).
+        Asserts only the paid sale counts: <code>saleCount=1</code>, <code>totalSales=10</code>, items 2.</li>
+      <li><strong>Respects the date window</strong> — one sale dated 2020, one dated today. Queries a 2019–2020 window (expects the 2020 sale) and a 2024–now window (expects today's sale). Proves old sales never leak into current reports.</li>
+    </ul>
+  </div>
+
+  <h3>computeBestSellers — ranking by units then revenue</h3>
+  <div class="card">
+    <p><span class="tag">UNIT</span> Cola (5 units @5) and Burger (5 units @10) tie on quantity; Burger wins on revenue.
+    Asserts <code>ranked[0].name === 'Burger'</code> (rev 50) and <code>ranked[1] === 'Cola'</code> (rev 25).</p>
+  </div>
+
+  <h3>X / Z shift reports — reconcile to the shift sales</h3>
+  <div class="card">
+    <p><span class="tag">UNIT</span> Opens a shift (float 50), posts two shift-scoped sales (cash 10 + card 5).</p>
+    <ul>
+      <li><strong>X report</strong> — <code>totalSales=15</code>, <code>cashSales=10</code>, <code>cardSales=5</code>, <code>saleCount=2</code>, <code>refundCount=0</code>.</li>
+      <li><strong>Z report</strong> (after close with countedCash 60) — <code>expectedCash=60</code> (float 50 + cash 10), <code>actualCash=60</code>, <code>difference=0</code>.</li>
+      <li><strong>X report counts refunds separately</strong> — a paid sale plus a refund; asserts <code>saleCount=1</code>, <code>refundCount=1</code>, <code>refundTotal=5</code>.</li>
+    </ul>
+  </div>
+
+  <h3>computeKpis — UI dashboard maths</h3>
+  <div class="card">
+    <p><span class="tag">UNIT</span> Feeds synthetic transactions to <code>computeKpis</code>.</p>
+    <ul>
+      <li>Derives <code>sales=22</code>, <code>orders=1</code>, <code>aov=22</code>, <code>profit=12</code> (=(5−2)·2+(10−4)·1), <code>marginPct=(12/22)·100</code>, <code>heldOrders=1</code>, <code>lowStock=1</code>.</li>
+      <li><strong>Handles an empty period without dividing by zero</strong> — <code>aov=0</code>, <code>marginPct=0</code>, <code>orders=0</code>. This is the guard against a phantom trend spike.</li>
+    </ul>
+  </div>
+
+  <h2>2. Behaviour — real API end-to-end <span class="muted">(qa/features/reports-accuracy.feature)</span></h2>
+  <div class="card">
+    <p><span class="tag">GHERKIN</span> Drives the live HTTP API the same way the UI does.</p>
+    <ul>
+      <li><strong>Sales summary reflects tax, discount and totals exactly</strong> — Acc Cola ×2 @10, discount 5, tax 2, total 17. Asserts <code>summary.saleCount=1</code>, subtotal 20, discount 5, tax 2, totalSales 17, byCategory count 1, byPaymentMethod count 1.</li>
+      <li><strong>A split-payment sale is summed across both methods</strong> — cash 6 + card 4. Asserts totalSales 10, byPaymentMethod has 2 entries (6 and 4).</li>
+      <li><strong>Best sellers rank by units sold and revenue</strong> — Best A (3×5), Best B (3×20), Best C (1×30) etc.; verifies ranking order.</li>
+      <li><strong>Shift X/Z reconciliation</strong> — shift-scoped sales reconcile exactly (mirrors the unit X/Z block at the API level).</li>
+    </ul>
+  </div>
+
+  <h2>3. End-to-end — rendered UI <span class="muted">(e2e/reports.spec.mjs, e2e/catalog.spec.mjs)</span></h2>
+  <div class="card">
+    <p><span class="tag">PLAYWRIGHT</span> Launches the real Electron app, runs first-run + till setup, seeds two known paid
+    sales through the API, then asserts what a human actually sees.</p>
+    <ul>
+      <li><strong>Dashboard KPIs reflect the real sales totals</strong> — seeds Rs10 (cash, Cola×2) + Rs9 (card, Cola×1 + Fries×1) = <code>Rs19.00</code>, 2 orders, profit <code>Rs12.00</code>. Asserts the KPI cards via <code>data-testid</code>:
+        <code>kpi-today-s-sales</code> contains <code>Rs19.00</code>, <code>kpi-orders</code> contains <code>2</code>, <code>kpi-profit-margin</code> contains <code>Rs12.00</code>.</li>
+      <li><strong>Reports view shows the true aggregated totals</strong> — navigates to Reports and asserts <code>Total Sales = Rs19.00</code>, <code>Items Sold</code> present, and the <code>QA Drinks</code> / <code>QA Food</code> category breakdown renders.</li>
+    </ul>
+    <p class="muted">Supporting e2e: <code>e2e/app.spec.mjs</code> (boot, sign-in, Dashboard KPIs visible) and
+    <code>e2e/till.spec.mjs</code> (full till → cart → discount → hold → pay flow, stock deduction).</p>
+  </div>
+
+  <h3>Front-end form tests — add category &amp; product via the UI</h3>
+  <div class="card">
+    <p><span class="tag">PLAYWRIGHT</span> Unlike the Gherkin layer (which POSTs form-encoded data to the API),
+    these specs drive the <strong>actual React forms</strong> in the Catalog view — filling inputs, opening the
+    shadcn category <code>Select</code>, and clicking the real <em>Add category</em> / <em>Add product</em> buttons.</p>
+    <ul>
+      <li><strong>Adds a category through the front-end form</strong> — opens the Catalog view, switches to the
+        <em>Categories</em> tab, types into <code>#cat-name</code>, clicks <em>Add category</em>, and asserts the new
+        category name appears in the list.</li>
+      <li><strong>Adds a product through the front-end form and assigns a category</strong> — creates a category via the
+        UI, reloads so the product form's category dropdown is freshly populated, then fills <code>#product-name</code>,
+        <code>#product-price</code>, <code>#product-cost</code>, selects the new category from the <code>#product-category</code>
+        <code>Select</code>, clicks <em>Add product</em>, and asserts the product is listed.</li>
+    </ul>
+    <p class="muted">Note: <code>#product-quantity</code> is conditionally rendered only when <em>Track inventory</em> is
+    checked, so the product test leaves quantity at its default rather than toggling that checkbox.</p>
+  </div>
+
+  <h2>Coverage matrix — requirement → test</h2>
+  <table>
+    <thead><tr><th>Requirement</th><th>Unit</th><th>Gherkin</th><th>E2E</th></tr></thead>
+    <tbody>
+      <tr><td>Totals equal raw paid sales</td><td>✓ sums paid sales</td><td>✓ summary totals</td><td>✓ KPI = Rs19.00</td></tr>
+      <tr><td>Held orders excluded</td><td>✓ status 0</td><td>—</td><td>—</td></tr>
+      <tr><td>Refunds excluded</td><td>✓ status 2 / X refundCount</td><td>—</td><td>—</td></tr>
+      <tr><td>Date window respected</td><td>✓ 2020 vs today</td><td>—</td><td>—</td></tr>
+      <tr><td>Tax &amp; discount accounted</td><td>✓</td><td>✓ discount 5 / tax 2</td><td>—</td></tr>
+      <tr><td>Split payments summed</td><td>✓ byPaymentMethod</td><td>✓ cash+card</td><td>—</td></tr>
+      <tr><td>Best sellers ranked</td><td>✓ units then revenue</td><td>✓</td><td>—</td></tr>
+      <tr><td>X/Z shift reconcile</td><td>✓ X &amp; Z reports</td><td>✓</td><td>—</td></tr>
+      <tr><td>Profit &amp; margin correct</td><td>✓ computeKpis</td><td>—</td><td>✓ KPI profit Rs12.00</td></tr>
+      <tr><td>No phantom spike on empty period</td><td>✓ divide-by-zero guard</td><td>—</td><td>—</td></tr>
+      <tr><td>UI renders the true numbers</td><td>—</td><td>—</td><td>✓ Dashboard + Reports</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted">See <a class="inline" href="bugs.html">Bug Log</a> for the defects these tests guard against.</p>
+</main>
+</body>
+</html>

@@ -602,14 +602,16 @@ type CardDef = {
   onClick?: () => void;
 };
 
-function KpiCard({ title, value, pct, hint, icon,iconBg, spark, sparkColor, badge, onClick }: CardDef) {
+ function KpiCard({ title, value, pct, hint, icon,iconBg, spark, sparkColor, badge, onClick }: CardDef) {
   const hasTrend = typeof pct === 'number';
   const up = (pct ?? 0) >= 0;
   const Wrapper = onClick ? 'button' : 'div';
+  const testId = 'kpi-' + String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return (
     <Wrapper
       type={onClick ? 'button' : undefined}
       onClick={onClick}
+      data-testid={testId}
       className={
         'text-left' +
         (onClick ? ' rounded-xl outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring' : '')

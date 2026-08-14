@@ -12,6 +12,9 @@
     "start": "electron .",
     "preview": "vite preview",
     "smoke": "node scripts/smoke-api.mjs",
+    "qa": "cucumber-js --config cucumber.mjs",
+    "e2e": "playwright test",
+    "e2e:linux": "xvfb-run -a playwright test",
     "dist": "vite build && electron-builder --win"
   },
   "build": {
@@ -68,6 +71,8 @@
     "date-fns": "^4.4.0",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.31.0",
     "multer": "^1.4.5-lts.1",
     "next-themes": "^0.4.6",
@@ -83,6 +88,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^13.2.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
@@ -90,6 +97,7 @@
     "concurrently": "^9.1.2",
     "electron": "^43.4.0",
     "electron-builder": "^25.1.8",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",

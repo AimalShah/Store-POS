@@ -11,15 +11,19 @@ router.get('/all', (_req, res) => {
 
 router.post('/category', requirePerm('perm_categories'), (req, res) => {
   const name = req.body?.name;
+  const icon = req.body?.icon || 'Utensils';
+  const color = req.body?.color || 'gray';
   if (!name) return res.status(400).json({ error: 'Name required' });
-  getDb().prepare('INSERT INTO categories (name) VALUES (?)').run(name);
+  getDb().prepare('INSERT INTO categories (name, icon, color) VALUES (?, ?, ?)').run(name, icon, color);
   res.sendStatus(200);
 });
 
 router.put('/category', requirePerm('perm_categories'), (req, res) => {
   const id = parseInt(req.body?.id ?? req.body?._id, 10);
   const name = req.body?.name;
-  getDb().prepare('UPDATE categories SET name = ? WHERE id = ?').run(name, id);
+  const icon = req.body?.icon || 'Utensils';
+  const color = req.body?.color || 'gray';
+  getDb().prepare('UPDATE categories SET name = ?, icon = ?, color = ? WHERE id = ?').run(name, icon, color, id);
   res.sendStatus(200);
 });
 

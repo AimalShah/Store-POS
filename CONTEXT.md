@@ -1,6 +1,6 @@
 # Store POS
 
-Offline desktop point-of-sale for a single-register fast food restaurant. Cashiers take orders at the till, collect payment, and print receipts; managers run catalog, inventory, reports, shifts, and settings.
+Offline desktop point-of-sale for a single-register fast food restaurant. Cashiers take orders at the till, collect payment, and print receipts; managers run the menu, inventory, reports, and settings.
 
 ## Language
 
@@ -16,6 +16,10 @@ _Avoid_: Transaction, ticket
 A completed order that was paid, received its sequential invoice number, and deducted stock.
 _Avoid_: Transaction, purchase
 
+**Menu**:
+The staff-facing name for the product catalog — both the management screen where items are created/edited and the till's product grid where cashiers ring up orders. A single concept with two surfaces.
+_Avoid_: Catalog, Products
+
 **Product**:
 A sellable menu item in the catalog (e.g. Zinger Burger, small pizza). The unit a cashier rings up.
 _Avoid_: Item
@@ -23,6 +27,14 @@ _Avoid_: Item
 **Item**:
 A line on an order — one product with a quantity and optional note.
 _Avoid_: Product
+
+**Section**:
+A grouping of menu items shown as a tab on the till (e.g. Burgers, Drinks, Starters). The unit products are organised and filtered by. Formerly labelled "Category" in code and UI.
+_Avoid_: Category, group
+
+**Kitchen ticket (KOT)**:
+The kitchen-facing printout generated when an order is completed. Carries item lines and notes only — no prices and no customer details. Distinct from the customer-facing Receipt; both print on a completed sale.
+_Avoid_: using "KOT" alone without defining it first
 
 **Fulfillment**:
 How an order is handed to the customer — one of `dine-in`, `takeaway`, or `delivery`. A property of the Order (and carried onto the Sale), distinct from payment type. `takeaway` and `dine-in` currently capture no extra data (`dine-in` table number is a deferred future addition). `delivery` carries customer name, contact number, and address.
@@ -60,9 +72,9 @@ The customer-facing document generated when an order is completed. Carries the s
 The formal A4/PDF document used for reprints and exports, with the sequential invoice number.
 _Avoid_: Bill
 
-**Cost (COGS)**:
-The per-unit purchase/prep cost recorded against a Product. Enables profit and margin reporting. Off until a value is entered.
-_Avoid_: price, expense
+**Cost per item**:
+The per-unit purchase/prep cost recorded against a Product. For products with variants (sizes), cost is recorded **per variant**, not per product, so margin is correct for each size sold. Enables profit and margin reporting. Off until a value is entered.
+_Avoid_: COGS, expense
 
 **Profit**:
 Revenue from a Sale minus the summed Cost of the items sold. Derived, not stored.
@@ -72,12 +84,6 @@ _Avoid_: earnings, income
 Profit expressed as a percentage of a Sale's revenue. Derived from Profit and total.
 _Avoid_: markup, margin percent
 
-**Shift**:
-A period of till activity opened by a user with a starting cash float, closed with a counted cash total and reconciliation.
-
-**X report**:
-A mid-shift, no-reset snapshot of sales so far (by payment method, item counts).
-
-**Z report**:
-The shift-close document with full totals and cash reconciliation. Marks the shift closed.
-_Avoid_: Day report
+**Cash drawer reconciliation**:
+A lightweight open/close count of the till — an opening float, a counted closing cash figure, and the variance versus system-expected cash. Replaces the former Shift / X-report / Z-report model: there are no formal shift periods, just a daily drawer count to catch till shortages.
+_Avoid_: Shift, X report, Z report, Day report

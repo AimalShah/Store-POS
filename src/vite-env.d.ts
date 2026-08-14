@@ -58,6 +58,7 @@ export type PosBridge = {
   saveFile: (options: SaveFileOptions) => Promise<SaveFileResult>;
   printReceipt: (payload: ReceiptPrintPayload) => Promise<PrintResult>;
   printKot: (payload: { tx: ReceiptPrintPayload['tx'] }) => Promise<PrintResult>;
+  printPdf: (payload: { data: ArrayBuffer }) => Promise<{ printed: boolean }>;
 };
 
 declare global {

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Store POS — Bug Log</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #172033; --text: #e2e8f0;
+    --muted: #94a3b8; --accent: #38bdf8; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.55; }
+  header { padding: 28px 24px; background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%); color: #fff; }
+  header h1 { margin: 0; font-size: 24px; }
+  nav { display: flex; gap: 10px; padding: 14px 24px; background: var(--panel2); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  nav a { color: var(--accent); text-decoration: none; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  main { max-width: 980px; margin: 0 auto; padding: 24px; }
+  h2 { border-left: 4px solid var(--accent); padding-left: 10px; margin-top: 34px; }
+  h3 { color: var(--accent); margin-top: 24px; }
+  .bug { background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--bad); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  .inc { background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--warn); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 5px; color: #fca5a5; font-size: 13px; }
+  pre { background: #0b1220; padding: 12px 14px; border-radius: 8px; overflow-x: auto; color: #e2e8f0; font-size: 13px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .ok { background: rgba(74,222,128,.15); color: var(--ok); }
+  .warn { background: rgba(251,191,36,.15); color: var(--warn); }
+  .bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); }
+  tr:nth-child(even) td { background: var(--panel2); }
+  .muted { color: var(--muted); }
+  a.inline { color: var(--accent); }
+</style>
+</head>
+<body>
+<header><h1>Bug Log — Sales / KPI / Reports</h1></header>
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="coverage.html">Test Coverage</a>
+  <a href="bugs.html">Bug Log</a>
+</nav>
+<main>
+
+  <p>Two genuine defects in the sale write-path were found and fixed. Both are now permanently guarded by the
+  accuracy suite. A third entry (<code>INC-1</code>) is an environment artefact discovered while writing the e2e
+  test — recorded as a lesson, not a product defect.</p>
+
+  <h2>BUG-1 — <code>shift_id</code> dropped on sale create/update</h2>
+  <div class="bug">
+    <p><span class="pill bad">Product bug</span> &nbsp; <strong>File:</strong> <code>server/routes/transactions.js</code></p>
+    <h3>Symptom</h3>
+    <p>Sales created through the API stored every column <em>except</em> <code>shift_id</code>. The
+    <code>INSERT</code> and <code>UPDATE</code> column lists ended at <code>delivery_address</code> and omitted the
+    shift foreign key, and the bound parameters never included <code>body.shift_id</code>.</p>
+    <h3>Impact</h3>
+    <ul>
+      <li>X and Z shift reports could not reconcile to the sales made on a shift — the shift's sales were invisible to the cash-up.</li>
+      <li>Any "sales by shift" or per-till breakdown undercounted or returned zero.</li>
+    </ul>
+    <h3>Root cause</h3>
+    <pre>// before — column list + values stopped at delivery_address
+INSERT INTO transactions (..., delivery_address)
+VALUES (..., ?)              // shift_id missing both here and in .run(...)
+
+// after — shift_id added to both
+INSERT INTO transactions (..., delivery_address, shift_id)
+VALUES (..., ?, ?)
+.run(..., body.delivery_address || '', parseInt(body.shift_id,10) || null)</pre>
+    <h3>Fix</h3>
+    <p>Added <code>shift_id</code> to the <code>INSERT</code> and <code>UPDATE</code> statements in
+    <code>POST /new</code> and <code>PUT /new/:id</code>, binding <code>parseInt(body.shift_id, 10) || null</code>.</p>
+    <h3>Guarded by</h3>
+    <ul>
+      <li><code>test/reports-accuracy.test.js</code> → "X / Z shift reports — reconcile to the shift sales" (posts shift-scoped sales, asserts X totalSales 15, Z expectedCash 60).</li>
+      <li><code>qa/features/reports-accuracy.feature</code> → shift reconciliation scenarios at the API level.</li>
+    </ul>
+  </div>
+
+  <h2>BUG-2 — <code>updateTransaction</code> PUT to the wrong URL</h2>
+  <div class="bug">
+    <p><span class="pill bad">Product bug</span> &nbsp; <strong>File:</strong> <code>src/api/client.ts</code></p>
+    <h3>Symptom</h3>
+    <p>The client's <code>updateTransaction</code> helper sent a <code>PUT</code> to <code>/new</code> with no id in the
+    path, but the server route is registered as <code>PUT /new/:id</code>. Any edit or refund triggered from the UI
+    therefore hit a route that did not exist / did not receive the id.</p>
+    <h3>Impact</h3>
+    <ul>
+      <li>Refunding or editing a transaction through the UI failed silently / errored.</li>
+      <li>Refunds never reached the server, so reporting could not treat them as status 2.</li>
+    </ul>
+    <h3>Root cause</h3>
+    <pre>// before
+updateTransaction: (body) => request('/new', { method: 'PUT', body: JSON.stringify(body) })
+
+// after
+updateTransaction: (body) =>
+  request(`/new/${body._id ?? body.id}`, { method: 'PUT', body: JSON.stringify(body) })</pre>
+    <h3>Fix</h3>
+    <p>Target the id-specific route: <code>request(\`/new/${body._id ?? body.id}\`, { method: 'PUT', ... })</code>.</p>
+    <h3>Guarded by</h3>
+    <ul>
+      <li><code>test/reports-accuracy.test.js</code> → "X report counts refunds separately" (refund persisted as status 2, <code>refundCount=1</code>).</li>
+      <li>The Gherkin + Playwright refund flows that exercise the real edit/refund path.</li>
+    </ul>
+  </div>
+
+  <h2>INC-1 — phantom <code>Rs2312.00 / -65%</code> KPI on first e2e run</h2>
+  <div class="inc">
+    <p><span class="pill warn">Environment artefact</span> &nbsp; <strong>File:</strong> <code>e2e/reports.spec.mjs</code></p>
+    <h3>Symptom</h3>
+    <p>The very first run of the Dashboard KPI test rendered <code>Rs2312.00</code> with a <code>-65%</code> delta,
+    instead of the seeded <code>Rs19.00</code>. A direct API probe told the real story:</p>
+    <pre>DEBUG by-date count= 2 sum= 19
+DEBUG summary= {"saleCount":2,"itemsSold":4,"subtotal":19,"tax":0,"totalSales":19}</pre>
+    <h3>Root cause</h3>
+    <p>The KPI <strong>pipeline is correct</strong> — the API returned exactly the two seeded sales. The wrong on-screen
+    number was a Vite HMR race: the freshly-added <code>data-testid</code> on <code>KpiCard</code> meant the dev server
+    was still mid-recompile when Playwright queried, so the assertion read a stale bundle. Re-running after the bundle
+    settled returned <code>Rs19.00</code> and the test passed.</p>
+    <h3>Lesson</h3>
+    <ul>
+      <li>Always verify against the raw API before trusting a UI number — the API is the source of truth.</li>
+      <li>When assertions read unexpectedly large aggregates, suspect a stale dev bundle / warm-up race, not the maths.</li>
+      <li>The KPI cards now carry stable <code>data-testid</code>s (<code>kpi-today-s-sales</code>, <code>kpi-orders</code>, <code>kpi-profit-margin</code>) so the e2e is robust and the values are easy to assert.</li>
+    </ul>
+  </div>
+
+  <h2>Edge cases the suite locks in (would be bugs if broken)</h2>
+  <table>
+    <thead><tr><th>Edge case</th><th>Why it matters</th><th>Test</th></tr></thead>
+    <tbody>
+      <tr><td>Held order (status 0) excluded</td><td>A parked cart is not revenue.</td><td>reports-accuracy (unit + gherkin)</td></tr>
+      <tr><td>Refund (status 2) excluded from sales</td><td>Refunds must not inflate totals; they are reported separately.</td><td>reports-accuracy X/Z block</td></tr>
+      <tr><td>Date window respected</td><td>Yesterday's sales must never leak into today's report.</td><td>reports-accuracy "respects the date window"</td></tr>
+      <tr><td>Empty period → no divide-by-zero</td><td>Prevents a fabricated -100% / NaN trend spike.</td><td>computeKpis "empty period"</td></tr>
+      <tr><td>Split payments summed across methods</td><td>Cash+card must total correctly in byPaymentMethod.</td><td>reports-accuracy + gherkin split scenario</td></tr>
+      <tr><td>Best sellers: units, then revenue</td><td>Tie-breaking must be deterministic and correct.</td><td>computeBestSellers unit + gherkin</td></tr>
+      <tr><td>KPI == raw arithmetic</td><td>The dashboard must equal the sum of paid sales, not a guess.</td><td>e2e Dashboard KPIs</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted">Back to <a class="inline" href="index.html">Overview</a> or <a class="inline" href="coverage.html">Test Coverage</a>.</p>
+</main>
+</body>
+</html>

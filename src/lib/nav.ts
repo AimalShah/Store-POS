@@ -3,6 +3,8 @@ export type NavItemId =
   | 'catalog'
   | 'sales'
   | 'customers'
+  | 'menu'
+  | 'drawer'
   | 'reports'
   | 'shifts'
   | 'team'
@@ -55,8 +57,8 @@ const NAV: NavDef[] = [
     label: 'Inventory',
     items: [
       {
-        id: 'catalog',
-        label: 'Catalog',
+        id: 'menu',
+        label: 'Menu',
         icon: 'Package',
         show: (p) => Boolean(p.perm_products) || Boolean(p.perm_categories),
       },

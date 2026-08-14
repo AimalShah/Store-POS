@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Pencil, Search, Trash2, Utensils, icons, type LucideIcon } from 'lucide-react';
+import { cn } from '../lib/utils';
 import { api, Category, Product, ProductComponent, getUploadsBase } from '../api/client';
 import PhotoPicker from '../components/PhotoPicker';
 import { Button } from '../components/ui/button';
@@ -12,6 +13,8 @@ import { Checkbox } from '../components/ui/checkbox';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Separator } from '../components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { toast } from 'sonner';
 import { highlight } from '../lib/highlight';
 import {
@@ -47,13 +50,13 @@ const emptyProduct = {
   id: '',
   name: '',
   price: '',
-  cost: '',
+  cost: '', // Cost per item (Advanced)
   category: '',
   quantity: '0',
-  trackStock: false,
-  lowStockThreshold: 10,
-  hot: false,
-  img: '',
+  trackStock: false, // Track stock count (Advanced)
+  lowStockThreshold: 10, // Low-stock alert at (Advanced)
+  featureAsDailySpecial: false, // Feature as daily special (Essentials)
+  img: '', // Photo optional (Essentials)
   components: [] as ComponentForm[],
   sizes: [] as SizeForm[],
   modifiers: [] as GroupForm[],
@@ -65,6 +68,8 @@ const emptyComponent = {
 };
 
 const emptyOption: OptionForm = { name: '', priceDelta: '0' };
+const iconLibrary = icons as Record<string, LucideIcon>;
+const categoryIcons = Object.entries(iconLibrary).sort(([first], [second]) => first.localeCompare(second));
 
 export default function CatalogView({
   products,
@@ -80,7 +85,10 @@ export default function CatalogView({
   const [list, setList] = useState(products);
   const [cats, setCats] = useState(categories);
   const [form, setForm] = useState(emptyProduct);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [catName, setCatName] = useState('');
+  const [catIcon, setCatIcon] = useState('Utensils');
+  const [iconQuery, setIconQuery] = useState('');
   const [editCatId, setEditCatId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
@@ -113,7 +121,7 @@ export default function CatalogView({
     fd.append('category', form.category);
     fd.append('quantity', form.quantity || '0');
     fd.append('stock', form.trackStock ? '1' : 'on');
-    fd.append('hot', form.hot ? '1' : '0');
+    fd.append('hot', form.featureAsDailySpecial ? '1' : '0');
     fd.append('img', form.img);
     fd.append('components', JSON.stringify(form.components.filter((c) => c.id).map((c) => ({ id: Number(c.id), quantity: Number(c.quantity) || 1 }))));
     fd.append(
@@ -263,7 +271,7 @@ export default function CatalogView({
       quantity: String(p.quantity),
       trackStock: !!p.trackStock,
       lowStockThreshold: p.lowStockThreshold || 10,
-      hot: !!p.hot,
+      featureAsDailySpecial: !!p.featureAsDailySpecial || p.hot,
       img: p.img || '',
       components: (p.components || []).map((c) => ({
         id: String(c.id),
@@ -333,14 +341,18 @@ export default function CatalogView({
   const saveCategory = async () => {
     if (!catName.trim()) return;
     if (editCatId) {
-      await api.updateCategory({ id: editCatId, name: catName.trim() });
+      await api.updateCategory({ id: editCatId, name: catName.trim(), icon: catIcon });
     } else {
-      await api.saveCategory({ name: catName.trim() });
+      await api.saveCategory({ name: catName.trim(), icon: catIcon });
     }
     setCatName('');
+    setCatIcon('Utensils');
+    setIconQuery('');
     setEditCatId(null);
     await onChanged();
   };
+
+  const selectedCategoryIcon = iconLibrary[catIcon] || Utensils;
 
   const removeCategory = (id: number) => {
     setPending({ kind: 'category', id });
@@ -413,264 +425,220 @@ export default function CatalogView({
             <CardHeader>
               <CardTitle>{form.id ? 'Edit product' : 'New product'}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="product-name">Name</Label>
-                <Input
-                  id="product-name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Product name"
-                />
-              </div>
+            <CardContent className="space-y-6">
+              <section className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Essentials</h3>
+                  <p className="text-xs text-muted-foreground">Shown to all staff at the register.</p>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="product-price">Price</Label>
-                <Input
-                  id="product-price"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="product-cost">Cost (COGS)</Label>
-                <Input
-                  id="product-cost"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={form.cost}
-                  onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="product-category">Category</Label>
-                <Select value={form.category} onValueChange={(value) => setForm({ ...form, category: value || '' })}>
-                  <SelectTrigger id="product-category">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">None</SelectItem>
-                    {cats.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="track-stock"
-                  checked={form.trackStock}
-                  onCheckedChange={(checked) => setForm({ ...form, trackStock: checked })}
-                />
-                <Label htmlFor="track-stock">Track inventory</Label>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="product-hot"
-                  checked={form.hot}
-                  onCheckedChange={(checked) => setForm({ ...form, hot: !!checked })}
-                />
-                <Label htmlFor="product-hot">Hot Item (promote as daily special)</Label>
-              </div>
-
-              {form.trackStock && (
                 <div className="space-y-2">
-                  <Label htmlFor="product-quantity">Quantity on hand</Label>
+                  <Label htmlFor="product-name">Name</Label>
                   <Input
-                    id="product-quantity"
+                    id="product-name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Product name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="product-price">Price</Label>
+                  <Input
+                    id="product-price"
                     type="number"
+                    step="0.01"
                     min={0}
-                    value={form.quantity}
-                    onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                    placeholder="0"
+                    value={form.price}
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    placeholder="0.00"
                   />
                 </div>
-              )}
 
-              {form.trackStock && (
+                <PhotoPicker
+                  value={form.img}
+                  onChange={(img) => setForm({ ...form, img })}
+                  label="Photo (optional)"
+                />
+
                 <div className="space-y-2">
-                  <Label htmlFor="product-low-stock">Low stock threshold</Label>
-                  <Input
-                    id="product-low-stock"
-                    type="number"
-                    min={1}
-                    value={form.lowStockThreshold || 10}
-                    onChange={(e) => setForm({ ...form, lowStockThreshold: parseInt(e.target.value, 10) || 10 })}
-                    placeholder="10"
+                  <Label htmlFor="product-category">Section</Label>
+                  <Select value={form.category} onValueChange={(value) => setForm({ ...form, category: value || '' })}>
+                    <SelectTrigger id="product-category">
+                      <SelectValue placeholder="Select section" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {cats.map((c) => (
+                        <SelectItem key={c.id} value={c.name}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="product-hot"
+                    checked={form.featureAsDailySpecial}
+                    onCheckedChange={(checked) => setForm({ ...form, featureAsDailySpecial: !!checked })}
                   />
+                  <Label htmlFor="product-hot">Feature as daily special</Label>
                 </div>
-              )}
+              </section>
 
-              <PhotoPicker
-                value={form.img}
-                onChange={(img) => setForm({ ...form, img })}
-              />
-
-              <Separator />
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Combo Components</Label>
-                  <Button variant="outline" size="sm" onClick={addComponent}>
-                    + Add Component
-                  </Button>
-                </div>
-                {form.components.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    No components. Add products to create a combo (e.g., Meal = Burger + Fries + Drink).
-                    Components are printed on receipts but do not affect stock.
-                  </p>
-                )}
-                {form.components.map((comp, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <Select
-                      value={comp.id}
-                      onValueChange={(value) => updateComponent(idx, 'id', value || '')}
-                    >
-                      <SelectTrigger className="w-48">
-                        <SelectValue placeholder="Select product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {list.filter((p) => p.id !== Number(form.id) || !form.id).map((p) => (
-                          <SelectItem key={p.id} value={String(p.id)}>
-                            {p.name} ({symbol}{Number(p.price).toFixed(2)})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={comp.quantity}
-                      onChange={(e) => updateComponent(idx, 'quantity', e.target.value)}
-                      placeholder="Qty"
-                      className="w-20"
-                    />
-                    {comp.id && list.find((p) => p.id === Number(comp.id)) && (
-                      <Badge variant="outline" className="text-xs flex-1">
-                        {list.find((p) => p.id === Number(comp.id))!.name}
-                      </Badge>
-                    )}
-                    <Button variant="ghost" size="icon" onClick={() => removeComponent(idx)} aria-label="Remove component">
-                      ✕
-                    </Button>
+              <section className="rounded-lg border">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="flex w-full items-center justify-between gap-2 p-4 text-left"
+                  aria-expanded={showAdvanced}
+                >
+                  <div>
+                    <h3 className="text-sm font-semibold">Advanced</h3>
+                    <p className="text-xs text-muted-foreground">Managers only — cost, stock, modifiers, combos.</p>
                   </div>
-                ))}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>
-                    Sizes
-                    <span className="ml-1 text-xs font-normal text-muted-foreground">
-                      each size has its own price
-                    </span>
-                  </Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setForm((prev) => ({ ...prev, sizes: [...prev.sizes, { name: '', price: '' }] }))}
-                  >
-                    + Add Size
-                  </Button>
-                </div>
-                {form.sizes.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    No sizes. The product sells at its base price only.
-                  </p>
-                )}
-                {form.sizes.map((s, si) => (
-                  <div key={si} className="flex items-center gap-2">
-                    <Input
-                      value={s.name}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          sizes: prev.sizes.map((x, i) => (i === si ? { ...x, name: e.target.value } : x)),
-                        }))
-                      }
-                      placeholder="e.g. Large"
-                      className="h-9 flex-1"
-                    />
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">{symbol}</span>
+                  <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', showAdvanced && 'rotate-180')} />
+                </button>
+                {showAdvanced && (
+                  <div className="space-y-4 border-t p-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="product-cost">Cost per item</Label>
                       <Input
+                        id="product-cost"
                         type="number"
                         step="0.01"
-                        value={s.price}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            sizes: prev.sizes.map((x, i) => (i === si ? { ...x, price: e.target.value } : x)),
-                          }))
-                        }
+                        min={0}
+                        value={form.cost}
+                        onChange={(e) => setForm({ ...form, cost: e.target.value })}
                         placeholder="0.00"
-                        className="h-9 w-24"
                       />
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setForm((prev) => ({ ...prev, sizes: prev.sizes.filter((_, i) => i !== si) }))}
-                      aria-label="Remove size"
-                    >
-                      ✕
-                    </Button>
-                  </div>
-                ))}
-              </div>
 
-              {(['modifiers'] as const).map((kind) => (
-                <div key={kind} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>
-                      Modifiers (toppings)
-                      <span className="ml-1 text-xs font-normal text-muted-foreground">
-                        multiple choice, optional
-                      </span>
-                    </Label>
-                    <Button variant="outline" size="sm" onClick={() => addGroup(kind)}>
-                      + Add Modifier Group
-                    </Button>
-                  </div>
-                  {form[kind].length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      No modifiers. Products without these add to an order instantly.
-                    </p>
-                  )}
-                  {form[kind].map((group, gi) => (
-                    <div key={gi} className="rounded-lg border p-3 space-y-2">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="track-stock"
+                        checked={form.trackStock}
+                        onCheckedChange={(checked) => setForm({ ...form, trackStock: checked })}
+                      />
+                      <Label htmlFor="track-stock">Track stock count</Label>
+                    </div>
+
+                    {form.trackStock && (
+                      <div className="space-y-2">
+                        <Label htmlFor="product-quantity">Quantity on hand</Label>
                         <Input
-                          value={group.name}
-                          onChange={(e) => updateGroup(kind, gi, 'name', e.target.value)}
-                          placeholder="e.g. Toppings"
-                          className="h-9 flex-1"
+                          id="product-quantity"
+                          type="number"
+                          min={0}
+                          value={form.quantity}
+                          onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                          placeholder="0"
                         />
-                        <Button variant="ghost" size="icon" onClick={() => removeGroup(kind, gi)} aria-label="Remove group">
-                          ✕
+                      </div>
+                    )}
+
+                    {form.trackStock && (
+                      <div className="space-y-2">
+                        <Label htmlFor="product-low-stock">Low-stock alert at</Label>
+                        <Input
+                          id="product-low-stock"
+                          type="number"
+                          min={1}
+                          value={form.lowStockThreshold || 10}
+                          onChange={(e) => setForm({ ...form, lowStockThreshold: parseInt(e.target.value, 10) || 10 })}
+                          placeholder="10"
+                        />
+                      </div>
+                    )}
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Combo Components</Label>
+                        <Button variant="outline" size="sm" onClick={addComponent}>
+                          + Add Component
                         </Button>
                       </div>
-                      {group.options.map((opt, oi) => (
-                        <div key={oi} className="flex items-center gap-2 pl-2">
+                      {form.components.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          No components. Add products to create a combo (e.g., Meal = Burger + Fries + Drink).
+                          Components are printed on receipts but do not affect stock.
+                        </p>
+                      )}
+                      {form.components.map((comp, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Select
+                            value={comp.id}
+                            onValueChange={(value) => updateComponent(idx, 'id', value || '')}
+                          >
+                            <SelectTrigger className="w-48">
+                              <SelectValue placeholder="Select product" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {list.filter((p) => p.id !== Number(form.id) || !form.id).map((p) => (
+                                <SelectItem key={p.id} value={String(p.id)}>
+                                  {p.name} ({symbol}{Number(p.price).toFixed(2)})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <Input
-                            value={opt.name}
-                            onChange={(e) => updateOption(kind, gi, oi, 'name', e.target.value)}
-                            placeholder="Option name"
+                            type="number"
+                            min={1}
+                            value={comp.quantity}
+                            onChange={(e) => updateComponent(idx, 'quantity', e.target.value)}
+                            placeholder="Qty"
+                            className="w-20"
+                          />
+                          {comp.id && list.find((p) => p.id === Number(comp.id)) && (
+                            <Badge variant="outline" className="text-xs flex-1">
+                              {list.find((p) => p.id === Number(comp.id))!.name}
+                            </Badge>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => removeComponent(idx)} aria-label="Remove component">
+                            ✕
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>
+                          Sizes
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            each size has its own price
+                          </span>
+                        </Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setForm((prev) => ({ ...prev, sizes: [...prev.sizes, { name: '', price: '' }] }))}
+                        >
+                          + Add Size
+                        </Button>
+                      </div>
+                      {form.sizes.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          No sizes. The product sells at its base price only.
+                        </p>
+                      )}
+                      {form.sizes.map((s, si) => (
+                        <div key={si} className="flex items-center gap-2">
+                          <Input
+                            value={s.name}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                sizes: prev.sizes.map((x, i) => (i === si ? { ...x, name: e.target.value } : x)),
+                              }))
+                            }
+                            placeholder="e.g. Large"
                             className="h-9 flex-1"
                           />
                           <div className="flex items-center gap-1">
@@ -678,24 +646,96 @@ export default function CatalogView({
                             <Input
                               type="number"
                               step="0.01"
-                              value={opt.priceDelta}
-                              onChange={(e) => updateOption(kind, gi, oi, 'priceDelta', e.target.value)}
+                              value={s.price}
+                              onChange={(e) =>
+                                setForm((prev) => ({
+                                  ...prev,
+                                  sizes: prev.sizes.map((x, i) => (i === si ? { ...x, price: e.target.value } : x)),
+                                }))
+                              }
                               placeholder="0.00"
                               className="h-9 w-24"
                             />
                           </div>
-                          <Button variant="ghost" size="icon" onClick={() => removeOption(kind, gi, oi)} aria-label="Remove option">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setForm((prev) => ({ ...prev, sizes: prev.sizes.filter((_, i) => i !== si) }))}
+                            aria-label="Remove size"
+                          >
                             ✕
                           </Button>
                         </div>
                       ))}
-                      <Button variant="outline" size="sm" onClick={() => addOption(kind, gi)}>
-                        + Add Option
-                      </Button>
                     </div>
-                  ))}
-                </div>
-              ))}
+
+                    <Separator />
+
+                    {(['modifiers'] as const).map((kind) => (
+                      <div key={kind} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>
+                            Modifiers (toppings)
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              multiple choice, optional
+                            </span>
+                          </Label>
+                          <Button variant="outline" size="sm" onClick={() => addGroup(kind)}>
+                            + Add Modifier Group
+                          </Button>
+                        </div>
+                        {form[kind].length === 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            No modifiers. Products without these add to an order instantly.
+                          </p>
+                        )}
+                        {form[kind].map((group, gi) => (
+                          <div key={gi} className="rounded-lg border p-3 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={group.name}
+                                onChange={(e) => updateGroup(kind, gi, 'name', e.target.value)}
+                                placeholder="e.g. Toppings"
+                                className="h-9 flex-1"
+                              />
+                              <Button variant="ghost" size="icon" onClick={() => removeGroup(kind, gi)} aria-label="Remove group">
+                                ✕
+                              </Button>
+                            </div>
+                            {group.options.map((opt, oi) => (
+                              <div key={oi} className="flex items-center gap-2 pl-2">
+                                <Input
+                                  value={opt.name}
+                                  onChange={(e) => updateOption(kind, gi, oi, 'name', e.target.value)}
+                                  placeholder="Option name"
+                                  className="h-9 flex-1"
+                                />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-muted-foreground">{symbol}</span>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={opt.priceDelta}
+                                    onChange={(e) => updateOption(kind, gi, oi, 'priceDelta', e.target.value)}
+                                    placeholder="0.00"
+                                    className="h-9 w-24"
+                                  />
+                                </div>
+                                <Button variant="ghost" size="icon" onClick={() => removeOption(kind, gi, oi)} aria-label="Remove option">
+                                  ✕
+                                </Button>
+                              </div>
+                            ))}
+                            <Button variant="outline" size="sm" onClick={() => addOption(kind, gi)}>
+                              + Add Option
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
 
               <Separator />
 
@@ -842,7 +882,7 @@ export default function CatalogView({
             <CardHeader>
               <CardTitle>{editCatId ? 'Edit category' : 'New category'}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="cat-name">Name</Label>
                 <Input
@@ -855,6 +895,61 @@ export default function CatalogView({
                   placeholder="e.g. Beverages"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label>Icon</Label>
+                <Popover>
+                  <PopoverTrigger
+                    aria-label="Choose section icon"
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="flex items-center gap-2">
+                      {(() => {
+                        const Icon = selectedCategoryIcon;
+                        return <Icon className="size-4 text-primary" />;
+                      })()}
+                      {catIcon}
+                    </span>
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-80 p-2">
+                    <div className="relative mb-2">
+                      <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        aria-label="Search icons"
+                        value={iconQuery}
+                        onChange={(event) => setIconQuery(event.target.value)}
+                        placeholder="Search all installed icons"
+                        className="pl-9"
+                      />
+                    </div>
+                    <ScrollArea className="h-64">
+                      <div className="grid grid-cols-4 gap-1 pr-3">
+                        {categoryIcons
+                          .filter(([name]) => name.toLowerCase().includes(iconQuery.trim().toLowerCase()))
+                          .map(([name, Icon]) => (
+                            <Button
+                              key={name}
+                              type="button"
+                              variant={catIcon === name ? 'secondary' : 'ghost'}
+                              size="icon"
+                              className="relative"
+                              aria-label={`Use ${name} icon`}
+                              title={name}
+                              onClick={() => {
+                                setCatIcon(name);
+                                setIconQuery('');
+                              }}
+                            >
+                              <Icon className="size-4" />
+                              {catIcon === name && <Check className="absolute size-3 text-primary" />}
+                            </Button>
+                          ))}
+                      </div>
+                    </ScrollArea>
+                  </PopoverContent>
+                </Popover>
+                <p className="text-xs text-muted-foreground">Search the complete offline Lucide icon library.</p>
+              </div>
               <div className="flex gap-2">
                 <Button onClick={() => void saveCategory()} disabled={!catName.trim()} className="flex-1">
                   {editCatId ? 'Update' : 'Add category'}
@@ -865,6 +960,8 @@ export default function CatalogView({
                     onClick={() => {
                       setEditCatId(null);
                       setCatName('');
+                      setCatIcon('Utensils');
+                      setIconQuery('');
                     }}
                   >
                     Cancel
@@ -888,14 +985,22 @@ export default function CatalogView({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
+                      <TableHead>Section</TableHead>
                       <TableHead className="w-24 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {cats.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="font-medium"><span className={highlight.blue}>{c.name}</span></TableCell>
+                        <TableCell className="font-medium">
+                          <span className="flex items-center gap-2">
+                            {(() => {
+                              const Icon = iconLibrary[c.icon] || Utensils;
+                              return <Icon className="size-4 text-primary" />;
+                            })()}
+                            <span className={highlight.blue}>{c.name}</span>
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-1">
                             <Button
@@ -904,6 +1009,8 @@ export default function CatalogView({
                               aria-label={`Edit ${c.name}`}
                               onClick={() => {
                                 setCatName(c.name);
+                                setCatIcon(c.icon || 'Utensils');
+                                setIconQuery('');
                                 setEditCatId(c.id);
                               }}
                             >

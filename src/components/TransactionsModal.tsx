@@ -17,6 +17,8 @@ import {
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { highlight } from '../lib/highlight';
+import { printReportPdf } from '../lib/printing';
+import { buildInvoicePdf } from '../lib/reportPdf';
 import Invoice from './Invoice';
 
 type Props = {
@@ -251,7 +253,14 @@ export default function TransactionsModal({
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button variant="outline" size="icon" aria-label="Print invoice" onClick={() => window.print()}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Print invoice"
+                  onClick={() =>
+                    invoice && printReportPdf(buildInvoicePdf({ settings, tx: invoice }))
+                  }
+                >
                   <Printer className="size-4" />
                 </Button>
               }

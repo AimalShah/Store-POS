@@ -14,6 +14,7 @@ import mediaRouter from './routes/media.js';
 import demoRouter from './routes/demo.js';
 import setupRouter from './routes/setup.js';
 import shiftsRouter from './routes/shifts.js';
+import drawerRouter from './routes/drawer.js';
 import reportsRouter from './routes/reports.js';
 import printerRouter from './routes/printer.js';
 
@@ -52,6 +53,7 @@ export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   app.use('/api/media', authenticate, mediaRouter(uploadsPath));
   app.use('/api/demo', authenticate, demoRouter(uploadsPath));
   app.use('/api/shifts', authenticate, shiftsRouter);
+  app.use('/api/drawer', authenticate, drawerRouter);
   app.use('/api/reports', authenticate, reportsRouter);
   app.use('/api/printer', authenticate, printerRouter);
   app.use('/api', authenticate, transactionsRouter);

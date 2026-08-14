@@ -44,6 +44,7 @@ function browserFallback(): PosBridge {
     },
     printReceipt: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
     printKot: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
+    printPdf: async (): Promise<{ printed: boolean }> => ({ printed: false }),
   };
 }
 
