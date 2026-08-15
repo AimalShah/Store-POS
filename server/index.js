@@ -11,7 +11,6 @@ import customersRouter from './routes/customers.js';
 import settingsRouter from './routes/settings.js';
 import transactionsRouter from './routes/transactions.js';
 import mediaRouter from './routes/media.js';
-import demoRouter from './routes/demo.js';
 import setupRouter from './routes/setup.js';
 import shiftsRouter from './routes/shifts.js';
 import drawerRouter from './routes/drawer.js';
@@ -51,7 +50,6 @@ export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   app.use('/api/customers', authenticate, customersRouter);
   app.use('/api/settings', authenticate, settingsRouter(uploadsPath));
   app.use('/api/media', authenticate, mediaRouter(uploadsPath));
-  app.use('/api/demo', authenticate, demoRouter(uploadsPath));
   app.use('/api/shifts', authenticate, shiftsRouter);
   app.use('/api/drawer', authenticate, drawerRouter);
   app.use('/api/reports', authenticate, reportsRouter);

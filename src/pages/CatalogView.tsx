@@ -15,7 +15,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Separator } from '../components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { toast } from 'sonner';
 import { highlight } from '../lib/highlight';
 import {
   AlertDialog,
@@ -324,20 +323,6 @@ export default function CatalogView({
     setPending({ kind: 'bulk' });
   };
 
-  const seedDemo = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api.seedDemo();
-      await onChanged();
-      toast.success(result.message);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const saveCategory = async () => {
     if (!catName.trim()) return;
     if (editCatId) {
@@ -403,9 +388,6 @@ export default function CatalogView({
         </div>
         {canProducts && (
           <div className="flex items-center gap-2 ml-auto">
-            <Button variant="outline" disabled={busy} onClick={seedDemo}>
-              Seed demo
-            </Button>
             <Button variant="destructive" disabled={busy || !selected.length} onClick={bulkDelete}>
               Delete selected ({selected.length})
             </Button>

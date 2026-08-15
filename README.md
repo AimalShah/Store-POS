@@ -35,7 +35,6 @@ Modern desktop Point of Sale for a single register, completely offline. Version 
 - Photo picker (local uploads to a media library)
 - **Variants** — single-choice option groups (e.g. Size) with per-option price deltas; required at the till
 - **Modifiers / toppings** — multi-choice option groups (e.g. Extra cheese) with per-option price deltas; optional at the till
-- **Seed demo** sample catalog (SA-style products & customers)
 - Multi-select **bulk delete**
 
 ### Sales
@@ -49,7 +48,6 @@ Modern desktop Point of Sale for a single register, completely offline. Version 
 ### Settings
 - Store identity (name, address, contact, logo, receipt footer)
 - Currency symbol and optional tax
-- Demo data seed / full catalog & sales wipe
 
 ## Tech stack
 
@@ -117,7 +115,7 @@ release/Store POS Setup 3.0.0.exe
 electron/          Main process + secure preload (window.pos)
 server/            Express API, better-sqlite3 database, route modules
   routes/          inventory, categories, customers, users, settings,
-                   transactions, media, demo
+                   transactions, media
 src/               React UI
   pages/           Till, Catalog, Sales, Settings, Login
   components/      Payment pad, photo picker, customer select, …
@@ -130,14 +128,6 @@ public/favicon.ico Packaged favicon
 
 Data and uploads live under Electron **userData** (not in the repo), so uninstalling may leave a database folder depending on OS settings.
 
-## Demo data
-
-From **Catalog** or **Settings → Demo data**:
-
-- **Seed demo** — adds sample categories, products, and customers if those names do not already exist
-- **Bulk delete** (Catalog) — delete selected products
-- **Bulk delete catalog & sales** (Settings) — removes products, categories, sales history, and customers except Walk-in; keeps staff and settings
-
 ## API overview
 
 Local API base (standalone): `http://127.0.0.1:8001/api`
@@ -148,7 +138,6 @@ Local API base (standalone): `http://127.0.0.1:8001/api`
 | Catalog | `/inventory/products`, `/categories/all` |
 | Sales | `POST /new`, `GET /by-date`, `GET /on-hold` |
 | Media | `/media/library` |
-| Demo | `POST /demo/seed`, `POST /demo/clear` |
 
 Authenticated routes expect `Authorization: Bearer <token>`.
 

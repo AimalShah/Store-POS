@@ -465,27 +465,7 @@ export const api = {
   deleteMedia: (id: number) =>
     request(`/media/library/${id}`, { method: 'DELETE' }),
 
-  seedDemo: () =>
-    request<{
-      ok: boolean;
-      message: string;
-      categoriesAdded: number;
-      productsAdded: number;
-      customersAdded: number;
-    }>('/demo/seed', { method: 'POST', body: '{}' }),
-
-clearDemo: (options?: {
-      products?: boolean;
-      categories?: boolean;
-      customers?: boolean;
-      transactions?: boolean;
-    }) =>
-      request<{ ok: boolean; message: string; deleted: Record<string, number> }>(
-        '/demo/clear',
-        { method: 'POST', body: JSON.stringify(options || {}) }
-      ),
-
-    adjustStock: (productId: number, body: {
+  adjustStock: (productId: number, body: {
       type: 'restock' | 'wastage' | 'adjustment';
       quantityChange: number;
       reason?: string;

@@ -6,7 +6,6 @@ export type NavItemId =
   | 'menu'
   | 'drawer'
   | 'reports'
-  | 'shifts'
   | 'team'
   | 'settings'
   | 'export'
@@ -48,7 +47,6 @@ const NAV: NavDef[] = [
     label: 'Sales',
     items: [
       { id: 'sales', label: 'Sales', icon: 'ReceiptText', show: (p) => Boolean(p.perm_transactions) },
-      { id: 'shifts', label: 'Shifts', icon: 'Timer', show: (p) => Boolean(p.perm_transactions) },
       { id: 'reports', label: 'Reports', icon: 'BarChart3', show: (p) => Boolean(p.perm_transactions) },
     ],
   },

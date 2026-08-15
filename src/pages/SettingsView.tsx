@@ -9,16 +9,6 @@ import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
 import { Checkbox } from '../components/ui/checkbox';
 import { applyTheme, isThemeId, DEFAULT_THEME, THEME_IDS, THEME_LABELS } from '../lib/theme';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../components/ui/alert-dialog';
 
 type Props = {
   settings: Settings | null;
@@ -41,8 +31,6 @@ export default function SettingsView({ settings, onSaved }: Props) {
   });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -77,37 +65,6 @@ export default function SettingsView({ settings, onSaved }: Props) {
       await onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
-    }
-  };
-
-  const seedDemo = async () => {
-    setError(null);
-    setMessage(null);
-    setDemoBusy(true);
-    try {
-      const result = await api.seedDemo();
-      setMessage(result.message);
-      await onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setDemoBusy(false);
-    }
-  };
-
-  const clearDemo = async () => {
-    setConfirmClear(false);
-    setError(null);
-    setMessage(null);
-    setDemoBusy(true);
-    try {
-      const result = await api.clearDemo();
-      setMessage(result.message);
-      await onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Clear failed');
-    } finally {
-      setDemoBusy(false);
     }
   };
 
@@ -251,44 +208,7 @@ export default function SettingsView({ settings, onSaved }: Props) {
         </div>
 
         <Button onClick={save}>Save settings</Button>
-
-        <div className="space-y-3 border-t pt-4">
-          <h3 className="text-lg font-semibold">Demo data</h3>
-          <p className="mt-0 text-sm text-muted-foreground">
-            Seed a sample South African catalog (categories, products, customers), or wipe catalog and
-            sales data for a clean slate. Staff and settings are kept.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={demoBusy} onClick={seedDemo}>
-              Seed demo catalog
-            </Button>
-            <Button variant="destructive" disabled={demoBusy} onClick={() => setConfirmClear(true)}>
-              Bulk delete catalog &amp; sales
-            </Button>
-          </div>
-        </div>
       </CardContent>
-
-      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete all catalog &amp; sales data?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This deletes ALL products, categories, sales history, and customers (except Walk-in).
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={clearDemo}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete everything
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Card>
   );
 }
