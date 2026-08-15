@@ -34,6 +34,9 @@ test('adds a category through the front-end form', async () => {
     await page.getByLabel('Choose section icon').click();
     await page.getByLabel('Search icons').fill('CupSoda');
     await page.getByRole('button', { name: 'Use CupSoda icon' }).click();
+    // The icon popover stays open after picking — dismiss it so it doesn't
+    // intercept the Add category button.
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Add category' }).click();
 
     // The new category should now appear in the list.

@@ -1,11 +1,14 @@
 import {
   interfaceUri,
   makePrinter,
+  printKotJob,
   printReceiptJob,
+  readPrinterConfig,
   writeReceipt,
   writeKot,
 } from '../electron/thermal.js';
 import { bootApp } from './helpers.js';
+import net from 'net';
 
 let app;
 beforeEach(async () => {
@@ -140,5 +143,165 @@ describe('Thermal: receipt and KOT formatting', () => {
     expect(printed).toContain('KITCHEN ORDER');
     expect(printed).toContain('Pizza');
     expect(printed).toContain('extra cheese');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Real ESC/POS over TCP — a mock printer server on localhost accepts the raw
+// byte stream exactly like a real network thermal printer on port 9100 would.
+// ---------------------------------------------------------------------------
+
+function startMockPrinter() {
+  const chunks = [];
+  const server = net.createServer((socket) => {
+    socket.on('data', (d) => chunks.push(d));
+  });
+  const started = new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+  });
+  return {
+    port: started,
+    async waitForBytes(timeout = 5000) {
+      const start = Date.now();
+      while (chunks.length === 0 && Date.now() - start < timeout) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return Buffer.concat(chunks);
+    },
+    async close() {
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+
+const ESC_POS_ESC = 0x1b; // every ESC/POS command byte starts with ESC
+const ESC_POS_FULL_CUT = Buffer.from([0x1d, 0x56, 0x00]); // GS V 0 — full cut
+const ESC_POS_HW_INIT = Buffer.from([0x1b, 0x40]); // ESC @ — reset printer
+
+const TINY_TX = {
+  ref_number: 'INV-THERMAL-1',
+  date: '2026-08-15T12:00:00Z',
+  user: 'admin',
+  till: 1,
+  customer_name: 'Jo',
+  items: [{ quantity: 2, name: 'Burger', price: 5, note: 'no onion' }],
+  subtotal: 10,
+  discount: 0,
+  tax: 0,
+  total: 10,
+  change: 0,
+  payment_breakdown: [{ method: 'cash', amount: 10 }],
+};
+
+const TINY_SETTINGS = { store: 'Burger Bar', symbol: '$' };
+
+describe('Thermal: real ESC/POS stream over TCP', () => {
+  test('receipt bytes start with ESC @ init, carry the text, and end with a full cut', async () => {
+    const mock = startMockPrinter();
+    const res = await printReceiptJob(TINY_TX, TINY_SETTINGS, {
+      receipt: { interface: 'network', networkHost: '127.0.0.1', networkPort: await mock.port, width: 58 },
+      kot: { interface: '' },
+      autoPrintKot: false,
+    });
+    expect(res).toEqual({ printed: true, fallback: false, kotPrinted: false });
+
+    const buf = await mock.waitForBytes();
+    expect(buf.length).toBeGreaterThan(0);
+    // The node-thermal-printer stream is pure ESC/POS: it opens with an ESC
+    // command and closes with full-cut (GS V 0) followed by printer reset (ESC @).
+    expect(buf[0]).toBe(ESC_POS_ESC);
+    const text = buf.toString('latin1');
+    expect(text).toContain('Burger Bar');
+    expect(text).toContain('INVOICE INV-THERMAL-1');
+    expect(text).toContain('Burger');
+    expect(text).toContain('TOTAL');
+    expect(buf.subarray(-5, -2).equals(ESC_POS_FULL_CUT)).toBe(true);
+    expect(buf.subarray(-2).equals(ESC_POS_HW_INIT)).toBe(true);
+    await mock.close();
+  });
+
+  test('KOT bytes go to the configured KOT printer', async () => {
+    const mock = startMockPrinter();
+    const res = await printKotJob(TINY_TX, {
+      kot: {
+        interface: 'network',
+        networkHost: '127.0.0.1',
+        networkPort: await mock.port,
+        width: 58,
+      },
+    });
+    expect(res).toEqual({ printed: true, fallback: false });
+
+    const buf = await mock.waitForBytes();
+    expect(buf[0]).toBe(ESC_POS_ESC);
+    const text = buf.toString('latin1');
+    expect(text).toContain('KITCHEN ORDER');
+    expect(text).toContain('Burger');
+    expect(buf.subarray(-5, -2).equals(ESC_POS_FULL_CUT)).toBe(true);
+    await mock.close();
+  });
+
+  test('auto-print KOT after the receipt on the KOT interface', async () => {
+    const receipt = startMockPrinter();
+    const kot = startMockPrinter();
+    const res = await printReceiptJob(TINY_TX, TINY_SETTINGS, {
+      receipt: {
+        interface: 'network',
+        networkHost: '127.0.0.1',
+        networkPort: await receipt.port,
+        width: 58,
+      },
+      kot: { interface: 'network', networkHost: '127.0.0.1', networkPort: await kot.port, width: 58 },
+      autoPrintKot: true,
+    }, { printKot: true });
+    expect(res.printed).toBe(true);
+    expect(res.kotPrinted).toBe(true);
+
+    expect((await receipt.waitForBytes()).toString('latin1')).toContain('INVOICE INV-THERMAL-1');
+    expect((await kot.waitForBytes()).toString('latin1')).toContain('KITCHEN ORDER');
+    await receipt.close();
+    await kot.close();
+  });
+
+  test('an unreachable printer falls back to PDF/browser print', async () => {
+    // Grab a port that is definitely closed (listen, then close it).
+    const probe = net.createServer();
+    await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+    const deadPort = probe.address().port;
+    await new Promise((r) => probe.close(r));
+
+    const res = await printReceiptJob(TINY_TX, TINY_SETTINGS, {
+      receipt: { interface: 'network', networkHost: '127.0.0.1', networkPort: deadPort, width: 58 },
+      kot: { interface: '' },
+      autoPrintKot: false,
+    });
+    expect(res).toEqual({ printed: false, fallback: true, kotPrinted: false });
+  });
+});
+
+describe('Thermal: saved settings drive real printing end-to-end', () => {
+  test('printer settings persisted via the API produce a real TCP print job', async () => {
+    const mock = startMockPrinter();
+    await app.client.request('/api/printer/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        interface: 'network',
+        networkHost: '127.0.0.1',
+        networkPort: await mock.port,
+        width: 58,
+      }),
+    });
+
+    const config = readPrinterConfig();
+    expect(config.receipt.networkHost).toBe('127.0.0.1');
+    const res = await printReceiptJob(TINY_TX, TINY_SETTINGS, config);
+    expect(res.printed).toBe(true);
+
+    const buf = await mock.waitForBytes();
+    expect(buf[0]).toBe(ESC_POS_ESC);
+    expect(buf.toString('latin1')).toContain('INVOICE INV-THERMAL-1');
+    expect(buf.subarray(-5, -2).equals(ESC_POS_FULL_CUT)).toBe(true);
+    await mock.close();
   });
 });

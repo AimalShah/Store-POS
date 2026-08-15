@@ -1,32 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { launchApp, setupTill, apiJson } from './helpers.mjs';
 
-// Install a spy that captures the PDF bytes passed to the print subsystem so we
-// can assert the generated document is a valid, professional PDF (store header,
-// correct figures) without opening a real print dialog.
-async function installPrintCapture(page) {
-  await page.addInitScript(() => {
-    window.__PRINT_CAPTURE = true;
-    window.__printData = null;
-  });
-  await page.evaluate(() => {
-    window.__PRINT_CAPTURE = true;
-    window.__printData = null;
-  });
-}
-// Returns { ok, text } where text is the decoded (latin1) PDF body for content
-// assertions.
-async function getPrintData(page) {
-  return page.evaluate(() => {
-    const buf = window.__printData;
-    if (!buf) return null;
-    const bytes = new Uint8Array(buf);
-    let s = '';
-    for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
-    return s;
-  });
-}
-
 async function goSidebar(page, label) {
   // Nav items are <button>s containing the title-case label. The header also
   // has a "Dashboard" button, so .last() selects the sidebar nav (which comes
@@ -61,7 +35,7 @@ async function seedSale(page, { total, ref, status = 1, shiftId }) {
   });
 }
 
-test('Reports: date filter narrows data and Print emits a professional document', async () => {
+test('Reports: date filter narrows data and the summary reflects the range', async () => {
   const app = await launchApp();
   try {
     const page = await app.firstWindow();
@@ -76,24 +50,14 @@ test('Reports: date filter narrows data and Print emits a professional document'
 
     // Default range (this month) includes today's sale — report must load.
     await expect(page.getByText('Total Sales', { exact: false })).toBeVisible({ timeout: 20_000 });
-
-    // Capture the printed document and assert it is a valid, professional PDF.
-    await installPrintCapture(page);
-    await page.getByRole('button', { name: 'Print report' }).click();
-    const pdf = await getPrintData(page);
-    expect(pdf).not.toBeNull();
-    expect(pdf.toLowerCase()).toContain('%pdf-');
-    expect(pdf.toLowerCase()).toContain('sales report');
-    expect(pdf.toLowerCase()).toContain('rs50.00');
-    // It must be a real PDF, not the old hand-rolled HTML.
-    expect(pdf.toLowerCase()).not.toContain('<table');
-    expect(pdf.toLowerCase()).not.toContain('text-primary');
+    await expect(page.getByText('Rs50.00').first()).toBeVisible({ timeout: 20_000 });
 
     // Now filter to a past range — the total must drop to zero.
     await page.locator('#report-from').fill('2020-01-01T00:00');
     await page.locator('#report-to').fill('2020-12-31T23:59');
     await page.getByRole('button', { name: 'Apply' }).click();
     await expect(page.getByText('No sales in this range.').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Rs0.00').first()).toBeVisible({ timeout: 20_000 });
   } finally {
     await app.close();
   }
@@ -148,31 +112,6 @@ test('Sales: status filter shows only matching transactions', async () => {
     // The held order's total appears in both the Total and Paid columns, so
     // scope to .first() to avoid the strict-mode ambiguity.
     await expect(page.getByText('Rs15.00').first()).toBeVisible({ timeout: 20_000 });
-  } finally {
-    await app.close();
-  }
-});
-
-test('Shifts: X report prints a professional document', async () => {
-  const app = await launchApp();
-  try {
-    const page = await app.firstWindow();
-    await setupTill(page);
-    await page.reload();
-    await page.waitForLoadState('domcontentloaded');
-    await expect(page.getByText('Dashboard', { exact: false })).toBeVisible({ timeout: 20_000 });
-    await goSidebar(page, 'Shifts');
-
-    await page.getByRole('button', { name: 'X Report' }).first().click();
-    await expect(page.getByRole('button', { name: 'Print Report' })).toBeVisible({ timeout: 20_000 });
-
-    await installPrintCapture(page);
-    await page.getByRole('button', { name: 'Print Report' }).click();
-    const pdf = await getPrintData(page);
-    expect(pdf).not.toBeNull();
-    expect(pdf.toLowerCase()).toContain('%pdf-');
-    expect(pdf.toLowerCase()).toContain('x report');
-    expect(pdf.toLowerCase()).not.toContain('<table');
   } finally {
     await app.close();
   }

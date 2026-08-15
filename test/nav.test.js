@@ -32,7 +32,7 @@ describe('Dashboard navigation', () => {
     const groups = buildNavGroups(perms({ perm_transactions: 1 }));
     const ids = groups.flatMap((g) => g.items.map((i) => i.id));
     expect(ids).toContain('sales');
-    expect(ids).not.toContain('catalog');
+    expect(ids).not.toContain('menu');
     expect(ids).not.toContain('team');
   });
 
@@ -48,12 +48,25 @@ describe('Dashboard navigation', () => {
     expect(
       buildNavGroups(perms({ perm_categories: 1 }))
         .flatMap((g) => g.items.map((i) => i.id))
-        .includes('catalog')
+        .includes('menu')
+    ).toBe(true);
+    expect(
+      buildNavGroups(perms({ perm_products: 1 }))
+        .flatMap((g) => g.items.map((i) => i.id))
+        .includes('menu')
     ).toBe(true);
   });
 
   test('initial view is always the Dashboard (Overview is first)', () => {
     expect(resolveInitialView(buildNavGroups(perms({ perm_transactions: 1 })))).toBe('dashboard');
     expect(resolveInitialView(buildNavGroups(perms()))).toBe('dashboard');
+  });
+
+  test('Shifts is no longer offered in the sidebar', () => {
+    const groups = buildNavGroups(perms({ perm_transactions: 1 }));
+    const ids = groups.flatMap((g) => g.items.map((i) => i.id));
+    expect(ids).not.toContain('shifts');
+    expect(ids).toContain('sales');
+    expect(ids).toContain('reports');
   });
 });
