@@ -46,7 +46,7 @@ jobs:
       - name: Build NSIS installer
         # better-sqlite3 is an N-API module. Rebuilding it for Electron invokes
         # the same native compiler that failed during npm ci on Node 24.
-        run: npm run build && npx electron-builder --win --config.npmRebuild=false
+        run: npm run build && npx electron-builder --win --config.npmRebuild=false --publish never
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
