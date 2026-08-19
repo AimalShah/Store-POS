@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { hashPassword } from '../auth.js';
+import { hashPassword, asyncHandler } from '../auth.js';
 
 const router = Router();
 
-router.get('/first-run', (_req, res) => {
+router.get('/first-run', asyncHandler(async (_req, res) => {
   const db = getDb();
   const settings = db.prepare('SELECT first_run FROM settings WHERE id = 1').get();
   res.json({ firstRun: !!settings?.first_run });
-});
+}));
 
-router.post('/first-run', (req, res) => {
+router.post('/first-run', asyncHandler(async (req, res) => {
   const body = req.body || {};
   const store = String(body.store || '').trim();
   const pin = String(body.pin || '');
@@ -27,6 +27,6 @@ router.post('/first-run', (req, res) => {
     db.prepare('UPDATE users SET pin = ? WHERE id = 1').run(hashPassword(pin));
   })();
   res.json({ ok: true });
-});
+}));
 
 export default router;

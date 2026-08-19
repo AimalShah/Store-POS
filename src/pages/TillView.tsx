@@ -925,8 +925,16 @@ export default function TillView({
                 min={0}
                 step="0.01"
                 value={discount || ''}
-                onChange={(e) => setDiscount(Number(e.target.value))}
-                className="w-24 h-8 text-right text-xs"
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val < 0) {
+                    setError('Discount cannot be negative');
+                  } else {
+                    if (error === 'Discount cannot be negative') setError(null);
+                    setDiscount(val);
+                  }
+                }}
+                className={`w-24 h-8 text-right text-xs ${discount < 0 ? 'border-destructive' : ''}`}
                 placeholder="0.00"
                 data-testid="order-discount"
               />
@@ -975,7 +983,7 @@ export default function TillView({
             </Button>
             <Button
               onClick={openPay}
-              disabled={!cart.length}
+              disabled={!cart.length || discount < 0}
               className="h-12 text-base font-semibold"
             >
               Pay

@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import multer from 'multer';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { getDb, mapProduct } from '../db.js';
-import { requirePerm } from '../auth.js';
+import { getDb, mapProduct, auditLog } from '../db.js';
+import { requirePerm, asyncHandler } from '../auth.js';
+import logger from '../logger.js';
 
 function mapProductWithComponents(row, db) {
   if (!row) return null;
@@ -27,6 +29,7 @@ function mapProductWithComponents(row, db) {
     price: row.price,
     cost: row.cost || 0,
     category: row.category,
+    category_id: row.category_id,
     quantity: row.quantity,
     stock: row.stock,
     trackStock: !!row.stock,
@@ -84,35 +87,47 @@ export default function inventoryRouter(uploadsPath) {
 
   const storage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadsPath),
-    filename: (_req, _file, cb) => cb(null, `${Date.now()}.jpg`),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `${crypto.randomUUID()}${ext}`);
+    },
   });
-  const upload = multer({ storage });
+  const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.startsWith('image/')) {
+        return cb(new Error('Only image uploads are allowed'));
+      }
+      cb(null, true);
+    },
+  });
 
-  router.get('/products', (_req, res) => {
+  router.get('/products', asyncHandler(async (_req, res) => {
     const rows = db.prepare('SELECT * FROM products ORDER BY name').all();
     res.json(rows.map((r) => mapProductWithComponents(r, db)));
-  });
+  }));
 
-  router.get('/product/:productId', (req, res) => {
+  router.get('/product/:productId', asyncHandler(async (req, res) => {
     const row = db
       .prepare('SELECT * FROM products WHERE id = ?')
       .get(parseInt(req.params.productId, 10));
     res.json(mapProductWithComponents(row, db));
-  });
+  }));
 
-  router.post('/product/sku', (req, res) => {
+  router.post('/product/sku', asyncHandler(async (req, res) => {
     const sku = req.body?.skuCode;
     const row = db
       .prepare('SELECT * FROM products WHERE id = ? OR name = ?')
       .get(parseInt(sku, 10) || -1, String(sku || ''));
     res.json(mapProductWithComponents(row, db));
-  });
+  }));
 
   router.post(
     '/product',
     requirePerm('perm_products'),
     upload.single('imagename'),
-    (req, res) => {
+    asyncHandler(async (req, res) => {
       const body = req.body || {};
       let image = body.img || '';
 
@@ -122,17 +137,21 @@ export default function inventoryRouter(uploadsPath) {
 
       if (String(body.remove) === '1' && body.img) {
         const oldPath = path.join(uploadsPath, body.img);
-        try {
-          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-        } catch (err) {
-          console.error(err);
-        }
+try {
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+          } catch (err) {
+            logger.error({ err: err.message }, 'Failed to delete old product image');
+          }
         if (!req.file) image = '';
       }
 
       const stock = body.stock === 'on' || body.stock === 0 || body.stock === '0' ? 0 : 1;
       const quantity = body.quantity === '' || body.quantity == null ? 0 : parseInt(body.quantity, 10);
       const cost = body.cost === '' || body.cost == null ? 0 : parseFloat(body.cost) || 0;
+      const price = body.price === '' || body.price == null ? 0 : parseFloat(body.price) || 0;
+      if (price < 0 || cost < 0) {
+        return res.status(400).json({ error: 'Price and cost cannot be negative' });
+      }
 
       let components = [];
       if (body.components) {
@@ -164,16 +183,24 @@ export default function inventoryRouter(uploadsPath) {
       const hot = body.hot === '1' || body.hot === 1 || body.hot === true || body.hot === 'true' ? 1 : 0;
 
       if (!body.id) {
+        // Resolve category_id from category name or use provided category_id
+        let categoryId = body.category_id ? parseInt(body.category_id, 10) : null;
+        if (!categoryId && body.category) {
+          const cat = db.prepare('SELECT id FROM categories WHERE name = ?').get(body.category);
+          if (cat) categoryId = cat.id;
+        }
+
         const result = db
           .prepare(
-            `INSERT INTO products (name, price, cost, category, quantity, stock, img, variants_json, modifiers_json, hot)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO products (name, price, cost, category, category_id, quantity, stock, img, variants_json, modifiers_json, hot)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             body.name,
-            parseFloat(body.price) || 0,
+            price,
             cost,
             body.category || '',
+            categoryId,
             quantity,
             stock,
             image,
@@ -196,18 +223,28 @@ export default function inventoryRouter(uploadsPath) {
         saveSizes(db, productId, sizes);
 
         const row = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+        const authUser = req.user || {};
+        auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'create', 'product', productId, null, row);
         return res.json(mapProductWithComponents(row, db));
       }
 
       const id = parseInt(body.id, 10);
+      // Resolve category_id from category name or use provided category_id
+      let categoryId = body.category_id ? parseInt(body.category_id, 10) : null;
+      if (!categoryId && body.category) {
+        const cat = db.prepare('SELECT id FROM categories WHERE name = ?').get(body.category);
+        if (cat) categoryId = cat.id;
+      }
+
       db.prepare(
-        `UPDATE products SET name = ?, price = ?, cost = ?, category = ?, quantity = ?, stock = ?, img = ?, variants_json = ?, modifiers_json = ?, hot = ?
+        `UPDATE products SET name = ?, price = ?, cost = ?, category = ?, category_id = ?, quantity = ?, stock = ?, img = ?, variants_json = ?, modifiers_json = ?, hot = ?
          WHERE id = ?`
       ).run(
         body.name,
-        parseFloat(body.price) || 0,
+        price,
         cost,
         body.category || '',
+        categoryId,
         quantity,
         stock,
         image,
@@ -230,40 +267,51 @@ export default function inventoryRouter(uploadsPath) {
 
       saveSizes(db, id, sizes);
 
+      const updatedRow = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+      const authUser = req.user || {};
+      auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'update', 'product', id, { id }, updatedRow);
       res.sendStatus(200);
     }
-  );
+  ));
 
   router.post(
     '/product/:productId/hot',
     requirePerm('perm_products'),
-    (req, res) => {
+    asyncHandler(async (req, res) => {
       const id = parseInt(req.params.productId, 10);
       const hot = req.body?.hot ? 1 : 0;
+      const db = getDb();
       const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
       if (!row) return res.sendStatus(404);
       db.prepare('UPDATE products SET hot = ? WHERE id = ?').run(hot, id);
       const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+      const authUser = req.user || {};
+      auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'update', 'product', id, { hot: row.hot }, { hot });
       res.json(mapProductWithComponents(updated, db));
-    }
+    })
   );
 
-  router.delete('/product/:productId', requirePerm('perm_products'), (req, res) => {
+router.delete('/product/:productId', requirePerm('perm_products'), asyncHandler(async (req, res) => {
     const id = parseInt(req.params.productId, 10);
-    const row = getDb().prepare('SELECT img FROM products WHERE id = ?').get(id);
-    getDb().prepare('DELETE FROM products WHERE id = ?').run(id);
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    if (row) {
+      const authUser = req.user || {};
+      auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'delete', 'product', id, row, null);
+    }
+    db.prepare('DELETE FROM products WHERE id = ?').run(id);
     if (row?.img) {
       const imgPath = path.join(uploadsPath, row.img);
       try {
-        if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-      } catch (err) {
-        console.error(err);
-      }
+            if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+          } catch (err) {
+            logger.error({ err: err.message }, 'Failed to delete product image during bulk delete');
+          }
     }
     res.sendStatus(200);
-  });
+  }));
 
-  router.post('/products/bulk-delete', requirePerm('perm_products'), (req, res) => {
+  router.post('/products/bulk-delete', requirePerm('perm_products'), asyncHandler(async (req, res) => {
     const ids = (req.body?.ids || [])
       .map((id) => parseInt(id, 10))
       .filter((id) => Number.isFinite(id) && id > 0);
@@ -285,20 +333,20 @@ export default function inventoryRouter(uploadsPath) {
           try {
             if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
           } catch (err) {
-            console.error(err);
+            logger.error({ err: err.message }, 'Failed to delete product image');
           }
         }
       }
     })();
 
     res.json({ ok: true, deleted });
-  });
+  }));
 
   // Stock adjustment (restock/wastage/adjustment)
   router.post(
     '/product/:productId/adjust-stock',
     requirePerm('perm_products'),
-    (req, res) => {
+    asyncHandler(async (req, res) => {
       const productId = parseInt(req.params.productId, 10);
       const body = req.body || {};
       const type = body.type; // 'restock' | 'wastage' | 'adjustment'
@@ -333,14 +381,14 @@ export default function inventoryRouter(uploadsPath) {
 
       const updatedProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
       res.json(mapProductWithComponents(updatedProduct, db));
-    }
+    })
   );
 
   // Stock movement history for a product
   router.get(
     '/product/:productId/stock-movements',
     requirePerm('perm_products'),
-    (req, res) => {
+    asyncHandler(async (req, res) => {
       const productId = parseInt(req.params.productId, 10);
       const limit = parseInt(req.query.limit, 10) || 100;
       const offset = parseInt(req.query.offset, 10) || 0;
@@ -354,14 +402,14 @@ export default function inventoryRouter(uploadsPath) {
       const total = db.prepare('SELECT COUNT(*) as n FROM stock_movements WHERE product_id = ?').get(productId);
 
       res.json({ movements: rows.map(mapStockMovement), total: total?.n || 0 });
-    }
+    })
   );
 
   // All stock movements (for history view)
   router.get(
     '/stock-movements',
     requirePerm('perm_products'),
-    (req, res) => {
+    asyncHandler(async (req, res) => {
       const limit = parseInt(req.query.limit, 10) || 100;
       const offset = parseInt(req.query.offset, 10) || 0;
       const productId = req.query.productId ? parseInt(req.query.productId, 10) : null;
@@ -406,7 +454,7 @@ export default function inventoryRouter(uploadsPath) {
       const total = db.prepare(countSql).get(...params.slice(0, -2));
 
       res.json({ movements: rows.map(mapStockMovement), total: total?.n || 0 });
-    }
+    })
   );
 
   return router;

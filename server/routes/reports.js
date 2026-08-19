@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requirePerm } from '../auth.js';
+import { requirePerm, asyncHandler } from '../auth.js';
 import { computeSalesSummary, computeBestSellers } from '../lib/sales.js';
 
 const router = Router();
@@ -9,7 +9,7 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 // Summarise paid sales over a date range: totals by category and payment
 // method, plus best-selling items. Reuses the shared sales aggregation so
 // the report and the best-sellers endpoint stay consistent.
-router.get('/summary', requirePerm('perm_transactions'), (req, res) => {
+router.get('/summary', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const startRaw = String(req.query.start || '');
   const endRaw = String(req.query.end || '');
   let start = null;
@@ -23,11 +23,11 @@ router.get('/summary', requirePerm('perm_transactions'), (req, res) => {
   const till = parseInt(String(req.query.till), 10) || 0;
 
   res.json(computeSalesSummary({ start, end, till }));
-});
+}));
 
 // Top products by units sold over the trailing 30 days (falls back to
 // all-time when the window has no sales). Used by the till's Best Sellers view.
-router.get('/best-sellers', requirePerm('perm_transactions'), (req, res) => {
+router.get('/best-sellers', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const till = parseInt(String(req.query.till), 10) || 0;
   const limit = parseInt(String(req.query.limit), 10) || 0;
 
@@ -41,6 +41,6 @@ router.get('/best-sellers', requirePerm('perm_transactions'), (req, res) => {
   }
 
   res.json(ranked);
-});
+}));
 
 export default router;

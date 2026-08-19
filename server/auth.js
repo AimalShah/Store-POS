@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import multer from 'multer';
 import { getDb, mapUser } from './db.js';
+import logger from './logger.js';
 
 let jwtSecret = 'store-pos-dev-secret';
 
@@ -96,4 +98,31 @@ export function loginByPin(pin) {
 
 export function hashPassword(password) {
   return bcrypt.hashSync(password, 10);
+}
+
+export function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch((err) => {
+      logger.error({ err: err.message, stack: err.stack, path: req.path, method: req.method }, 'Route error');
+      if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+        return res.status(400).json({ error: 'Invalid JSON' });
+      }
+      if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return res.status(409).json({ error: 'Duplicate entry' });
+      }
+      if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+        return res.status(400).json({ error: 'Referenced record not found' });
+      }
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ error: 'File too large (max 5MB)' });
+        }
+        return res.status(400).json({ error: err.message });
+      }
+      if (err.message && err.message.startsWith('Only image')) {
+        return res.status(400).json({ error: err.message });
+      }
+      res.status(500).json({ error: 'Server error' });
+    });
+  };
 }

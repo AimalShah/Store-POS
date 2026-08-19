@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { initDatabase } from './db.js';
 import { setJwtSecret, authenticate } from './auth.js';
+import logger, { createRequestLogger } from './logger.js';
 import usersRouter from './routes/users.js';
 import inventoryRouter from './routes/inventory.js';
 import categoriesRouter from './routes/categories.js';
@@ -16,6 +17,7 @@ import shiftsRouter from './routes/shifts.js';
 import drawerRouter from './routes/drawer.js';
 import reportsRouter from './routes/reports.js';
 import printerRouter from './routes/printer.js';
+import auditLogRouter from './routes/auditLog.js';
 
 export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   fs.mkdirSync(uploadsPath, { recursive: true });
@@ -24,6 +26,8 @@ export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   setJwtSecret(jwtSecret);
 
   const app = express();
+
+  app.use(createRequestLogger);
 
   app.use(
     cors({
@@ -54,10 +58,11 @@ export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
   app.use('/api/drawer', authenticate, drawerRouter);
   app.use('/api/reports', authenticate, reportsRouter);
   app.use('/api/printer', authenticate, printerRouter);
+  app.use('/api/audit-log', authenticate, auditLogRouter);
   app.use('/api', authenticate, transactionsRouter);
 
   app.use((err, _req, res, _next) => {
-    console.error(err);
+    logger.error({ err: err.message, stack: err.stack }, 'Server error');
     res.status(500).json({ error: err.message || 'Server error' });
   });
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { requirePerm } from '../auth.js';
+import { requirePerm, asyncHandler } from '../auth.js';
 
 const router = Router();
 
@@ -21,7 +21,7 @@ function localDayRange(iso) {
 }
 
 // Get open drawer session for a till
-router.get('/open', (req, res) => {
+router.get('/open', asyncHandler(async (req, res) => {
   const till = parseInt(req.query.till, 10) || 1;
   const db = getDb();
   
@@ -30,10 +30,10 @@ router.get('/open', (req, res) => {
     .get(till);
   
   res.json({ session });
-});
+}));
 
 // Get all drawer sessions with filters
-router.get('/', requirePerm('perm_transactions'), (req, res) => {
+router.get('/', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const db = getDb();
   const status = req.query.status;
   const till = parseInt(req.query.till, 10) || 0;
@@ -62,10 +62,10 @@ router.get('/', requirePerm('perm_transactions'), (req, res) => {
     openedAt: row.opened_at,
     closedAt: row.closed_at,
   })));
-});
+}));
 
 // Open a new drawer session
-router.post('/open', (req, res) => {
+router.post('/open', asyncHandler(async (req, res) => {
   const body = req.body || {};
   const floatAmount = parseFloat(body.floatAmount) || 0;
   const till = parseInt(body.till, 10) || 1;
@@ -89,10 +89,10 @@ router.post('/open', (req, res) => {
 
   const session = db.prepare('SELECT * FROM drawer_sessions WHERE id = ?').get(result.lastInsertRowid);
   res.json({ session });
-});
+}));
 
 // Close a drawer session
-router.post('/:sessionId/close', (req, res) => {
+router.post('/:sessionId/close', asyncHandler(async (req, res) => {
   const sessionId = parseInt(req.params.sessionId, 10);
   const body = req.body || {};
   const countedCash = parseFloat(body.countedCash) || 0;
@@ -116,30 +116,16 @@ router.post('/:sessionId/close', (req, res) => {
 
   const updatedSession = db.prepare('SELECT * FROM drawer_sessions WHERE id = ?').get(sessionId);
   res.json({ session: updatedSession });
-});
+}));
 
 // Get reconciliation summary for a till
-router.get('/summary', requirePerm('perm_transactions'), (req, res) => {
+router.get('/summary', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const till = parseInt(req.query.till, 10) || 1;
   const db = getDb();
   
   const openSession = db.prepare(`SELECT * FROM drawer_sessions WHERE till = ? AND status = 'open'`).get(till);
   const closedSessions = db.prepare(`SELECT * FROM drawer_sessions WHERE till = ? AND status = 'closed'`).all(till);
   
-  let totalVariance = 0;
-  let totalExpected = 0;
-  let totalActual = 0;
-  let closedCount = 0;
-  
-  for (const session of closedSessions) {
-    const variance = session.variance || 0;
-    totalVariance += variance;
-    totalExpected += session.float_amount + (session.counted_cash || 0);
-    totalActual += countedCash || 0;  // This needs fix - need to get the counted cash from each session
-    closedCount++;
-  }
-  
-  // Actually, let me compute this properly
   let totalFloat = 0;
   let totalClose = 0;
   let totalVar = 0;
@@ -161,6 +147,6 @@ router.get('/summary', requirePerm('perm_transactions'), (req, res) => {
       totalVariance: totalVar,
     }
   });
-});
+}));
 
 export default router;

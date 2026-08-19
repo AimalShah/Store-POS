@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getDb, mapTransaction } from '../db.js';
-import { requirePerm } from '../auth.js';
+import { getDb, mapTransaction, auditLog } from '../db.js';
+import { requirePerm, asyncHandler } from '../auth.js';
 
 const router = Router();
 
@@ -10,15 +10,85 @@ function decrementInventory(items, db, transactionId, userId, userName) {
     const qty = parseInt(item.quantity, 10) || 0;
     if (!id || !qty) continue;
     const product = db.prepare('SELECT id, quantity, stock FROM products WHERE id = ?').get(id);
-    if (!product || product.stock === 0) continue;
-    const updated = Math.max(0, (product.quantity || 0) - qty);
-    db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(updated, id);
+    if (!product) continue;
 
-    // Log stock movement for sale
-    db.prepare(
-      `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
-       VALUES (?, 'sale', ?, ?, 'Sale deduction', ?, 'transaction', ?, ?, ?)`
-    ).run(id, -qty, updated, transactionId, userId, userName, new Date().toISOString());
+    // Decrement parent product stock if tracked
+    if (product.stock !== 0) {
+      const updated = Math.max(0, (product.quantity || 0) - qty);
+      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(updated, id);
+
+      // Log stock movement for sale
+      db.prepare(
+        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
+         VALUES (?, 'sale', ?, ?, 'Sale deduction', ?, 'transaction', ?, ?, ?)`
+      ).run(id, -qty, updated, transactionId, userId, userName, new Date().toISOString());
+    }
+
+    // Decrement component stock for combo meals (regardless of parent's stock tracking)
+    const components = db
+      .prepare(
+        `SELECT pc.component_product_id as id, pc.quantity as comp_qty, p.quantity, p.stock
+         FROM product_components pc
+         JOIN products p ON p.id = pc.component_product_id
+         WHERE pc.parent_product_id = ?`
+      )
+      .all(id);
+    for (const comp of components) {
+      if (!comp || comp.stock === 0) continue;
+      const compQty = qty * (comp.comp_qty || 1);
+      const compUpdated = Math.max(0, (comp.quantity || 0) - compQty);
+      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(compUpdated, comp.id);
+
+      // Log stock movement for component sale
+      db.prepare(
+        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
+         VALUES (?, 'sale', ?, ?, 'Sale deduction (component)', ?, 'transaction', ?, ?, ?)`
+      ).run(comp.id, -compQty, compUpdated, transactionId, userId, userName, new Date().toISOString());
+    }
+  }
+}
+
+function restoreInventory(items, db, transactionId, userId, userName) {
+  for (const item of items || []) {
+    const id = parseInt(item.id ?? item._id, 10);
+    const qty = parseInt(item.quantity, 10) || 0;
+    if (!id || !qty) continue;
+    const product = db.prepare('SELECT id, quantity, stock FROM products WHERE id = ?').get(id);
+    if (!product) continue;
+
+    // Restore parent product stock if tracked
+    if (product.stock !== 0) {
+      const updated = (product.quantity || 0) + qty;
+      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(updated, id);
+
+      // Log stock movement for restock (void)
+      db.prepare(
+        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
+         VALUES (?, 'restock', ?, ?, 'Void restock', ?, 'transaction', ?, ?, ?)`
+      ).run(id, qty, updated, transactionId, userId, userName, new Date().toISOString());
+    }
+
+    // Restore component stock for combo meals
+    const components = db
+      .prepare(
+        `SELECT pc.component_product_id as id, pc.quantity as comp_qty, p.quantity, p.stock
+         FROM product_components pc
+         JOIN products p ON p.id = pc.component_product_id
+         WHERE pc.parent_product_id = ?`
+      )
+      .all(id);
+    for (const comp of components) {
+      if (!comp || comp.stock === 0) continue;
+      const compQty = qty * (comp.comp_qty || 1);
+      const compUpdated = (comp.quantity || 0) + compQty;
+      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(compUpdated, comp.id);
+
+      // Log stock movement for component restock (void)
+      db.prepare(
+        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
+         VALUES (?, 'restock', ?, ?, 'Void restock (component)', ?, 'transaction', ?, ?, ?)`
+      ).run(comp.id, compQty, compUpdated, transactionId, userId, userName, new Date().toISOString());
+    }
   }
 }
 
@@ -45,7 +115,7 @@ function snapshotItems(items, db) {
 }
 
 // Derive the total paid and change due from a split-payment breakdown.
-// Change applies to the cash line only: cash tendered above the total.
+// Change applies to the cash line only: sum of (tendered - amount) for cash lines.
 function derivePayment(body) {
   const breakdown = Array.isArray(body.payment_breakdown) ? body.payment_breakdown : [];
   if (!breakdown.length) {
@@ -56,14 +126,15 @@ function derivePayment(body) {
     };
   }
   let paid = 0;
-  let cashPaid = 0;
+  let change = 0;
   for (const line of breakdown) {
     const amount = Number(line.amount) || 0;
+    const tendered = Number(line.tendered) || amount;
     paid += amount;
-    if ((line.method || 'cash') === 'cash') cashPaid += amount;
+    if ((line.method || 'cash') === 'cash' && tendered > amount) {
+      change += tendered - amount;
+    }
   }
-  const total = parseFloat(body.total) || 0;
-  const change = Math.max(0, cashPaid - total);
   return { paymentBreakdown: breakdown, paid, change };
 }
 
@@ -152,6 +223,10 @@ router.get('/by-date', requirePerm('perm_transactions'), (req, res) => {
 
 router.post('/new', (req, res) => {
   const body = req.body || {};
+  const discount = parseFloat(body.discount) || 0;
+  if (discount < 0) {
+    return res.status(400).json({ error: 'Discount cannot be negative' });
+  }
   const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
   const { paymentBreakdown, paid, change } = derivePayment(body);
@@ -214,6 +289,10 @@ router.post('/new', (req, res) => {
 
 router.put('/new/:id', (req, res) => {
   const body = req.body || {};
+  const discount = parseFloat(body.discount) || 0;
+  if (discount < 0) {
+    return res.status(400).json({ error: 'Discount cannot be negative' });
+  }
   const id = parseInt(req.params.id ?? body._id ?? body.id, 10);
   const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
@@ -275,17 +354,62 @@ router.put('/new/:id', (req, res) => {
   res.json({ ok: true, id, ref_number: invoiceRef });
 });
 
-router.post('/delete', (req, res) => {
+router.post('/delete', asyncHandler(async (req, res) => {
   const orderId = parseInt(req.body?.orderId ?? req.body?._id, 10);
-  getDb().prepare('DELETE FROM transactions WHERE id = ?').run(orderId);
-  res.sendStatus(200);
-});
+  const db = getDb();
+  const authUser = req.user || {};
+  const userId = authUser.id || 0;
+  const userName = authUser.fullname || 'Unknown';
 
-router.get('/transaction/:transactionId', (req, res) => {
+  const transaction = db.prepare('SELECT * FROM transactions WHERE id = ?').get(orderId);
+  if (transaction) {
+    auditLog(db, userId, userName, 'delete', 'transaction', orderId, transaction, null);
+  }
+  db.prepare('DELETE FROM transactions WHERE id = ?').run(orderId);
+  res.sendStatus(200);
+}));
+
+// Void a transaction (refund) - restores stock and sets status to 2
+router.post('/transactions/:id/void', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const authUser = req.user || {};
+  const userId = authUser.id || 0;
+  const userName = authUser.fullname || 'Unknown';
+
+  const db = getDb();
+  const transaction = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+
+  if (!transaction) {
+    return res.status(404).json({ error: 'Transaction not found' });
+  }
+
+  if (transaction.status === 2) {
+    return res.status(400).json({ error: 'Transaction is already voided' });
+  }
+
+  // Only allow voiding completed sales (status 1)
+  if (transaction.status !== 1) {
+    return res.status(400).json({ error: 'Only completed sales can be voided' });
+  }
+
+  const items = JSON.parse(transaction.items_json || '[]');
+
+  // Restore inventory
+  restoreInventory(items, db, id, userId, userName);
+
+  // Update transaction status to voided (2)
+  db.prepare('UPDATE transactions SET status = 2 WHERE id = ?').run(id);
+
+auditLog(db, userId, userName, 'void', 'transaction', id, transaction, { ...transaction, status: 2 });
+
+  res.json({ ok: true, id, status: 2 });
+}));
+
+router.get('/transaction/:transactionId', asyncHandler(async (req, res) => {
   const row = getDb()
     .prepare('SELECT * FROM transactions WHERE id = ?')
     .get(parseInt(req.params.transactionId, 10));
   res.json(mapTransaction(row));
-});
+}));
 
 export default router;

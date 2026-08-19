@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb, mapPrinterSettings } from '../db.js';
-import { requirePerm } from '../auth.js';
+import { requirePerm, asyncHandler } from '../auth.js';
 
 const router = Router();
 
@@ -11,12 +11,12 @@ const toPort = (value, fallback) => {
 
 const toWidth = (value, fallback) => (parseInt(value, 10) === 80 ? 80 : fallback === 80 ? 80 : 58);
 
-router.get('/settings', (_req, res) => {
+router.get('/settings', asyncHandler(async (_req, res) => {
   const row = getDb().prepare('SELECT * FROM printer_settings WHERE id = 1').get();
   res.json({ printer: mapPrinterSettings(row) });
-});
+}));
 
-router.post('/settings', requirePerm('perm_settings'), (req, res) => {
+router.post('/settings', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const db = getDb();
   const existing = db.prepare('SELECT * FROM printer_settings WHERE id = 1').get();
@@ -79,6 +79,6 @@ router.post('/settings', requirePerm('perm_settings'), (req, res) => {
 
   const row = db.prepare('SELECT * FROM printer_settings WHERE id = 1').get();
   res.json({ printer: mapPrinterSettings(row) });
-});
+}));
 
 export default router;

@@ -1,29 +1,43 @@
 import { Router } from 'express';
 import multer from 'multer';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getDb, mapSettings } from '../db.js';
-import { requirePerm } from '../auth.js';
+import { requirePerm, asyncHandler } from '../auth.js';
+import logger from '../logger.js';
 
 export default function settingsRouter(uploadsPath) {
   const router = Router();
 
   const storage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadsPath),
-    filename: (_req, _file, cb) => cb(null, `logo-${Date.now()}.jpg`),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `logo-${crypto.randomUUID()}${ext}`);
+    },
   });
-  const upload = multer({ storage });
+  const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.startsWith('image/')) {
+        return cb(new Error('Only image uploads are allowed'));
+      }
+      cb(null, true);
+    },
+  });
 
-  router.get('/get', (_req, res) => {
+  router.get('/get', asyncHandler(async (_req, res) => {
     const row = getDb().prepare('SELECT * FROM settings WHERE id = 1').get();
     res.json(mapSettings(row));
-  });
+  }));
 
   router.post(
     '/post',
     requirePerm('perm_settings'),
     upload.single('imagename'),
-    (req, res) => {
+    asyncHandler(async (req, res) => {
       const body = req.body || {};
       let image = body.img || '';
 
@@ -36,7 +50,7 @@ export default function settingsRouter(uploadsPath) {
         try {
           if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
         } catch (err) {
-          console.error(err);
+          logger.error({ err: err.message }, 'Failed to delete old image');
         }
         if (!req.file) image = '';
       }
@@ -82,7 +96,7 @@ export default function settingsRouter(uploadsPath) {
 
       const row = getDb().prepare('SELECT * FROM settings WHERE id = 1').get();
       res.json(mapSettings(row));
-    }
+    })
   );
 
   return router;

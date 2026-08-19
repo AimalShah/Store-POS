@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { itemLineTotal, parseJson, computeSalesSummary, computeBestSellers } from '../server/lib/sales.js';
+import { mapShift } from '../server/db.js';
 import { bootApp } from './helpers.js';
 
 // --- pure pricing / parsing logic ----------------------------------------
@@ -99,5 +100,47 @@ describe('computeBestSellers', () => {
     const ranked = computeBestSellers({});
     expect(ranked[0].id).toBe(b);
     expect(ranked[0].quantity).toBe(9);
+  });
+});
+
+describe('mapShift', () => {
+  test('returns null for null input', () => {
+    expect(mapShift(null)).toBeNull();
+  });
+
+  test('parses valid xReport and zReport JSON', () => {
+    const row = {
+      id: 1, user_id: 1, user_name: 'Admin', till: 1,
+      float_amount: 100, counted_cash: 105, status: 'closed',
+      opened_at: '2024-01-01T00:00:00Z', closed_at: '2024-01-01T12:00:00Z',
+      x_report_json: '{"sales":10}', z_report_json: '{"sales":20}',
+    };
+    const result = mapShift(row);
+    expect(result.xReport).toEqual({ sales: 10 });
+    expect(result.zReport).toEqual({ sales: 20 });
+  });
+
+  test('returns null for corrupted x_report_json without crashing', () => {
+    const row = {
+      id: 2, user_id: 1, user_name: 'Admin', till: 1,
+      float_amount: 100, counted_cash: 100, status: 'closed',
+      opened_at: '2024-01-01T00:00:00Z', closed_at: '2024-01-01T12:00:00Z',
+      x_report_json: '{corrupted!!!', z_report_json: null,
+    };
+    const result = mapShift(row);
+    expect(result.xReport).toBeNull();
+    expect(result.zReport).toBeNull();
+  });
+
+  test('returns null for corrupted z_report_json without crashing', () => {
+    const row = {
+      id: 3, user_id: 1, user_name: 'Admin', till: 1,
+      float_amount: 50, counted_cash: 50, status: 'closed',
+      opened_at: '2024-01-01T00:00:00Z', closed_at: '2024-01-01T12:00:00Z',
+      x_report_json: null, z_report_json: 'not-json',
+    };
+    const result = mapShift(row);
+    expect(result.xReport).toBeNull();
+    expect(result.zReport).toBeNull();
   });
 });

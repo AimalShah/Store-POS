@@ -67,7 +67,7 @@ describe('Checkout: split payment + change on cash line', () => {
         method: 'POST',
         body: JSON.stringify(
           saleBody({
-            payment_breakdown: [{ method: 'cash', amount: 7 }],
+            payment_breakdown: [{ method: 'cash', amount: 5, tendered: 7 }],
           })
         ),
       }

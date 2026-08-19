@@ -7,11 +7,12 @@ import {
   loginByPin,
   signToken,
   hashPassword,
+  asyncHandler,
 } from '../auth.js';
 
 const router = Router();
 
-router.post('/login', (req, res) => {
+router.post('/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
@@ -22,9 +23,9 @@ router.post('/login', (req, res) => {
   }
   const token = signToken(user);
   res.json({ user, token });
-});
+}));
 
-router.post('/login-pin', (req, res) => {
+router.post('/login-pin', asyncHandler(async (req, res) => {
   const { pin } = req.body || {};
   if (!pin) {
     return res.status(400).json({ error: 'PIN required' });
@@ -35,48 +36,48 @@ router.post('/login-pin', (req, res) => {
   }
   const token = signToken(user);
   res.json({ user, token });
-});
+}));
 
-router.get('/check', (_req, res) => {
+router.get('/check', asyncHandler(async (_req, res) => {
   const admin = getDb().prepare('SELECT id FROM users WHERE id = 1').get();
   res.json({ ready: !!admin });
-});
+}));
 
 router.use(authenticate);
 
-router.get('/user/:userId', (req, res) => {
+router.get('/user/:userId', asyncHandler(async (req, res) => {
   const row = getDb()
     .prepare('SELECT * FROM users WHERE id = ?')
     .get(parseInt(req.params.userId, 10));
   res.json(mapUser(row));
-});
+}));
 
-router.get('/logout/:userId', (req, res) => {
+router.get('/logout/:userId', asyncHandler(async (req, res) => {
   getDb()
     .prepare('UPDATE users SET status = ? WHERE id = ?')
     .run(`Logged Out_${new Date().toISOString()}`, parseInt(req.params.userId, 10));
   res.sendStatus(200);
-});
+}));
 
-router.get('/all', requirePerm('perm_users'), (_req, res) => {
+router.get('/all', requirePerm('perm_users'), asyncHandler(async (_req, res) => {
   const rows = getDb().prepare('SELECT * FROM users ORDER BY id').all();
   res.json(rows.map(mapUser));
-});
+}));
 
 router.delete(
   '/user/:userId',
   requirePerm('perm_users'),
-  (req, res) => {
+  asyncHandler(async (req, res) => {
     const id = parseInt(req.params.userId, 10);
     if (id === 1) {
       return res.status(400).json({ error: 'Cannot delete the default admin' });
     }
     getDb().prepare('DELETE FROM users WHERE id = ?').run(id);
     res.sendStatus(200);
-  }
+  })
 );
 
-router.post('/post', requirePerm('perm_users'), (req, res) => {
+router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const perms = {
     perm_products: body.perm_products ? 1 : 0,
@@ -137,6 +138,6 @@ router.post('/post', requirePerm('perm_users'), (req, res) => {
   params.push(id);
   getDb().prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   res.sendStatus(200);
-});
+}));
 
 export default router;

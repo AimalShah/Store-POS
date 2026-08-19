@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb, mapShift, mapTransaction } from '../db.js';
-import { requirePerm } from '../auth.js';
+import { requirePerm, asyncHandler } from '../auth.js';
 
 const router = Router();
 
@@ -85,7 +85,7 @@ function computeZReport(db, shiftId, shiftOpenedAt, floatAmount, countedCash) {
 }
 
 // Get open shift for a till
-router.get('/open', (req, res) => {
+router.get('/open', asyncHandler(async (req, res) => {
   const till = parseInt(req.query.till, 10) || 1;
   const db = getDb();
   
@@ -94,10 +94,10 @@ router.get('/open', (req, res) => {
     .get(till);
   
   res.json(mapShift(shift));
-});
+}));
 
 // Get all shifts with filters
-router.get('/', requirePerm('perm_transactions'), (req, res) => {
+router.get('/', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const db = getDb();
   const status = req.query.status;
   const till = parseInt(req.query.till, 10) || 0;
@@ -126,10 +126,10 @@ router.get('/', requirePerm('perm_transactions'), (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
   res.json(rows.map(mapShift));
-});
+}));
 
 // Open a new shift
-router.post('/open', (req, res) => {
+router.post('/open', asyncHandler(async (req, res) => {
   const body = req.body || {};
   const floatAmount = parseFloat(body.floatAmount) || 0;
   const till = parseInt(body.till, 10) || 1;
@@ -152,10 +152,10 @@ router.post('/open', (req, res) => {
 
   const shift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(result.lastInsertRowid);
   res.json(mapShift(shift));
-});
+}));
 
 // Close a shift
-router.post('/:shiftId/close', (req, res) => {
+router.post('/:shiftId/close', asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const body = req.body || {};
   const countedCash = parseFloat(body.countedCash) || 0;
@@ -181,10 +181,10 @@ router.post('/:shiftId/close', (req, res) => {
 
   const updatedShift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shiftId);
   res.json(mapShift(updatedShift));
-});
+}));
 
 // Get X report for a shift
-router.get('/:shiftId/x-report', requirePerm('perm_transactions'), (req, res) => {
+router.get('/:shiftId/x-report', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const db = getDb();
 
@@ -195,10 +195,10 @@ router.get('/:shiftId/x-report', requirePerm('perm_transactions'), (req, res) =>
 
   const xReport = computeXReport(db, shiftId, shift.opened_at);
   res.json(xReport);
-});
+}));
 
 // Get Z report for a shift
-router.get('/:shiftId/z-report', requirePerm('perm_transactions'), (req, res) => {
+router.get('/:shiftId/z-report', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const db = getDb();
 
@@ -209,15 +209,15 @@ router.get('/:shiftId/z-report', requirePerm('perm_transactions'), (req, res) =>
 
   const zReport = computeZReport(db, shiftId, shift.opened_at, shift.float_amount, shift.counted_cash);
   res.json(zReport);
-});
+}));
 
 // Get transactions for a shift
-router.get('/:shiftId/transactions', requirePerm('perm_transactions'), (req, res) => {
+router.get('/:shiftId/transactions', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const db = getDb();
 
   const rows = db.prepare('SELECT * FROM transactions WHERE shift_id = ? ORDER BY date DESC').all(shiftId);
   res.json(rows.map(mapTransaction));
-});
+}));
 
 export default router;

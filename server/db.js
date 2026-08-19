@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
+import logger from './logger.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -26,7 +27,7 @@ export async function initDatabase(filePath) {
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
 
-  console.log('[DEBUG] Starting db.exec() for schema creation');
+  logger.debug('Starting db.exec() for schema creation');
   
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
@@ -50,7 +51,7 @@ export async function initDatabase(filePath) {
 
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
+      name TEXT NOT NULL UNIQUE,
       icon TEXT NOT NULL DEFAULT 'Utensils',
       color TEXT NOT NULL DEFAULT 'gray'
     );
@@ -61,10 +62,12 @@ export async function initDatabase(filePath) {
       price REAL NOT NULL DEFAULT 0,
       cost REAL NOT NULL DEFAULT 0,
       category TEXT NOT NULL DEFAULT '',
+      category_id INTEGER,
       quantity INTEGER NOT NULL DEFAULT 0,
       stock INTEGER NOT NULL DEFAULT 0,
       low_stock_threshold INTEGER NOT NULL DEFAULT 10,
-      img TEXT NOT NULL DEFAULT ''
+      img TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS stock_movements (
@@ -205,10 +208,26 @@ export async function initDatabase(filePath) {
     CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_till ON transactions(till);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 0,
+      user_name TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL, -- 'create', 'update', 'delete', 'void'
+      entity_type TEXT NOT NULL, -- 'transaction', 'product', 'customer', 'user', 'settings', 'category', 'shift', 'drawer_session'
+      entity_id INTEGER,
+      old_value TEXT, -- JSON snapshot before change
+      new_value TEXT, -- JSON snapshot after change
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
   `);
 
-  console.log('[DEBUG] db.exec() completed successfully');
-  
+logger.debug('db.exec() completed successfully');
+   
   // Migration: add payment_breakdown_json column if it doesn't exist
   try {
     const cols = db.prepare("PRAGMA table_info(transactions)").all();
@@ -335,17 +354,31 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
       db.exec(`
         CREATE TABLE drawer_sessions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL DEFAULT 0,
+          user_name TEXT NOT NULL DEFAULT '',
           till INTEGER NOT NULL DEFAULT 1,
           float_amount REAL NOT NULL DEFAULT 0,
           counted_cash REAL,
           variance REAL,
           status TEXT NOT NULL DEFAULT 'open',
           opened_at TEXT NOT NULL,
-          closed_at TEXT,
-          FOREIGN KEY (till) REFERENCES users(id) ON DELETE SET NULL
+          closed_at TEXT
         );
         CREATE INDEX idx_drawer_sessions_till ON drawer_sessions(till);
       `);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: add user_id and user_name columns to drawer_sessions if missing
+  try {
+    const cols = db.prepare("PRAGMA table_info(drawer_sessions)").all();
+    if (!cols.some((c) => c.name === 'user_id')) {
+      db.prepare("ALTER TABLE drawer_sessions ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0").run();
+    }
+    if (!cols.some((c) => c.name === 'user_name')) {
+      db.prepare("ALTER TABLE drawer_sessions ADD COLUMN user_name TEXT NOT NULL DEFAULT ''").run();
     }
   } catch {
     /* ignore */
@@ -398,13 +431,39 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     /* ignore */
   }
 
+  // Migration: add category_id column to products and populate from category name
+  try {
+    const productCols = db.prepare("PRAGMA table_info(products)").all();
+    if (!productCols.some((c) => c.name === 'category_id')) {
+      db.prepare("ALTER TABLE products ADD COLUMN category_id INTEGER").run();
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)").run();
+      
+      // Add FK constraint (requires recreating table in SQLite, but we can add index)
+      // Populate category_id from existing category name references
+      const products = db.prepare("SELECT id, category FROM products WHERE category != ''").all();
+      for (const p of products) {
+        const cat = db.prepare("SELECT id FROM categories WHERE name = ?").get(p.category);
+        if (cat) {
+          db.prepare("UPDATE products SET category_id = ? WHERE id = ?").run(cat.id, p.id);
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: add UNIQUE constraint on categories.name if not exists (requires table rebuild in SQLite)
+  // SQLite doesn't support ADD CONSTRAINT UNIQUE on existing column easily
+  // We handle deduplication at application level
+
   const versionRow = db.prepare('SELECT version FROM schema_version WHERE id = 1').get();
   if (!versionRow) {
     db.prepare('INSERT INTO schema_version (id, version) VALUES (1, ?)').run(SCHEMA_VERSION);
-    console.log(`Fresh database created at ${filePath} (schema v${SCHEMA_VERSION})`);
+    logger.info({ filePath, schemaVersion: SCHEMA_VERSION }, 'Fresh database created');
   } else if (versionRow.version !== SCHEMA_VERSION) {
-    console.warn(
-      `Schema version mismatch: database is v${versionRow.version}, app expects v${SCHEMA_VERSION}`
+    logger.warn(
+      { dbVersion: versionRow.version, appVersion: SCHEMA_VERSION },
+      'Schema version mismatch'
     );
   }
 
@@ -472,6 +531,7 @@ export function mapProduct(row) {
     price: row.price,
     cost: row.cost || 0,
     category: row.category,
+    category_id: row.category_id,
     quantity: row.quantity,
     stock: row.stock,
     trackStock: !!row.stock,
@@ -548,6 +608,18 @@ export function mapTransaction(row) {
 
 export function mapShift(row) {
   if (!row) return null;
+  let xReport = null;
+  let zReport = null;
+  try {
+    xReport = row.x_report_json ? JSON.parse(row.x_report_json) : null;
+  } catch {
+    logger.warn({ shiftId: row.id }, 'Corrupted x_report_json in shift');
+  }
+  try {
+    zReport = row.z_report_json ? JSON.parse(row.z_report_json) : null;
+  } catch {
+    logger.warn({ shiftId: row.id }, 'Corrupted z_report_json in shift');
+  }
   return {
     id: row.id,
     userId: row.user_id,
@@ -558,8 +630,8 @@ export function mapShift(row) {
     status: row.status,
     openedAt: row.opened_at,
     closedAt: row.closed_at,
-    xReport: row.x_report_json ? JSON.parse(row.x_report_json) : null,
-    zReport: row.z_report_json ? JSON.parse(row.z_report_json) : null,
+    xReport,
+    zReport,
   };
 }
 
@@ -598,5 +670,29 @@ export function mapPrinterSettings(row) {
     kotNetworkPort: row.kot_network_port || 9100,
     kotWidth: row.kot_width || 58,
     autoPrintKot: !!row.auto_print_kot,
+  };
+}
+
+export function auditLog(db, userId, userName, action, entityType, entityId, oldValue, newValue) {
+  db.prepare(
+    `INSERT INTO audit_log (user_id, user_name, action, entity_type, entity_id, old_value, new_value, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  ).run(userId, userName, action, entityType, entityId, 
+    oldValue ? JSON.stringify(oldValue) : null, 
+    newValue ? JSON.stringify(newValue) : null);
+}
+
+export function mapAuditLog(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    oldValue: row.old_value ? JSON.parse(row.old_value) : null,
+    newValue: row.new_value ? JSON.parse(row.new_value) : null,
+    createdAt: row.created_at,
   };
 }
