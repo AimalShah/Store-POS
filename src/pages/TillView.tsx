@@ -102,7 +102,6 @@ import {
 } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { ScrollArea } from '../components/ui/scroll-area';
 import {
   Table,
@@ -630,7 +629,7 @@ export default function TillView({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
         <div className="flex flex-col gap-2 border-b p-3">
           <ScrollArea className="w-full">
-            <div className="flex gap-2 pb-1">
+            <div className="flex flex-wrap overflow-y-scroll gap-2 pb-1">
               <button
                 type="button"
                 data-testid="cat-tab-search"

@@ -43,9 +43,22 @@ jobs:
           # node-gyp 9 a supported Python version if a compile is needed.
           NODE_GYP_FORCE_PYTHON: ${{ env.pythonLocation }}\python.exe
 
+      - name: Run unit tests
+        # better-sqlite3 ships a Node-ABI prebuild after `npm ci`, which is what
+        # Vitest needs. `pretest` re-fetches it via scripts/use-native.mjs.
+        run: npm test
+
+      - name: Switch better-sqlite3 to the Electron ABI
+        # better-sqlite3 is compiled against a V8 ABI, so Node and Electron each
+        # need their own binary. This downloads the matching prebuild for
+        # Electron (e.g. electron-v148 for Electron 43) — no compiler needed.
+        run: npm run native:electron
+
       - name: Build NSIS installer
-        # better-sqlite3 is an N-API module. Rebuilding it for Electron invokes
-        # the same native compiler that failed during npm ci on Node 24.
+        # electron-builder's automatic rebuild (npmRebuild) is disabled because
+        # it recompiles from source and hits node-gyp 9 toolchain limits on the
+        # hosted runners. The binary is already Electron-ready above, so the
+        # packaged app can use it as-is.
         run: npm run build && npx electron-builder --win --config.npmRebuild=false --publish never
 
       - name: Upload Windows installer
