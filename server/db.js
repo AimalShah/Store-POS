@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
 
 const SCHEMA_VERSION = 1;
@@ -18,7 +19,7 @@ export function getDbPath() {
 
 export async function initDatabase(filePath) {
   dbPath = filePath;
-  fs.mkdirSync(dirname(filePath), { recursive: true });
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
   db = new Database(filePath);
   db.pragma('journal_mode = WAL');
@@ -409,10 +410,6 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 
   seedDefaults();
   return db;
-}
-
-function dirname(filePath) {
-  return filePath.replace(/\/[^/]*$/, '') || '.';
 }
 
 function seedDefaults() {
