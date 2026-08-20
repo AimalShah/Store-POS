@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
 import { getDb, mapUser } from '../db.js';
 import {
   authenticate,
@@ -8,11 +9,12 @@ import {
   signToken,
   hashPassword,
   asyncHandler,
+  loginRateLimit,
 } from '../auth.js';
 
 const router = Router();
 
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', loginRateLimit, asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
@@ -22,10 +24,10 @@ router.post('/login', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Incorrect username or password' });
   }
   const token = signToken(user);
-  res.json({ user, token });
+  res.json({ user, token, force_password_change: user.force_password_change });
 }));
 
-router.post('/login-pin', asyncHandler(async (req, res) => {
+router.post('/login-pin', loginRateLimit, asyncHandler(async (req, res) => {
   const { pin } = req.body || {};
   if (!pin) {
     return res.status(400).json({ error: 'PIN required' });
@@ -35,7 +37,7 @@ router.post('/login-pin', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Incorrect PIN' });
   }
   const token = signToken(user);
-  res.json({ user, token });
+  res.json({ user, token, force_password_change: user.force_password_change });
 }));
 
 router.get('/check', asyncHandler(async (_req, res) => {
@@ -138,6 +140,38 @@ router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) =>
   params.push(id);
   getDb().prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   res.sendStatus(200);
+}));
+
+router.post('/change-password', authenticate, asyncHandler(async (req, res) => {
+  const { current_password, new_password, confirm_password } = req.body || {};
+  const userId = req.user.id;
+
+  if (!current_password || !new_password || !confirm_password) {
+    return res.status(400).json({ error: 'Current password, new password, and confirmation are required' });
+  }
+
+  if (new_password !== confirm_password) {
+    return res.status(400).json({ error: 'New password and confirmation do not match' });
+  }
+
+  if (new_password.length < 4) {
+    return res.status(400).json({ error: 'New password must be at least 4 characters' });
+  }
+
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  if (!bcrypt.compareSync(current_password, user.password)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  const newHash = hashPassword(new_password);
+  db.prepare('UPDATE users SET password = ?, force_password_change = 0 WHERE id = ?').run(newHash, userId);
+
+  res.json({ ok: true, message: 'Password changed successfully' });
 }));
 
 export default router;

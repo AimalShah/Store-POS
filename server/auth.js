@@ -1,16 +1,72 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { getDb, mapUser } from './db.js';
+import { getDb, mapUser, loadJwtSecret } from './db.js';
 import logger from './logger.js';
 
-let jwtSecret = 'store-pos-dev-secret';
+let jwtSecret = null;
+
+function assertJwtSecret() {
+  if (!jwtSecret) {
+    throw new Error('JWT secret not initialized. Call setJwtSecret() first.');
+  }
+}
+
+const loginAttempts = new Map();
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000;
+
+function getClientIp(req) {
+  return req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+}
+
+function cleanupExpiredAttempts() {
+  const now = Date.now();
+  for (const [ip, attempts] of loginAttempts.entries()) {
+    const validAttempts = attempts.filter((t) => now - t < WINDOW_MS);
+    if (validAttempts.length === 0) {
+      loginAttempts.delete(ip);
+    } else {
+      loginAttempts.set(ip, validAttempts);
+    }
+  }
+}
+
+setInterval(cleanupExpiredAttempts, 60 * 1000);
+
+export function loginRateLimit(req, res, next) {
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const attempts = loginAttempts.get(ip) || [];
+  const recentAttempts = attempts.filter((t) => now - t < WINDOW_MS);
+
+  if (recentAttempts.length >= MAX_ATTEMPTS) {
+    const retryAfter = Math.ceil((recentAttempts[0] + WINDOW_MS - now) / 1000);
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
+  }
+
+  recentAttempts.push(now);
+  loginAttempts.set(ip, recentAttempts);
+  next();
+}
+
+export function resetLoginRateLimit() {
+  loginAttempts.clear();
+}
 
 export function setJwtSecret(secret) {
-  jwtSecret = secret || jwtSecret;
+  if (!secret) {
+    throw new Error('JWT secret cannot be empty');
+  }
+  jwtSecret = secret;
 }
 
 export function signToken(user) {
+  assertJwtSecret();
   return jwt.sign(
     {
       id: user.id || user._id,
@@ -28,6 +84,7 @@ export function signToken(user) {
 }
 
 export function verifyToken(token) {
+  assertJwtSecret();
   return jwt.verify(token, jwtSecret);
 }
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb, mapCustomer } from '../db.js';
-import { asyncHandler } from '../auth.js';
+import { asyncHandler, requirePerm } from '../auth.js';
 
 const router = Router();
 
@@ -16,7 +16,7 @@ router.get('/customer/:customerId', asyncHandler(async (req, res) => {
   res.json(mapCustomer(row));
 }));
 
-router.post('/customer', asyncHandler(async (req, res) => {
+router.post('/customer', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   getDb()
     .prepare(
@@ -26,7 +26,7 @@ router.post('/customer', asyncHandler(async (req, res) => {
   res.sendStatus(200);
 }));
 
-router.put('/customer', asyncHandler(async (req, res) => {
+router.put('/customer', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const id = parseInt(body._id ?? body.id, 10);
   getDb()
@@ -37,7 +37,7 @@ router.put('/customer', asyncHandler(async (req, res) => {
   res.sendStatus(200);
 }));
 
-router.delete('/customer/:customerId', asyncHandler(async (req, res) => {
+router.delete('/customer/:customerId', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
   getDb()
     .prepare('DELETE FROM customers WHERE id = ?')
     .run(parseInt(req.params.categoryId, 10));

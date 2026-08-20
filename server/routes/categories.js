@@ -15,8 +15,9 @@ router.post('/category', requirePerm('perm_categories'), asyncHandler(async (req
   const color = req.body?.color || 'gray';
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
-    getDb().prepare('INSERT INTO categories (name, icon, color) VALUES (?, ?, ?)').run(name, icon, color);
-    res.sendStatus(200);
+    const result = getDb().prepare('INSERT INTO categories (name, icon, color) VALUES (?, ?, ?)').run(name, icon, color);
+    const category = getDb().prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
+    res.json(category);
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return res.status(409).json({ error: 'Category name already exists' });

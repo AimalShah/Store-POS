@@ -221,7 +221,7 @@ router.get('/by-date', requirePerm('perm_transactions'), (req, res) => {
   res.json(rows.map(mapTransaction));
 });
 
-router.post('/new', (req, res) => {
+router.post('/new', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const discount = parseFloat(body.discount) || 0;
   if (discount < 0) {
@@ -285,9 +285,9 @@ router.post('/new', (req, res) => {
 
   const id = insert();
   res.json({ ok: true, id, ref_number: invoiceRef });
-});
+}));
 
-router.put('/new/:id', (req, res) => {
+router.put('/new/:id', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const discount = parseFloat(body.discount) || 0;
   if (discount < 0) {
@@ -352,9 +352,9 @@ router.put('/new/:id', (req, res) => {
 
   update();
   res.json({ ok: true, id, ref_number: invoiceRef });
-});
+}));
 
-router.post('/delete', asyncHandler(async (req, res) => {
+router.post('/delete', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const orderId = parseInt(req.body?.orderId ?? req.body?._id, 10);
   const db = getDb();
   const authUser = req.user || {};

@@ -34,7 +34,6 @@ async function startApiServer(paths) {
   const expressApp = await createServer({
     dbPath: paths.dbFile,
     uploadsPath: paths.uploads,
-    jwtSecret: app.getPath('userData') + '-store-pos-jwt',
   });
 
   const httpServer = await new Promise((resolve, reject) => {

@@ -2,9 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import { initDatabase } from './db.js';
+import { initDatabase, loadJwtSecret } from './db.js';
 import { setJwtSecret, authenticate } from './auth.js';
 import logger, { createRequestLogger } from './logger.js';
+
+function getCorsOrigin() {
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+  return 'http://127.0.0.1:5173';
+}
+
 import usersRouter from './routes/users.js';
 import inventoryRouter from './routes/inventory.js';
 import categoriesRouter from './routes/categories.js';
@@ -19,11 +27,11 @@ import reportsRouter from './routes/reports.js';
 import printerRouter from './routes/printer.js';
 import auditLogRouter from './routes/auditLog.js';
 
-export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
+export async function createServer({ dbPath, uploadsPath }) {
   fs.mkdirSync(uploadsPath, { recursive: true });
   fs.mkdirSync(path.join(uploadsPath, 'library'), { recursive: true });
   await initDatabase(dbPath);
-  setJwtSecret(jwtSecret);
+  setJwtSecret(loadJwtSecret());
 
   const app = express();
 
@@ -31,7 +39,7 @@ export async function createServer({ dbPath, uploadsPath, jwtSecret }) {
 
   app.use(
     cors({
-      origin: true,
+      origin: getCorsOrigin(),
       credentials: true,
     })
   );

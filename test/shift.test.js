@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { bootApp } from './helpers.js';
+import { loadJwtSecret } from '../server/db.js';
 
 let app;
 beforeEach(async () => {
@@ -24,9 +25,12 @@ describe('Shifts: opening a shift records the cashier name', () => {
   });
 
   test('falls back to "Unknown" when the token lacks a fullname (old-token bug)', async () => {
+    // Get the actual JWT secret from the database
+    const jwtSecret = loadJwtSecret();
+    
     const legacyToken = jwt.sign(
       { id: 1, username: 'admin', perm_transactions: 1 },
-      'test-secret',
+      jwtSecret,
       { expiresIn: '12h' }
     );
     const res = await app.client.request(

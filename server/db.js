@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import logger from './logger.js';
 
 const SCHEMA_VERSION = 1;
@@ -46,7 +47,8 @@ export async function initDatabase(filePath) {
       perm_transactions INTEGER NOT NULL DEFAULT 0,
       perm_users INTEGER NOT NULL DEFAULT 0,
       perm_settings INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT ''
+      status TEXT NOT NULL DEFAULT '',
+      force_password_change INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS categories (
@@ -134,7 +136,8 @@ export async function initDatabase(filePath) {
       img TEXT NOT NULL DEFAULT '',
       till INTEGER NOT NULL DEFAULT 1,
       server_ip TEXT NOT NULL DEFAULT '',
-      first_run INTEGER NOT NULL DEFAULT 1
+      first_run INTEGER NOT NULL DEFAULT 1,
+      jwt_secret TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS media_library (
@@ -476,17 +479,28 @@ function seedDefaults() {
   if (!admin) {
     const hash = bcrypt.hashSync('admin', 10);
     db.prepare(
-      `INSERT INTO users (id, username, password, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings)
-       VALUES (1, 'admin', ?, 'Administrator', 1, 1, 1, 1, 1)`
+      `INSERT INTO users (id, username, password, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings, force_password_change)
+       VALUES (1, 'admin', ?, 'Administrator', 1, 1, 1, 1, 1, 1)`
     ).run(hash);
+  } else {
+    // Ensure existing admin has force_password_change flag set
+    db.prepare('UPDATE users SET force_password_change = 1 WHERE id = 1 AND username = "admin"').run();
   }
 
-  const settings = db.prepare('SELECT id FROM settings WHERE id = 1').get();
+  const settings = db.prepare('SELECT id, jwt_secret FROM settings WHERE id = 1').get();
   if (!settings) {
     db.prepare(
       `INSERT INTO settings (id, app, store, symbol, percentage, charge_tax, till)
        VALUES (1, 'Standalone Point of Sale', 'My Store', 'Rs', 0, 0, 1)`
     ).run();
+  }
+
+  // Generate and store JWT secret if not present
+  const currentSettings = db.prepare('SELECT jwt_secret FROM settings WHERE id = 1').get();
+  if (!currentSettings.jwt_secret) {
+    const jwtSecret = crypto.randomBytes(32).toString('hex');
+    db.prepare('UPDATE settings SET jwt_secret = ? WHERE id = 1').run(jwtSecret);
+    logger.info('Generated new JWT secret');
   }
 
   // Migrate any legacy '$' currency symbol to PKR (Rs).
@@ -518,6 +532,7 @@ export function mapUser(row) {
     perm_transactions: row.perm_transactions,
     perm_users: row.perm_users,
     perm_settings: row.perm_settings,
+    force_password_change: !!row.force_password_change,
     status: row.status,
   };
 }
@@ -695,4 +710,12 @@ export function mapAuditLog(row) {
     newValue: row.new_value ? JSON.parse(row.new_value) : null,
     createdAt: row.created_at,
   };
+}
+
+export function loadJwtSecret() {
+  const settings = db.prepare('SELECT jwt_secret FROM settings WHERE id = 1').get();
+  if (!settings || !settings.jwt_secret) {
+    throw new Error('JWT secret not found in database. Run setup first.');
+  }
+  return settings.jwt_secret;
 }
