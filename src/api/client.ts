@@ -22,6 +22,7 @@ export type Product = {
   price: number;
   cost: number;
   category: string;
+  category_id: number | null;
   quantity: number;
   stock: number;
   trackStock: boolean;
@@ -72,6 +73,23 @@ export type StockMovement = {
 
 export type StockMovementsResponse = {
   movements: StockMovement[];
+  total: number;
+};
+
+export type AuditLog = {
+  id: number;
+  userId: number;
+  userName: string;
+  action: string;
+  entityType: string;
+  entityId: number | null;
+  oldValue: unknown | null;
+  newValue: unknown | null;
+  createdAt: string;
+};
+
+export type AuditLogResponse = {
+  logs: AuditLog[];
   total: number;
 };
 
@@ -508,6 +526,11 @@ export const api = {
         body: JSON.stringify(body),
       }),
 
+    testPrinter: () =>
+      request<{ ok: boolean; message: string; content: string }>('/printer/test', {
+        method: 'POST',
+      }),
+
     getReportSummary: (params: { start?: string; end?: string; till?: number }) => {
       const q = new URLSearchParams();
       if (params.start) q.append('start', params.start);
@@ -536,4 +559,25 @@ export const api = {
         `/drawer/${sessionId}/close`,
         { method: 'POST', body: JSON.stringify(body) }
       ),
+
+    getAuditLog: (params?: {
+      userId?: number;
+      entityType?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.userId) q.append('userId', String(params.userId));
+      if (params?.entityType) q.append('entityType', params.entityType);
+      if (params?.startDate) q.append('startDate', params.startDate);
+      if (params?.endDate) q.append('endDate', params.endDate);
+      if (params?.limit) q.append('limit', String(params.limit));
+      if (params?.offset) q.append('offset', String(params.offset));
+      return request<AuditLogResponse>(`/audit-log?${q}`);
+    },
+
+    request: <T = any>(path: string, options?: RequestInit, auth = true) =>
+      request<T>(path, options, auth),
   };

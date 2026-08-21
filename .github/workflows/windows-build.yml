@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -59,9 +59,16 @@ jobs:
         # it recompiles from source and hits node-gyp 9 toolchain limits on the
         # hosted runners. The binary is already Electron-ready above, so the
         # packaged app can use it as-is.
-        run: npm run build && npx electron-builder --win --config.npmRebuild=false --publish never
+        #
+        # On a `v*` tag we publish the installer to a GitHub Release
+        # (electron-updater reads this metadata for auto-updates). On other
+        # pushes we just build locally and upload artifacts.
+        run: npm run build && npx electron-builder --win --config.npmRebuild=false ${{ startsWith(github.ref, 'refs/tags/v') && '--publish always' || '--publish never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows installer
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: Store-POS-Windows-installer
@@ -70,6 +77,7 @@ jobs:
           retention-days: 14
 
       - name: Upload unpacked Windows app
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: Store-POS-Windows-runner

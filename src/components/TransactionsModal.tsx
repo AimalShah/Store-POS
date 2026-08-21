@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Filter, Loader2, Printer } from 'lucide-react';
+import { Filter, Loader2, Printer, Trash2, AlertTriangle } from 'lucide-react';
 import { api, Settings, Transaction, User } from '../api/client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { Skeleton } from '../components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { highlight } from '../lib/highlight';
 import { printReportPdf } from '../lib/printing';
@@ -71,6 +72,8 @@ export default function TransactionsModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [invoice, setInvoice] = useState<Transaction | null>(null);
+  const [voidTx, setVoidTx] = useState<Transaction | null>(null);
+  const [voidLoading, setVoidLoading] = useState(false);
 
   const load = async () => {
     setError(null);
@@ -92,6 +95,20 @@ export default function TransactionsModal({
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVoid = async (tx: Transaction) => {
+    if (!confirm('Void this order? Stock will be restored. This action cannot be undone.')) return;
+    setVoidLoading(true);
+    setError(null);
+    try {
+      await api.request(`/api/transactions/${tx.id}/void`, { method: 'POST' });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Void failed');
+    } finally {
+      setVoidLoading(false);
     }
   };
 
@@ -181,6 +198,33 @@ export default function TransactionsModal({
         <p className="py-8 text-center text-sm text-muted-foreground">
           No transactions in this range
         </p>
+      ) : loading ? (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>ID</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Cashier</TableHead>
+              <TableHead>Till</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <TableRow key={i}>
+                {Array.from({ length: 9 }).map((__, j) => (
+                  <TableCell key={j}>
+                    <Skeleton className="h-4 w-full" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       ) : (
         <Table>
           <TableHeader>
@@ -213,22 +257,45 @@ export default function TransactionsModal({
                 <TableCell>
                   {r.status === 1 ? (
                     <Badge>Paid</Badge>
+                  ) : r.status === 2 ? (
+                    <Badge variant="destructive">Voided</Badge>
                   ) : (
                     <Badge variant="secondary">Open</Badge>
                   )}
                 </TableCell>
                 <TableCell>
                   {r.status === 1 && (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button variant="outline" size="icon" aria-label="Print invoice" onClick={() => setInvoice(r)}>
-                            <Printer className="size-4" />
-                          </Button>
-                        }
-                      />
-                      <TooltipContent>Print invoice</TooltipContent>
-                    </Tooltip>
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button variant="outline" size="icon" aria-label="Print invoice" onClick={() => setInvoice(r)}>
+                              <Printer className="size-4" />
+                            </Button>
+                          }
+                        />
+                        <TooltipContent>Print invoice</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              aria-label="Void transaction"
+                              onClick={() => handleVoid(r)}
+                              disabled={voidLoading}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          }
+                        />
+                        <TooltipContent>Void transaction</TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
+                  {r.status === 2 && (
+                    <span className="text-xs text-muted-foreground">Voided</span>
                   )}
                 </TableCell>
               </TableRow>

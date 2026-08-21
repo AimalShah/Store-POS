@@ -51,6 +51,13 @@ export type ReceiptPrintPayload = {
   printKot?: boolean;
 };
 
+export type UpdaterState = {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+  version: string | null;
+  error: string | null;
+  dev?: boolean;
+};
+
 export type PosBridge = {
   getApiInfo: () => Promise<ApiInfo>;
   quit: () => void;
@@ -59,6 +66,13 @@ export type PosBridge = {
   printReceipt: (payload: ReceiptPrintPayload) => Promise<PrintResult>;
   printKot: (payload: { tx: ReceiptPrintPayload['tx'] }) => Promise<PrintResult>;
   printPdf: (payload: { data: ArrayBuffer }) => Promise<{ printed: boolean }>;
+  updater: {
+    getState: () => Promise<UpdaterState>;
+    checkNow: () => Promise<UpdaterState>;
+    download: () => Promise<{ ok: boolean; dev?: boolean; error?: string }>;
+    restart: () => Promise<{ ok: boolean; dev?: boolean }>;
+    onState: (cb: (state: UpdaterState) => void) => void;
+  };
 };
 
 declare global {

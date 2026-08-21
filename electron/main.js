@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
+import pkg from 'electron-updater';
+const { autoUpdater } = pkg;
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
@@ -150,6 +152,104 @@ ipcMain.on('app-reload', () => {
   if (mainWindow) mainWindow.reload();
 });
 
+// ---------------------------------------------------------------------------
+// Auto-updater (electron-updater, GitHub Releases provider)
+// ---------------------------------------------------------------------------
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+let updateState = {
+  status: 'idle', // idle | checking | available | downloading | downloaded | error
+  version: null,
+  error: null,
+};
+
+function emitUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:state', updateState);
+  }
+}
+
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  emitUpdateState();
+}
+
+function setupAutoUpdater() {
+  if (isDev) return; // auto-updates only run in packaged builds
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = null;
+
+  autoUpdater.on('checking-for-update', () => setUpdateState({ status: 'checking', error: null }));
+  autoUpdater.on('update-available', (info) => {
+    setUpdateState({ status: 'available', version: info.version, error: null });
+    dialog
+      .showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Update available',
+        message: `Version ${info.version} is available.`,
+        detail: 'A new version of Store POS is ready. Download it now?',
+        buttons: ['Update now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.downloadUpdate();
+      });
+  });
+  autoUpdater.on('update-not-available', () => setUpdateState({ status: 'idle', error: null }));
+  autoUpdater.on('download-progress', () => setUpdateState({ status: 'downloading' }));
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdateState({ status: 'downloaded', version: info.version });
+    dialog
+      .showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Update ready',
+        message: 'Update downloaded. Restart now to apply?',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+  autoUpdater.on('error', (err) => setUpdateState({ status: 'error', error: err.message }));
+
+  autoUpdater.checkForUpdates().catch((err) => {
+    setUpdateState({ status: 'error', error: err.message });
+  });
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, UPDATE_CHECK_INTERVAL_MS);
+}
+
+ipcMain.handle('updater:get-state', () => updateState);
+ipcMain.handle('updater:check-now', async () => {
+  if (isDev) return { status: 'idle', dev: true };
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    setUpdateState({ status: 'error', error: err.message });
+  }
+  return updateState;
+});
+ipcMain.handle('updater:download', async () => {
+  if (isDev) return { ok: false, dev: true };
+  try {
+    await autoUpdater.downloadUpdate();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+ipcMain.handle('updater:restart', () => {
+  if (isDev) return { ok: false, dev: true };
+  autoUpdater.quitAndInstall();
+  return { ok: true };
+});
+
 app.whenReady().then(async () => {
   const paths = getUserDataPaths();
   ensureDirs(paths);
@@ -161,6 +261,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

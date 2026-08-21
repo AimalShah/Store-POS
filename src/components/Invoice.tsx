@@ -16,6 +16,7 @@ export default function Invoice({ tx, settings, symbol }: Props) {
   const paid = Number(tx.paid ?? total);
   const change = Number(tx.change ?? Math.max(0, paid - total));
   const logo = settings?.img ? `${getUploadsBase()}/${settings.img}` : undefined;
+  const isVoided = tx.status === 2;
 
   const meta: [string, string | number][] = [
     ['Invoice', tx.ref_number || '-'],
@@ -39,9 +40,14 @@ export default function Invoice({ tx, settings, symbol }: Props) {
   totals.push(['Change', `${symbol}${change.toFixed(2)}`]);
 
   return (
-    <div className="font-mono text-sm">
+    <div className="font-mono text-sm relative">
+      {isVoided && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-4xl font-extrabold text-destructive/20 rotate-[-30deg] select-none">VOIDED</div>
+        </div>
+      )}
       {logo ? <img className="mx-auto mb-2 h-16 w-auto object-contain" src={logo} alt="" /> : null}
-      <div className="text-center text-base font-bold">{settings?.store || 'Store POS'}</div>
+      <div className="text-center text-base font-bold relative z-10">{settings?.store || 'Store POS'}</div>
       {settings?.address_one ? (
         <div className="text-center text-xs text-muted-foreground">{settings.address_one}</div>
       ) : null}
@@ -52,7 +58,7 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         <div className="text-center text-xs text-muted-foreground">{settings.contact}</div>
       ) : null}
 
-      <div className="mt-2 text-center font-semibold tracking-widest">INVOICE</div>
+      <div className="mt-2 text-center font-semibold tracking-widest">{isVoided ? 'VOIDED INVOICE' : 'INVOICE'}</div>
 
       <div className="mt-2 space-y-0.5">
         {meta.map(([label, value]) => (

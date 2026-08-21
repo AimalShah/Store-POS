@@ -8,4 +8,11 @@ contextBridge.exposeInMainWorld('pos', {
   printReceipt: (payload) => ipcRenderer.invoke('print-receipt', payload),
   printKot: (payload) => ipcRenderer.invoke('print-kot', payload),
   printPdf: (payload) => ipcRenderer.invoke('print-pdf', payload),
+  updater: {
+    getState: () => ipcRenderer.invoke('updater:get-state'),
+    checkNow: () => ipcRenderer.invoke('updater:check-now'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    restart: () => ipcRenderer.invoke('updater:restart'),
+    onState: (cb) => ipcRenderer.on('updater:state', (_e, state) => cb(state)),
+  },
 });

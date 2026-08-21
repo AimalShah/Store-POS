@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { getDb, mapUser } from '../db.js';
+import { getDb, mapUser, auditLog } from '../db.js';
 import {
   authenticate,
   requirePerm,
@@ -74,7 +74,13 @@ router.delete(
     if (id === 1) {
       return res.status(400).json({ error: 'Cannot delete the default admin' });
     }
-    getDb().prepare('DELETE FROM users WHERE id = ?').run(id);
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (row) {
+      const authUser = req.user || {};
+      auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'delete', 'user', id, row, null);
+    }
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
     res.sendStatus(200);
   })
 );
@@ -88,9 +94,11 @@ router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) =>
     perm_users: body.perm_users ? 1 : 0,
     perm_settings: body.perm_settings ? 1 : 0,
   };
+  const db = getDb();
+  const authUser = req.user || {};
 
   if (!body.id) {
-    const result = getDb()
+    const result = db
       .prepare(
         `INSERT INTO users (username, password, pin, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -106,11 +114,13 @@ router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) =>
         perms.perm_users,
         perms.perm_settings
       );
-    const row = getDb().prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+    auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'create', 'user', row.id, null, row);
     return res.json(mapUser(row));
   }
 
   const id = parseInt(body.id, 10);
+  const oldRow = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   const updates = [
     'username = ?',
     'fullname = ?',
@@ -138,7 +148,9 @@ router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) =>
     params.push(hashPassword(String(body.pin)));
   }
   params.push(id);
-  getDb().prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const newRow = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'update', 'user', id, oldRow, newRow);
   res.sendStatus(200);
 }));
 

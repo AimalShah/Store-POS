@@ -221,11 +221,25 @@ router.get('/by-date', requirePerm('perm_transactions'), (req, res) => {
   res.json(rows.map(mapTransaction));
 });
 
+function validateItems(items) {
+  for (const item of items || []) {
+    const itemDiscount = Number(item.discountValue) || 0;
+    if (itemDiscount < 0) {
+      return 'Item discount cannot be negative';
+    }
+  }
+  return null;
+}
+
 router.post('/new', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const discount = parseFloat(body.discount) || 0;
   if (discount < 0) {
     return res.status(400).json({ error: 'Discount cannot be negative' });
+  }
+  const itemError = validateItems(body.items || []);
+  if (itemError) {
+    return res.status(400).json({ error: itemError });
   }
   const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
@@ -292,6 +306,10 @@ router.put('/new/:id', requirePerm('perm_transactions'), asyncHandler(async (req
   const discount = parseFloat(body.discount) || 0;
   if (discount < 0) {
     return res.status(400).json({ error: 'Discount cannot be negative' });
+  }
+  const itemError = validateItems(body.items || []);
+  if (itemError) {
+    return res.status(400).json({ error: itemError });
   }
   const id = parseInt(req.params.id ?? body._id ?? body.id, 10);
   const items = snapshotItems(body.items || [], getDb());

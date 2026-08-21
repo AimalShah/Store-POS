@@ -69,7 +69,16 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AimalShah",
+        "repo": "Store-POS",
+        "releaseType": "release",
+        "private": false
+      }
+    ]
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -81,6 +90,7 @@
     "cmdk": "^1.1.1",
     "cors": "^2.8.5",
     "date-fns": "^4.4.0",
+    "electron-updater": "^6.8.9",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",

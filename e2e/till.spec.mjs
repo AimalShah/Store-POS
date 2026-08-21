@@ -300,3 +300,71 @@ test('Pay Now is disabled until the amount tendered covers the order', async () 
     await app.close();
   }
 });
+
+test('empty cart cannot checkout', async () => {
+  const app = await launchApp();
+  try {
+    const page = await app.firstWindow();
+    await setupTill(page);
+    // Cart is empty by default after setupTill
+    await expect(page.getByText('Cart is empty')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Pay' }).click();
+    // Pay button is disabled when cart is empty
+    await expect(page.getByRole('button', { name: 'Pay' })).toBeDisabled();
+  } finally {
+    await app.close();
+  }
+});
+
+test('void flow: void a transaction, verify stock restored', async () => {
+  const app = await launchApp();
+  try {
+    const page = await app.firstWindow();
+    await setupTill(page);
+
+    // Make a sale: QA Cola stock starts at 10
+    await addProduct(page, 'QA Cola');
+    await pay(page, [{ method: 'Cash', amount: 5 }]);
+    await expect(page.getByText('Cart is empty')).toBeVisible();
+
+    // Stock should be 9 now
+    let res = await apiJson(page, 'GET', '/inventory/products');
+    let cola = (res.data || []).find((p) => p.name === 'QA Cola');
+    expect(cola?.quantity).toBe(9);
+
+    // Get the transaction ID from sales history
+    await page.getByText('Sales', { exact: false }).first().click();
+    await expect(page.getByText('Transaction History')).toBeVisible({ timeout: 10_000 });
+    const firstRow = page.getByRole('row').nth(1); // header is nth(0)
+    await firstRow.getByRole('button', { name: 'Void' }).click();
+    await expect(page.getByText('Void this order?')).toBeVisible();
+    await page.getByRole('button', { name: 'Void' }).click();
+
+    // Stock should be restored to 10
+    res = await apiJson(page, 'GET', '/inventory/products');
+    cola = (res.data || []).find((p) => p.name === 'QA Cola');
+    expect(cola?.quantity).toBe(10);
+  } finally {
+    await app.close();
+  }
+});
+
+test('held orders can be discarded', async () => {
+  const app = await launchApp();
+  try {
+    const page = await app.firstWindow();
+    await setupTill(page);
+
+    await addProduct(page, 'QA Cola');
+    await page.getByRole('button', { name: 'Hold' }).click();
+    await expect(page.getByText('Cart is empty')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Held' }).click();
+    await expect(page.getByRole('dialog').getByText('Held Orders')).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Discard' }).click();
+    await expect(page.getByRole('dialog').getByText('No held orders found.')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});

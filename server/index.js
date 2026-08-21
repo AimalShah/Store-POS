@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import { initDatabase, loadJwtSecret } from './db.js';
+import { initDatabase, loadJwtSecret, setUploadsPath } from './db.js';
 import { setJwtSecret, authenticate } from './auth.js';
 import logger, { createRequestLogger } from './logger.js';
 
@@ -26,12 +26,15 @@ import drawerRouter from './routes/drawer.js';
 import reportsRouter from './routes/reports.js';
 import printerRouter from './routes/printer.js';
 import auditLogRouter from './routes/auditLog.js';
+import versionRouter from './routes/version.js';
 
-export async function createServer({ dbPath, uploadsPath }) {
-  fs.mkdirSync(uploadsPath, { recursive: true });
-  fs.mkdirSync(path.join(uploadsPath, 'library'), { recursive: true });
+export async function createServer({ dbPath, uploadsPath: up }) {
+  setUploadsPath(up);
+  fs.mkdirSync(up, { recursive: true });
+  fs.mkdirSync(path.join(up, 'library'), { recursive: true });
   await initDatabase(dbPath);
   setJwtSecret(loadJwtSecret());
+  const uploadsPath = up;
 
   const app = express();
 
@@ -54,6 +57,8 @@ export async function createServer({ dbPath, uploadsPath }) {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+
+  app.use('/api/version', versionRouter);
 
   app.use('/api/users', usersRouter);
   app.use('/api/setup', setupRouter);

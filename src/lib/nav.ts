@@ -10,7 +10,8 @@ export type NavItemId =
   | 'settings'
   | 'export'
   | 'printers'
-  | 'stock-history';
+  | 'stock-history'
+  | 'audit-log';
 
 export type Permissions = {
   perm_products: number;
@@ -72,6 +73,7 @@ const NAV: NavDef[] = [
       { id: 'settings', label: 'Settings', icon: 'Settings', show: (p) => Boolean(p.perm_settings) },
       { id: 'export', label: 'Export', icon: 'Download', show: (p) => Boolean(p.perm_settings) },
       { id: 'printers', label: 'Printers', icon: 'Printer', show: (p) => Boolean(p.perm_settings) },
+      { id: 'audit-log', label: 'Audit Log', icon: 'AlertTriangle', show: (p) => Boolean(p.perm_settings) },
     ],
   },
 ];

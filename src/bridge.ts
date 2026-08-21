@@ -45,6 +45,13 @@ function browserFallback(): PosBridge {
     printReceipt: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
     printKot: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
     printPdf: async (): Promise<{ printed: boolean }> => ({ printed: false }),
+    updater: {
+      getState: async () => ({ status: 'idle', version: null, error: null, dev: true }),
+      checkNow: async () => ({ status: 'idle', version: null, error: null, dev: true }),
+      download: async () => ({ ok: false, dev: true }),
+      restart: async () => ({ ok: false, dev: true }),
+      onState: () => {},
+    },
   };
 }
 

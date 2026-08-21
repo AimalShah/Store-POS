@@ -7,8 +7,10 @@ export function useStoreData() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    setLoading(true);
     try {
       const [p, c, cust, s] = await Promise.all([
         api.getProducts(),
@@ -23,6 +25,8 @@ export function useStoreData() {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load store data');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -30,5 +34,5 @@ export function useStoreData() {
     reload();
   }, [reload]);
 
-  return { products, categories, customers, settings, error, reload };
+  return { products, categories, customers, settings, error, loading, reload };
 }

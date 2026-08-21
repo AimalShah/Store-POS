@@ -11,6 +11,7 @@ import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Checkbox } from '../components/ui/checkbox';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { Skeleton } from '../components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Separator } from '../components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
@@ -34,6 +35,7 @@ type Props = {
   canProducts: boolean;
   canCategories: boolean;
   onChanged: () => Promise<void>;
+  loading?: boolean;
 };
 
 type ComponentForm = {
@@ -51,6 +53,7 @@ const emptyProduct = {
   price: '',
   cost: '', // Cost per item (Advanced)
   category: '',
+  category_id: '',
   quantity: '0',
   trackStock: false, // Track stock count (Advanced)
   lowStockThreshold: 10, // Low-stock alert at (Advanced)
@@ -77,6 +80,7 @@ export default function CatalogView({
   canProducts,
   canCategories,
   onChanged,
+  loading = false,
 }: Props) {
   const [tab, setTab] = useState<'products' | 'categories'>(
     canProducts ? 'products' : 'categories'
@@ -267,6 +271,7 @@ export default function CatalogView({
       price: String(p.price),
       cost: String(p.cost ?? '0'),
       category: p.category,
+      category_id: p.category_id ? String(p.category_id) : '',
       quantity: String(p.quantity),
       trackStock: !!p.trackStock,
       lowStockThreshold: p.lowStockThreshold || 10,
@@ -445,14 +450,14 @@ export default function CatalogView({
 
                 <div className="space-y-2">
                   <Label htmlFor="product-category">Section</Label>
-                  <Select value={form.category} onValueChange={(value) => setForm({ ...form, category: value || '' })}>
+                  <Select value={form.category_id} onValueChange={(value) => setForm({ ...form, category_id: value || '' })}>
                     <SelectTrigger id="product-category">
                       <SelectValue placeholder="Select section" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">None</SelectItem>
                       {cats.map((c) => (
-                        <SelectItem key={c.id} value={c.name}>
+                        <SelectItem key={c.id} value={String(c.id)}>
                           {c.name}
                         </SelectItem>
                       ))}
@@ -767,6 +772,26 @@ export default function CatalogView({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {loading ? (
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <TableRow key={`sk-${i}`}>
+                        <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                        <TableCell><Skeleton className="h-10 w-10 rounded-md" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-10" /></TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-3 w-20" />
+                          </div>
+                        </TableCell>
+                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                        <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-40" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                  <>
                   {visible.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -825,8 +850,8 @@ export default function CatalogView({
                               <Button variant="outline" size="sm" onClick={() => openAdjustDialog(p, 'wastage')}>
                                 - Wastage
                               </Button>
-                            </>
-                          )}
+                    </>
+                    )}
                           <Button variant="ghost" size="icon" aria-label={`Edit ${p.name}`} onClick={() => editProduct(p)}>
                             <Pencil className="size-4" />
                           </Button>
@@ -849,6 +874,8 @@ export default function CatalogView({
                         No products yet
                       </TableCell>
                     </TableRow>
+                  )}
+                  </>
                   )}
                 </TableBody>
               </Table>

@@ -3,7 +3,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { getDb, mapSettings } from '../db.js';
+import { getDb, mapSettings, auditLog } from '../db.js';
 import { requirePerm, asyncHandler } from '../auth.js';
 import logger from '../logger.js';
 
@@ -39,6 +39,8 @@ export default function settingsRouter(uploadsPath) {
     upload.single('imagename'),
     asyncHandler(async (req, res) => {
       const body = req.body || {};
+      const db = getDb();
+      const authUser = req.user || {};
       let image = body.img || '';
 
       if (req.file) {
@@ -55,7 +57,7 @@ export default function settingsRouter(uploadsPath) {
         if (!req.file) image = '';
       }
 
-      const existing = getDb().prepare('SELECT * FROM settings WHERE id = 1').get();
+      const existing = db.prepare('SELECT * FROM settings WHERE id = 1').get();
       const payload = {
         app: 'Standalone Point of Sale',
         store: body.store ?? existing?.store ?? '',
@@ -71,7 +73,7 @@ export default function settingsRouter(uploadsPath) {
         till: parseInt(body.till ?? existing?.till ?? 1, 10) || 1,
       };
 
-      getDb()
+      db
         .prepare(
           `UPDATE settings SET
             app = ?, store = ?, address_one = ?, address_two = ?, contact = ?,
@@ -94,7 +96,8 @@ export default function settingsRouter(uploadsPath) {
           payload.till
         );
 
-      const row = getDb().prepare('SELECT * FROM settings WHERE id = 1').get();
+      const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+      auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'update', 'settings', 1, existing, row);
       res.json(mapSettings(row));
     })
   );

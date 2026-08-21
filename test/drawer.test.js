@@ -65,4 +65,60 @@ describe('Drawer: summary does not crash with closed sessions', () => {
     expect(status).toBe(200);
     expect(data.session.till).toBe(5);
   });
+
+  test('variance equals expected minus counted cash (positive overage = negative variance)', async () => {
+    const { data: open } = await app.client.request(
+      '/api/drawer/open',
+      { method: 'POST', body: JSON.stringify({ floatAmount: 100, till: 1 }) }
+    );
+    const sessionId = open.session.id;
+    const { data: closed } = await app.client.request(
+      `/api/drawer/${sessionId}/close`,
+      { method: 'POST', body: JSON.stringify({ countedCash: 110 }) }
+    );
+    expect(closed.session.variance).toBe(-10);
+  });
+
+  test('variance equals expected minus counted cash (negative shortage = positive variance)', async () => {
+    const { data: open } = await app.client.request(
+      '/api/drawer/open',
+      { method: 'POST', body: JSON.stringify({ floatAmount: 100, till: 1 }) }
+    );
+    const sessionId = open.session.id;
+    const { data: closed } = await app.client.request(
+      `/api/drawer/${sessionId}/close`,
+      { method: 'POST', body: JSON.stringify({ countedCash: 95 }) }
+    );
+    expect(closed.session.variance).toBe(5);
+  });
+
+  test('variance is zero when counted equals expected', async () => {
+    const { data: open } = await app.client.request(
+      '/api/drawer/open',
+      { method: 'POST', body: JSON.stringify({ floatAmount: 100, till: 1 }) }
+    );
+    const sessionId = open.session.id;
+    const { data: closed } = await app.client.request(
+      `/api/drawer/${sessionId}/close`,
+      { method: 'POST', body: JSON.stringify({ countedCash: 100 }) }
+    );
+    expect(closed.session.variance).toBe(0);
+  });
+
+  test('only one open session per till is allowed', async () => {
+    await app.client.request(
+      '/api/drawer/open',
+      { method: 'POST', body: JSON.stringify({ floatAmount: 100, till: 1 }) }
+    );
+    const { status } = await app.client.request(
+      '/api/drawer/open',
+      { method: 'POST', body: JSON.stringify({ floatAmount: 50, till: 1 }) }
+    );
+    expect(status).toBe(400);
+    const { status: status2 } = await app.client.request(
+      '/api/drawer/open',
+      { method: 'POST', body: JSON.stringify({ floatAmount: 75, till: 1 }) }
+    );
+    expect(status2).toBe(400);
+  });
 });

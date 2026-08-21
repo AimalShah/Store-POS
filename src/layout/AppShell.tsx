@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { UpdateIndicator } from '../components/UpdateIndicator';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Separator } from '../components/ui/separator';
 import { Toaster } from '../components/ui/sonner';
 import { Badge } from '../components/ui/badge';
@@ -89,6 +91,7 @@ import ReportsView from '../pages/ReportsView';
 import DrawerView from '../pages/DrawerView';
 import ExportView from '../pages/ExportView';
 import PrinterSettingsView from '../pages/PrinterSettingsView';
+import AuditLogView from '../pages/AuditLogView';
 import TransactionsModal from '../components/TransactionsModal';
 import TillView from '../pages/TillView';
 
@@ -219,7 +222,7 @@ function Landing({
 
 export default function AppShell() {
   const { user, hasPerm, logout } = useAuth();
-  const { products, categories, customers, settings, error, reload } = useStoreData();
+  const { products, categories, customers, settings, error, loading, reload } = useStoreData();
   const [mode, setMode] = useState<Mode>('till');
   const [landed, setLanded] = useState(false);
 
@@ -419,6 +422,7 @@ export default function AppShell() {
             canProducts={hasPerm('perm_products')}
             canCategories={hasPerm('perm_categories')}
             onChanged={reload}
+            loading={loading}
           />
         );
       case 'sales':
@@ -447,6 +451,8 @@ export default function AppShell() {
         return <ExportView />;
       case 'printers':
         return <PrinterSettingsView />;
+      case 'audit-log':
+        return <AuditLogView canSettings={hasPerm('perm_settings')} />;
       default:
         return null;
     }
@@ -568,6 +574,8 @@ export default function AppShell() {
 
           <HeldBell />
 
+          <UpdateIndicator />
+
           {lowStockCount > 0 && (
             <Button
               variant="ghost"
@@ -611,15 +619,18 @@ export default function AppShell() {
           </div>
         )}
         <main className="min-h-0 flex-1 overflow-hidden">
-          <TillView
-            products={products}
-            categories={categories}
-            customers={customers}
-            settings={settings}
-            holdCount={holdCount}
-            onHoldCount={setHoldCount}
-            onRefresh={reload}
-          />
+          <ErrorBoundary fallbackTitle="The till hit an unexpected error">
+            <TillView
+              products={products}
+              categories={categories}
+              customers={customers}
+              settings={settings}
+              holdCount={holdCount}
+              onHoldCount={setHoldCount}
+              onRefresh={reload}
+              loading={loading}
+            />
+          </ErrorBoundary>
         </main>
 
         <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
@@ -702,7 +713,11 @@ export default function AppShell() {
           </div>
         )}
         <main className="min-h-0 flex-1 overflow-hidden">
-          <div className="h-full overflow-auto p-6">{renderView()}</div>
+          <div className="h-full overflow-auto p-6">
+            <ErrorBoundary fallbackTitle="This page hit an unexpected error">
+              {renderView()}
+            </ErrorBoundary>
+          </div>
         </main>
       </SidebarInset>
 

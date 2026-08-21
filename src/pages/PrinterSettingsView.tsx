@@ -33,6 +33,7 @@ function interfaceFields(kind: 'receipt' | 'kot', p: PrinterSettings) {
 export default function PrinterSettingsView() {
   const [printer, setPrinter] = useState<PrinterSettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
@@ -66,6 +67,25 @@ export default function PrinterSettingsView() {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const testPrint = async () => {
+    if (!printer) return;
+    if (!printer.interface) {
+      setError('No printer configured. Set up a printer first.');
+      return;
+    }
+    setTesting(true);
+    setError(null);
+    setSaved(null);
+    try {
+      const res = await api.testPrinter();
+      setSaved(`Test print sent: ${res.message}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Test print failed');
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -226,10 +246,19 @@ export default function PrinterSettingsView() {
             </p>
           </section>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={save} disabled={saving} className="gap-2">
               <Printer className="size-4" />
               {saving ? 'Saving…' : 'Save printer settings'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={testPrint}
+              disabled={testing || !printer?.interface}
+              className="gap-2"
+            >
+              <Printer className="size-4" />
+              {testing ? 'Testing…' : 'Test Print'}
             </Button>
             {saved && (
               <span className="flex items-center gap-1.5 text-sm text-green-700">

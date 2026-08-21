@@ -175,4 +175,34 @@ describe('Discount and change validation', () => {
     const { data: tx } = await app.client.request(`/api/transaction/${data.id}`);
     expect(tx.change).toBe(3); // (8-5) + (5-5) = 3
   });
+
+  test('rejects transaction with negative item discount', async () => {
+    const { status, data } = await app.client.request('/api/new', {
+      method: 'POST',
+      body: JSON.stringify(
+        saleBody({
+          total: 5,
+          payment_breakdown: [{ method: 'cash', amount: 5 }],
+          items: [{ id: 1, name: 'Test', price: 5, quantity: 1, discountValue: -2 }],
+        })
+      ),
+    });
+    expect(status).toBe(400);
+    expect(data.error).toBe('Item discount cannot be negative');
+  });
+
+  test('accepts transaction with positive item discount', async () => {
+    const { status, data } = await app.client.request('/api/new', {
+      method: 'POST',
+      body: JSON.stringify(
+        saleBody({
+          total: 3,
+          payment_breakdown: [{ method: 'cash', amount: 3 }],
+          items: [{ id: 1, name: 'Test', price: 5, quantity: 1, discountValue: 2 }],
+        })
+      ),
+    });
+    expect(status).toBe(200);
+    expect(data.ok).toBe(true);
+  });
 });

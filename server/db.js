@@ -9,6 +9,7 @@ const SCHEMA_VERSION = 1;
 
 let db = null;
 let dbPath = null;
+let uploadsPath = null;
 
 export function getDb() {
   if (!db) throw new Error('Database not initialized');
@@ -17,6 +18,15 @@ export function getDb() {
 
 export function getDbPath() {
   return dbPath;
+}
+
+export function getUploadsPath() {
+  if (!uploadsPath) throw new Error('Uploads path not initialized');
+  return uploadsPath;
+}
+
+export function setUploadsPath(path) {
+  uploadsPath = path;
 }
 
 export async function initDatabase(filePath) {
@@ -458,6 +468,32 @@ logger.debug('db.exec() completed successfully');
   // Migration: add UNIQUE constraint on categories.name if not exists (requires table rebuild in SQLite)
   // SQLite doesn't support ADD CONSTRAINT UNIQUE on existing column easily
   // We handle deduplication at application level
+  
+  // Migration: deduplicate categories (keep oldest by id, reassign products)
+  try {
+    const dupNames = db.prepare(
+      `SELECT name FROM categories GROUP BY name HAVING COUNT(*) > 1`
+    ).all();
+    for (const { name } of dupNames) {
+      const duplicates = db
+        .prepare(`SELECT id FROM categories WHERE name = ? ORDER BY id ASC`)
+        .all(name);
+      const keepId = duplicates[0].id;
+      const removeIds = duplicates.slice(1).map((d) => d.id);
+      // Reassign products from duplicates to the kept category
+      for (const removeId of removeIds) {
+        db.prepare('UPDATE products SET category_id = ? WHERE category_id = ?').run(keepId, removeId);
+        // Also update legacy category name field
+        db.prepare('UPDATE products SET category = ? WHERE category_id = ?').run(name, keepId);
+      }
+      // Delete duplicate categories
+      for (const removeId of removeIds) {
+        db.prepare('DELETE FROM categories WHERE id = ?').run(removeId);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
 
   const versionRow = db.prepare('SELECT version FROM schema_version WHERE id = 1').get();
   if (!versionRow) {
@@ -468,6 +504,18 @@ logger.debug('db.exec() completed successfully');
       { dbVersion: versionRow.version, appVersion: SCHEMA_VERSION },
       'Schema version mismatch'
     );
+  }
+
+  const cols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+  if (!cols.includes('force_password_change')) {
+    logger.info('Adding force_password_change column to users table');
+    db.exec('ALTER TABLE users ADD COLUMN force_password_change INTEGER NOT NULL DEFAULT 0');
+  }
+
+  const settingsCols = db.prepare("PRAGMA table_info(settings)").all().map((c) => c.name);
+  if (!settingsCols.includes('jwt_secret')) {
+    logger.info('Adding jwt_secret column to settings table');
+    db.exec('ALTER TABLE settings ADD COLUMN jwt_secret TEXT NOT NULL DEFAULT ""');
   }
 
   seedDefaults();
@@ -484,7 +532,7 @@ function seedDefaults() {
     ).run(hash);
   } else {
     // Ensure existing admin has force_password_change flag set
-    db.prepare('UPDATE users SET force_password_change = 1 WHERE id = 1 AND username = "admin"').run();
+    db.prepare("UPDATE users SET force_password_change = 1 WHERE id = 1 AND username = 'admin'").run();
   }
 
   const settings = db.prepare('SELECT id, jwt_secret FROM settings WHERE id = 1').get();

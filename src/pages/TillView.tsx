@@ -44,6 +44,7 @@ import { useAuth } from '../context/AuthContext';
 import CustomerSelect from '../components/CustomerSelect';
 import Invoice from '../components/Invoice';
 import PaymentPad from '../components/PaymentPad';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { printReceipt, printKot } from '../lib/printing';
 import { highlight } from '../lib/highlight';
 import { Badge } from '../components/ui/badge';
@@ -103,6 +104,7 @@ import {
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { Skeleton } from '../components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -120,6 +122,7 @@ type Props = {
   onRefresh: () => Promise<void>;
   holdCount: number;
   onHoldCount: (n: number) => void;
+  loading?: boolean;
 };
 
 type PaymentLine = {
@@ -136,6 +139,7 @@ export default function TillView({
   onRefresh,
   holdCount,
   onHoldCount,
+  loading = false,
 }: Props) {
   const { user, apiInfo } = useAuth();
   const scanRef = useRef<HTMLInputElement>(null);
@@ -704,7 +708,15 @@ export default function TillView({
         {/* Product Grid */}
         <ScrollArea className="min-h-0 flex-1 p-0">
           <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {filteredProducts.map((p) => {
+            {loading ? (
+              Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-5 w-1/3" />
+                </div>
+              ))
+            ) : (
+              filteredProducts.map((p) => {
               const isOut = !!p.stock && p.quantity <= 0;
               const hasVariants = (p.sizes?.length || 0) > 0;
               const hasModifiers = (p.modifiers?.length || 0) > 0;
@@ -739,8 +751,9 @@ export default function TillView({
                   )}
                 </button>
               );
-            })}
-            {!filteredProducts.length && (
+            })
+            )}
+            {!loading && !filteredProducts.length && (
               <div className="col-span-full py-16 text-center text-muted-foreground">
                 No products found matching your search.
               </div>
@@ -1238,13 +1251,15 @@ export default function TillView({
                 </div>
 
                 {selectedMethod === 'cash' && (
-                  <PaymentPad
-                    value={amountInput}
-                    onChange={setAmountInput}
-                    due={remainingDue}
-                    symbol={symbol}
-                    showNumpad={false}
-                  />
+                  <ErrorBoundary fallbackTitle="The keypad hit an error">
+                    <PaymentPad
+                      value={amountInput}
+                      onChange={setAmountInput}
+                      due={remainingDue}
+                      symbol={symbol}
+                      showNumpad={false}
+                    />
+                  </ErrorBoundary>
                 )}
 
                 {/* Added Payment Lines */}
@@ -1291,13 +1306,15 @@ export default function TillView({
               {/* Right: number pad */}
               {selectedMethod === 'cash' && (
                 <div>
-                  <PaymentPad
-                    value={amountInput}
-                    onChange={setAmountInput}
-                    due={remainingDue}
-                    symbol={symbol}
-                    showQuickCash={false}
-                  />
+                  <ErrorBoundary fallbackTitle="The keypad hit an error">
+                    <PaymentPad
+                      value={amountInput}
+                      onChange={setAmountInput}
+                      due={remainingDue}
+                      symbol={symbol}
+                      showQuickCash={false}
+                    />
+                  </ErrorBoundary>
                 </div>
               )}
             </div>
@@ -1326,7 +1343,11 @@ export default function TillView({
             <DialogTitle>Sale Complete &amp; Receipt</DialogTitle>
           </DialogHeader>
           <div className="border p-4 rounded-md bg-white text-black">
-            {invoice && <Invoice tx={invoice} settings={settings} symbol={symbol} />}
+            {invoice && (
+              <ErrorBoundary fallbackTitle="The receipt failed to render">
+                <Invoice tx={invoice} settings={settings} symbol={symbol} />
+              </ErrorBoundary>
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setShowInvoice(false)}>
