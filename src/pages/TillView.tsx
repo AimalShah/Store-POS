@@ -23,9 +23,11 @@ import {
   Trash2,
   Timer,
   Utensils,
+  XIcon,
   icons,
   type LucideIcon,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   api,
   CartItem,
@@ -41,15 +43,16 @@ import {
   PrinterSettings,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import CustomerSelect from '../components/CustomerSelect';
 import Invoice from '../components/Invoice';
 import PaymentPad from '../components/PaymentPad';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { printReceipt, printKot } from '../lib/printing';
 import { highlight } from '../lib/highlight';
 import { Badge } from '../components/ui/badge';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '../components/ui/card';
+
 import {
   Select,
   SelectContent,
@@ -57,6 +60,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+} from '../components/ui/sheet';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '../components/ui/tabs';
+import { toast } from 'sonner';
 
 const CATEGORY_CARD: Record<string, string> = {
   Pizzas: 'shadow-[6px_6px_0_0] shadow-purple-400/30 hover:border-purple-400 hover:shadow-purple-400/60',
@@ -147,6 +162,13 @@ export default function TillView({
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [customerId, setCustomerId] = useState('0');
+  const [oneTime, setOneTime] = useState<{ name: string; phone: string; address: string } | null>(null);
+  const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
+  const [drawerQuery, setDrawerQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'search' | 'new' | 'one-time'>('search');
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [draftOneTime, setDraftOneTime] = useState({ name: '', phone: '', address: '' });
   const [discount, setDiscount] = useState(0);
   const [fulfillment, setFulfillment] = useState<'takeaway' | 'dine-in' | 'delivery'>('takeaway');
   const [deliveryName, setDeliveryName] = useState('');
@@ -264,10 +286,6 @@ export default function TillView({
   }, 0);
 
   const addToCart = (product: Product) => {
-    if (product.stock && product.quantity <= 0) {
-      setError(`${product.name} is out of stock`);
-      return;
-    }
     if ((product.sizes && product.sizes.length) || (product.modifiers && product.modifiers.length)) {
       openVariantPopup(product);
       return;
@@ -287,10 +305,6 @@ export default function TillView({
     setCart((prev) => {
       const existing = prev.find((i) => i.id === product.id);
       if (existing) {
-        if (product.stock && existing.quantity >= product.quantity) {
-          setError(`Only ${product.quantity} available for ${product.name}`);
-          return prev;
-        }
         return prev.map((i) => (i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
       return [
@@ -300,7 +314,6 @@ export default function TillView({
           name: product.name,
           price: Number(product.price),
           quantity: 1,
-          stock: product.quantity,
           components: product.components,
           categoryName: product.category,
         },
@@ -347,7 +360,6 @@ export default function TillView({
         price: unitPrice,
         basePrice: Number(product.price),
         quantity: 1,
-        stock: product.quantity,
         components: product.components,
         selectedVariants,
         selectedModifiers,
@@ -410,10 +422,91 @@ export default function TillView({
   };
 
   const openPay = () => {
+    if (fulfillment === 'delivery' && !deliveryReady) {
+      setError(
+        'Delivery needs a chosen customer or complete one-time details — tap the customer chip.'
+      );
+      setCustomerDrawerOpen(true);
+      return;
+    }
+    setError(null);
     setPaymentLines([]);
     setSelectedMethod('cash');
     setAmountInput('');
     setShowPay(true);
+  };
+
+  const selectedCustomer = customers.find((c) => String(c.id) === customerId) || null;
+  const chipLabel =
+    selectedCustomer?.name ||
+    (oneTime && oneTime.name.trim() ? oneTime.name : 'Walk-in');
+  const deliveryReady =
+    !!selectedCustomer ||
+    !!(oneTime && oneTime.name.trim() && oneTime.phone.trim() && oneTime.address.trim());
+
+  const drawerResults = (() => {
+    const q = drawerQuery.trim().toLowerCase();
+    if (!q) return [];
+    return customers
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  })();
+
+  const chooseSavedCustomer = (id: number, name: string) => {
+    setCustomerId(String(id));
+    setOneTime(null);
+    setDeliveryName(name);
+    setDeliveryContact(customers.find((c) => c.id === id)?.phone || '');
+    setDeliveryAddress(customers.find((c) => c.id === id)?.address || '');
+    setCustomerDrawerOpen(false);
+    setDrawerQuery('');
+  };
+
+  const quickCreateCustomer = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    try {
+      await api.saveCustomer({ name, phone: newPhone.trim(), email: '', address: '' });
+      await onRefresh();
+      const refreshed = await api.getCustomers();
+      const created = refreshed.filter((c) => c.name === name).sort((a, b) => b.id - a.id)[0];
+      if (created) {
+        setCustomerId(String(created.id));
+        setOneTime(null);
+        setDeliveryName(created.name);
+        setDeliveryContact(created.phone);
+        setDeliveryAddress(created.address);
+      }
+      setNewName('');
+      setNewPhone('');
+      setCustomerDrawerOpen(false);
+      toast.success(`${name} saved to customers`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save customer');
+    }
+  };
+
+  const attachOneTime = () => {
+    setCustomerId('0');
+    setOneTime({
+      name: draftOneTime.name.trim(),
+      phone: draftOneTime.phone.trim(),
+      address: draftOneTime.address.trim(),
+    });
+    setDeliveryName(draftOneTime.name.trim());
+    setDeliveryContact(draftOneTime.phone.trim());
+    setDeliveryAddress(draftOneTime.address.trim());
+    setDraftOneTime({ name: '', phone: '', address: '' });
+    setCustomerDrawerOpen(false);
+  };
+
+  const openDrawer = () => {
+    // Pre-fill the one-time form when editing existing ephemeral details
+    if (!oneTime) setDraftOneTime({ name: '', phone: '', address: '' });
+    setCustomerDrawerOpen(true);
   };
 
   const addPaymentLine = () => {
@@ -449,7 +542,8 @@ export default function TillView({
     return {
       ref_number: status === 0 ? `H-${Date.now().toString().slice(-6)}` : '',
       customer: customerId,
-      customer_name: customer?.name || 'Walk-in Customer',
+      customer_name:
+        customer?.name || (oneTime?.name.trim() ? oneTime.name : 'Walk-in Customer'),
       status,
       user_id: user?._id || 0,
       user: user?.fullname || '',
@@ -595,6 +689,7 @@ export default function TillView({
     setCustomerId(String(order.customer || '0'));
     setDiscount(order.discount || 0);
     setActiveHoldId(order.id);
+    setOneTime(null);
     setFulfillment((order.fulfillment as 'takeaway' | 'dine-in' | 'delivery') || 'takeaway');
     setDeliveryName(order.delivery_name || '');
     setDeliveryContact(order.delivery_contact || '');
@@ -658,7 +753,6 @@ export default function TillView({
               {categories.map((c) => {
                 const Icon = iconLibrary[c.icon] || Utensils;
                 const active = categoryFilter === c.name;
-                const iconStyle = STICKY_NOTE_ICON_STYLES[c.id % STICKY_NOTE_ICON_STYLES.length];
                 return (
                   <button
                     key={c.id}
@@ -672,7 +766,7 @@ export default function TillView({
                         : 'border-border hover:border-primary/50'
                     }`}
                   >
-                    <span className={`flex size-10 items-center justify-center rounded-lg ${iconStyle}`}>
+                    <span className="flex size-10 items-center justify-center rounded-lg bg-primary/20 text-primary">
                       <Icon className="size-5" />
                     </span>
                     <span className="text-base font-bold leading-tight">{c.name}</span>
@@ -717,7 +811,6 @@ export default function TillView({
               ))
             ) : (
               filteredProducts.map((p) => {
-              const isOut = !!p.stock && p.quantity <= 0;
               const hasVariants = (p.sizes?.length || 0) > 0;
               const hasModifiers = (p.modifiers?.length || 0) > 0;
               const cardColor = CATEGORY_CARD[p.category] || CARD_DEFAULT;
@@ -727,27 +820,26 @@ export default function TillView({
                   type="button"
                   data-testid={`product-${p.id}`}
                   onClick={() => addToCart(p)}
-                  disabled={isOut}
-                  className={`group relative flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary ${cardColor} ${
-                    isOut ? 'cursor-not-allowed opacity-50 hover:translate-y-0 hover:border-border hover:shadow-black/20' : ''
-                  }`}
+                  className={`group relative flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary ${cardColor}`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-bold leading-tight md:text-base">{p.name}</h3>
+                    <h3 className="text-xl font-bold leading-tight capitalize md:text-xl">{p.name}</h3>
                     {(hasVariants || hasModifiers) && (
                       <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold leading-tight text-primary-foreground">
                         Options
                       </span>
                     )}
                   </div>
-                  <span className="font-extrabold text-primary text-lg tabular-nums md:text-xl">
-                    {symbol}
-                    {Number(p.price).toFixed(2)}
-                  </span>
-                  {isOut && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
-                      <Badge variant="destructive">Out of stock</Badge>
-                    </div>
+                  {p.sizes && p.sizes.length > 0 ? (
+                    <span className="font-extrabold text-primary text-base tabular-nums md:text-xs">
+                      From {symbol}
+                      {Math.min(...p.sizes.map((sz) => Number(sz.price) || 0)).toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="font-extrabold text-primary text-lg tabular-nums md:text-xs">
+                      {symbol}
+                      {Number(p.price).toFixed(2)}
+                    </span>
                   )}
                 </button>
               );
@@ -767,16 +859,38 @@ export default function TillView({
         <CardHeader className="pb-3 border-b space-y-3">
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
-              <CustomerSelect
-                customers={customers}
-                value={customerId}
-                onChange={setCustomerId}
-                onCustomersChanged={onRefresh}
-              />
+              <button
+                type="button"
+                data-testid="customer-chip"
+                onClick={openDrawer}
+                className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                title="Choose customer"
+              >
+                <span
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
+                    customerId !== '0' || oneTime
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {chipLabel.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-medium">{chipLabel}</span>
+                {oneTime && <Badge variant="secondary" className="shrink-0">One-time</Badge>}
+                {fulfillment === 'delivery' && !deliveryReady && (
+                  <Badge variant="destructive" className="shrink-0">Details needed</Badge>
+                )}
+              </button>
             </div>
             <Select
               value={fulfillment}
-              onValueChange={(v) => setFulfillment(v as 'takeaway' | 'dine-in' | 'delivery')}
+              onValueChange={(v) => {
+                const next = v as 'takeaway' | 'dine-in' | 'delivery';
+                setFulfillment(next);
+                if (next === 'delivery' && customerId === '0' && !oneTime) {
+                  setCustomerDrawerOpen(true);
+                }
+              }}
             >
               <SelectTrigger className="h-10 w-44 shrink-0" data-testid="fulfillment-trigger">
                 <SelectValue />
@@ -826,29 +940,6 @@ export default function TillView({
             </Button>
           </div>
 
-          {fulfillment === 'delivery' && (
-            <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/40 p-3">
-              <Input
-                value={deliveryName}
-                onChange={(e) => setDeliveryName(e.target.value)}
-                placeholder="Customer name"
-                className="h-10 text-sm"
-              />
-              <Input
-                value={deliveryContact}
-                onChange={(e) => setDeliveryContact(e.target.value)}
-                placeholder="Contact number"
-                inputMode="tel"
-                className="h-10 text-sm"
-              />
-              <Input
-                value={deliveryAddress}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
-                placeholder="Delivery address"
-                className="col-span-2 h-10 text-sm"
-              />
-            </div>
-          )}
         </CardHeader>
 
         {/* Cart Item List */}
@@ -1374,6 +1465,191 @@ export default function TillView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+<Sheet open={customerDrawerOpen} onOpenChange={(o) => { if (!o) setCustomerDrawerOpen(false); }}>
+        <SheetContent side="right" className="flex w-full flex-col gap-5 overflow-y-auto sm:max-w-md p-4">
+          <div className="flex flex-col gap-1 border-b border-border">
+            <h2 className="font-heading font-medium text-foreground">Customer</h2>
+            <p className="text-sm text-muted-foreground">Attach a customer to this order, or keep it a walk-in.</p>
+          </div>
+
+          {selectedCustomer || oneTime && oneTime.name.trim() ? (
+            <div className="w-full rounded-full bg-primary/10 p-2.5">
+              <Avatar
+                className="size-6 bg-primary p-1"
+                aria-label="customer avatar"
+              >
+                <div className="size-4 rounded-full bg-primary/20">
+                  {(selectedCustomer?.name || oneTime?.name || '')
+                    .split(' ')
+                    .slice(0, 2)
+                    .map((word) => word?.[0] || '')
+                    .join('')}
+                </div>
+              </Avatar>
+              <span className="truncate ml-3 flex-1">
+                {selectedCustomer?.name || oneTime?.name}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-2"
+                onClick={() => {
+                  setCustomerId('0');
+                  setOneTime(null);
+                  setDeliveryName('');
+                  setDeliveryContact('');
+                  setDeliveryAddress('');
+                }}
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </div>
+          ) : null}
+
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid grid-cols-3 rounded-lg bg-muted p-1.5">
+              <TabsTrigger value="search" className="text-sm font-medium">
+                Search
+              </TabsTrigger>
+              <TabsTrigger value="new" className="text-sm font-medium">
+                New
+              </TabsTrigger>
+              <TabsTrigger value="one-time" className="text-sm font-medium">
+                One-time
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="search" className="space-y-2 pt-2">
+              <Input
+                id="drawer-search"
+                value={drawerQuery}
+                onChange={(e) => setDrawerQuery(e.target.value)}
+                placeholder="Name or phone…"
+                autoFocus
+              />
+              {drawerQuery.trim() && (
+                <div className="rounded-md border max-h-48 overflow-y-auto">
+                  {drawerResults.length === 0 ? (
+                    <p className="p-3 text-center text-sm text-muted-foreground">No customers match that search.</p>
+                  ) : (
+                    drawerResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => chooseSavedCustomer(c.id, c.name)}
+                        className="flex w-full items-center justify-between border-b p-2.5 text-left transition-colors last:border-b-0 hover:bg-accent"
+                      >
+                        <span className="truncate font-medium text-md">{c.name}</span>
+                        <span className="ml-3 shrink-0 text-xs text-muted-foreground">{c.phone || '—'}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="new" className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Saved to the customers book for next time.
+              </p>
+              <div className="space-y-2">
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Name"
+                />
+                <Input
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="Phone"
+                  inputMode="tel"
+                />
+                <Input
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  placeholder="Address"
+                  className="w-full"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!newName.trim()) {
+                      setError('Name is required');
+                      return;
+                    }
+                    setError(null);
+                    quickCreateCustomer();
+                  }}
+                  className="w-full"
+                >
+                  Save & attach
+                </Button>
+                {error && (
+                  <p className="mt-1 text-xs text-destructive">{error}</p>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="one-time" className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Used for this order only. Never saved to the customers book.
+              </p>
+              <div className="space-y-2">
+                <Input
+                  value={draftOneTime.name}
+                  onChange={(e) => setDraftOneTime((d) => ({ ...d, name: e.target.value }))}
+                  placeholder="Name"
+                />
+                <Input
+                  value={draftOneTime.phone}
+                  onChange={(e) => setDraftOneTime((d) => ({ ...d, phone: e.target.value }))}
+                  placeholder="Phone"
+                  inputMode="tel"
+                />
+                <Input
+                  value={draftOneTime.address}
+                  onChange={(e) => setDraftOneTime((d) => ({ ...d, address: e.target.value }))}
+                  placeholder="Address"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!draftOneTime.name.trim()) {
+                      setError('Name is required');
+                      return;
+                    }
+                    setError(null);
+                    attachOneTime();
+                  }}
+                  className="w-full"
+                >
+                  Attach to this order
+                </Button>
+                {error && (
+                  <p className="mt-1 text-xs text-destructive">{error}</p>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <SheetFooter className="mt-auto border-t border-border pt-4 flex items-center justify-between">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCustomerId('0');
+                setOneTime(null);
+                setDeliveryName('');
+                setDeliveryContact('');
+                setDeliveryAddress('');
+                setCustomerDrawerOpen(false);
+              }}
+            >
+              Keep as walk-in
+            </Button>
+            <Button type="button">Done</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

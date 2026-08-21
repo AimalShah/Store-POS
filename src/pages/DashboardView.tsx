@@ -6,6 +6,7 @@ import {
   ShoppingCart,
   Package,
   Wallet,
+  Warehouse,
   PieChart as PieChartIcon,
   CheckCircle2,
   Inbox,
@@ -57,7 +58,7 @@ import {
   type TopProduct,
 } from '../lib/dashboard';
 
-type LowStockItem = { name: string; quantity: number; id: number; threshold: number };
+type StockSummary = { items: number; outOfStock: number; changesToday: number; stockWorth: number; spentTotal: number } | null;
 
 type DashboardState = {
   kpis: Kpis | null;
@@ -65,7 +66,7 @@ type DashboardState = {
   prevTrend: TrendPoint[];
   categorySlices: CategorySlice[];
   topProducts: TopProduct[];
-  lowStock: LowStockItem[];
+  stock: StockSummary;
   loading: boolean;
   error: string | null;
 };
@@ -95,13 +96,11 @@ export default function DashboardView({
   range,
   onQuickSale,
   onHeldClick,
-  onLowStockClick,
 }: {
   settings: Settings | null;
   range?: DateRange;
   onQuickSale?: () => void;
   onHeldClick?: () => void;
-  onLowStockClick?: () => void;
 }) {
   const [state, setState] = useState<DashboardState>({
     kpis: null,
@@ -109,12 +108,11 @@ export default function DashboardView({
     prevTrend: [],
     categorySlices: [],
     topProducts: [],
-    lowStock: [],
+    stock: null,
     loading: true,
     error: null,
   });
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
-  const { hasPerm } = useAuth();
   const symbol = settings?.symbol || 'Rs';
   const fmt = (n: number) => `${symbol}${Number(n).toFixed(2)}`;
   const greeting = useMemo(() => getGreeting(), []);
@@ -141,7 +139,7 @@ export default function DashboardView({
       const activeRange = range ?? buildDateRange('today');
       const prev = previousRange(activeRange);
 
-      const [current, prevTx, held, products, categories] = await Promise.all([
+      const [current, prevTx, held, categories, stock] = await Promise.all([
         api
           .getByDate({ start: activeRange.start, end: activeRange.end, user: 0, till: 0, status: 1 })
           .catch(() => [] as Transaction[]),
@@ -149,22 +147,18 @@ export default function DashboardView({
           .getByDate({ start: prev.start, end: prev.end, user: 0, till: 0, status: 1 })
           .catch(() => [] as Transaction[]),
         api.getOnHold().catch(() => [] as Transaction[]),
-        hasPerm('perm_products')
-          ? api.getProducts().catch(() => [] as Product[])
-          : (Promise.resolve([]) as Promise<Product[]>),
         api.getCategories().catch(() => [] as Category[]),
+        // Stock money is Manager/Admin only — cashiers simply don't see these tiles
+        api
+          .getStockSummary({ start: activeRange.start, end: activeRange.end })
+          .catch(() => null),
       ]);
-
-      const kpis = computeKpis({ transactions: current, previous: prevTx, held, products });
+      const kpis = computeKpis({ transactions: current, previous: prevTx, held });
       const trend = buildTrendSeries(current, activeRange);
       const prevTrend = buildTrendSeries(prevTx, prev);
       const categorySlices = buildCategoryBreakdown(current, categories);
       const topProducts = buildTopProducts(current, 5);
 
-      const lowStockItems: LowStockItem[] = products
-        .filter((p) => p.trackStock && p.quantity >= 0 && p.quantity <= (p.lowStockThreshold || 10))
-        .map((p) => ({ name: p.name, quantity: p.quantity, id: p.id, threshold: p.lowStockThreshold || 10 }))
-        .sort((a, b) => a.quantity - b.quantity);
 
       setState({
         kpis,
@@ -172,7 +166,7 @@ export default function DashboardView({
         prevTrend,
         categorySlices,
         topProducts,
-        lowStock: lowStockItems,
+        stock,
         loading: false,
         error: null,
       });
@@ -185,7 +179,7 @@ export default function DashboardView({
       }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasPerm, range?.start, range?.end, range?.preset]);
+  }, [range?.start, range?.end, range?.preset]);
 
   useEffect(() => {
     void loadData();
@@ -240,18 +234,6 @@ export default function DashboardView({
           sparkColor: 'var(--chart-2)',
         },
         {
-          title: 'Low Stock',
-          value: String(k.lowStock),
-          hint: 'items below threshold',
-          icon: <Package className="size-4 text-amber-600" />,
-          iconBg: 'bg-amber-100',
-          badge: {
-            label: k.lowStock > 0 ? `${k.lowStock} low` : 'ok',
-            variant: k.lowStock > 0 ? 'default' : 'secondary',
-          },
-          onClick: onLowStockClick,
-        },
-        {
           title: 'Profit & Margin',
           value: fmt(k.profit),
           hint: `Margin ${(k.marginPct ?? 0).toFixed(1)}% of sales`,
@@ -260,6 +242,55 @@ export default function DashboardView({
           spark: state.trend.map((p) => p.profit),
           sparkColor: 'var(--chart-5)',
         },
+        ...(state.stock
+          ? [
+              {
+                title: 'Items in Stock',
+                value: String(state.stock.items),
+                hint: 'Total tracked items',
+                icon: <Package className="size-4 text-teal-600" />,
+                iconBg: 'bg-teal-100',
+                spark: state.trend.map(() => 0),
+                sparkColor: 'var(--chart-1)',
+              },
+              {
+                title: 'Out of Stock',
+                value: String(state.stock.outOfStock),
+                hint: state.stock.outOfStock > 0 ? 'Needs restocking' : 'All items available',
+                icon: <AlertTriangle className="size-4 text-red-600" />,
+                iconBg: state.stock.outOfStock > 0 ? 'bg-red-100' : 'bg-green-100',
+                spark: state.trend.map(() => 0),
+                sparkColor: 'var(--chart-2)',
+              },
+              {
+                title: 'Stock Changes Today',
+                value: String(state.stock.changesToday),
+                hint: 'Restocks, usage & wastage',
+                icon: <RefreshCw className="size-4 text-blue-600" />,
+                iconBg: 'bg-blue-100',
+                spark: state.trend.map(() => 0),
+                sparkColor: 'var(--chart-3)',
+              },
+              {
+                title: 'Stock Worth',
+                value: fmt(state.stock.stockWorth),
+                hint: `What your ${state.stock.items} stock items are worth`,
+                icon: <Warehouse className="size-4 text-teal-600" />,
+                iconBg: 'bg-teal-100',
+                spark: state.trend.map(() => 0),
+                sparkColor: 'var(--chart-4)',
+              },
+              {
+                title: 'Money Spent on Stock',
+                value: fmt(state.stock.spentTotal),
+                hint: 'Bought in this period',
+                icon: <Package className="size-4 text-orange-600" />,
+                iconBg: 'bg-orange-100',
+                spark: state.trend.map(() => 0),
+                sparkColor: 'var(--chart-5)',
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -294,27 +325,6 @@ export default function DashboardView({
         </div>
       </header>
 
-      {/* Low stock alert banner */}
-      {!state.loading && k && k.lowStock > 0 && (
-        <button
-          type="button"
-          onClick={onLowStockClick}
-          className="flex w-full items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-left transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:hover:bg-amber-950/60"
-        >
-          <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              {k.lowStock} product{k.lowStock > 1 ? 's' : ''} low on stock
-            </p>
-            <p className="text-xs text-amber-700 dark:text-amber-300/80">
-              Restock before the rush — tap to open the catalog.
-            </p>
-          </div>
-          <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-200">
-            View
-          </Badge>
-        </button>
-      )}
 
       {/* Performance */}
       <section className="space-y-3">
@@ -323,7 +333,7 @@ export default function DashboardView({
         </h2>
         {state.loading && !k ? (
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
+            {Array.from({ length: state.stock ? 6 : 4 }).map((_, i) => (
               <Card key={i}>
                 <CardContent className="flex h-full flex-col gap-3 p-4">
                   <div className="flex items-center gap-3">
@@ -526,61 +536,6 @@ export default function DashboardView({
         <div className="grid gap-3 lg:grid-cols-2">
           <LiveOrderQueue symbol={symbol} onResume={() => onQuickSale?.()} />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Low Stock Items</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Tracked products at or below their threshold
-              </p>
-            </CardHeader>
-            <CardContent>
-              {state.loading && <Skeleton className="h-8 w-full" />}
-              {!state.loading && state.lowStock.length === 0 && hasPerm('perm_products') && (
-                <EmptyInline
-                  icon={<CheckCircle2 className="size-6" />}
-                  title="All stocked up"
-                  description="No tracked products are below their individual low-stock thresholds. Great job!"
-                />
-              )}
-              {!state.loading && !hasPerm('perm_products') && (
-                <EmptyInline
-                  icon={<Inbox className="size-6" />}
-                  title="Permission needed"
-                  description="Product permissions must be granted to see low-stock alerts."
-                  action={{ label: 'Open Team settings', onAction: () => {} }}
-                />
-              )}
-              {!state.loading && state.lowStock.length > 0 && (
-                <ScrollArea className="h-56">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="pb-2 pl-2 text-left font-medium text-muted-foreground">Product</th>
-                        <th className="pb-2 text-center font-medium text-muted-foreground">Qty Left</th>
-                        <th className="pb-2 text-right font-medium text-muted-foreground">Threshold</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {state.lowStock.map((item) => (
-                        <tr key={item.id} className="border-b last:border-b-0">
-                          <td className="py-2 pl-2">{item.name}</td>
-                          <td className="py-2 text-center">
-                            <Badge
-                              variant={item.quantity === 0 ? 'destructive' : 'outline'}
-                              className={item.quantity === 0 ? '' : 'border-amber-400 text-amber-700 dark:text-amber-300'}
-                            >
-                              {item.quantity}
-                            </Badge>
-                          </td>
-                          <td className="py-2 text-right text-xs text-muted-foreground">{item.threshold}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </section>
     </div>
