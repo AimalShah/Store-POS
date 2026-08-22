@@ -320,7 +320,7 @@ export function DataTable<TData extends Record<string, unknown>>({
                       style={{ width: header.getSize() }}
                     >
                       <div className="flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, headerGroup.getContext(), header.column)}
+                        {flexRender(header.column.columnDef.header, header.getContext(), header.column)}
                         {header.column.getCanSort() && renderSortIcon(header.column.id)}
                       </div>
                     </TableHead>
