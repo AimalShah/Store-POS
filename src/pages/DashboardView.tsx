@@ -84,7 +84,6 @@ import {
   type CashierPerformance,
   buildTeamOverview,
   type TeamMemberOverview,
-  buildDashboardExportData,
   type DashboardExportData,
   exportDashboardToCsv,
   exportDashboardToXlsx,
@@ -241,10 +240,9 @@ export default function DashboardView({
         api
           .getByDate({ start: activeRange.start, end: activeRange.end, user: 0, till: 0, status: 2 })
           .catch(() => [] as Transaction[]),
-        // Stock money is Manager/Admin only — cashiers simply don't see these tiles
-        api
-          .getStockSummary({ start: activeRange.start, end: activeRange.end })
-          .catch(() => null),
+        isManagerOrAdmin
+          ? api.getStockSummary({ start: activeRange.start, end: activeRange.end }).catch(() => null)
+          : Promise.resolve(null),
         api.getProducts().catch(() => [] as Product[]),
         // Drawer summary for Manager/Admin only
         isManagerOrAdmin
@@ -258,7 +256,7 @@ export default function DashboardView({
           : Promise.resolve([] as DrawerSession[]),
       ]);
       const kpis = computeKpis({ transactions: current, previous: prevTx, held, voided: voidedTx, products });
-      const trend = buildTrendSeries(current, activeRange);
+      const trend = mergeVoidedIntoTrend(buildTrendSeries(current, activeRange), voidedTx, activeRange);
       const prevTrend = buildTrendSeries(prevTx, prev);
       const categorySlices = buildCategoryBreakdown(current, categories);
       const topProducts = buildTopProducts(current, 5);
@@ -307,21 +305,7 @@ export default function DashboardView({
   const handleExport = async (format: 'xlsx' | 'csv') => {
     if (!state.kpis) return;
     try {
-      const activeRange = range ?? buildDateRange('today');
-      const prev = previousRange(activeRange);
-      
-      const exportData = buildDashboardExportData(
-        state.trend.length > 0 ? [] : [], // We need the actual transactions - they're not stored in state
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        activeRange
-      );
-      
-      // Instead, we'll use the data already computed in state
+      // Export the computed dashboard snapshot; raw transactions are intentionally not retained in UI state.
       const data: DashboardExportData = {
         kpis: {
           sales: state.kpis.sales,
@@ -587,7 +571,7 @@ export default function DashboardView({
         </h2>
         {state.loading && !k ? (
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: state.stock ? 6 : 4 }).map((_, i) => (
+            {Array.from({ length: isManagerOrAdmin ? 5 : 4 }).map((_, i) => (
               <Card key={i}>
                 <CardContent className="flex h-full flex-col gap-3 p-4">
                   <div className="flex items-center gap-3">

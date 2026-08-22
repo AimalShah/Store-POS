@@ -99,7 +99,7 @@ export function buildTrendSeries(transactions: Transaction[], range: DateRange):
     const profitBuckets = new Array(24).fill(0);
     const voidBuckets = new Array(24).fill(0);
     for (const t of transactions) {
-      const h = new Date(t.date).getUTCHours();
+      const h = new Date(t.date).getHours();
       totalBuckets[h] += Number(t.total || 0);
       orderBuckets[h] += 1;
       profitBuckets[h] += t.items.reduce((s, it) => s + lineItemProfit(it), 0);
@@ -127,14 +127,14 @@ export function buildTrendSeries(transactions: Transaction[], range: DateRange):
 
   const points: TrendPoint[] = [];
   const cur = new Date(range.start);
-  cur.setUTCHours(0, 0, 0, 0);
+  cur.setHours(0, 0, 0, 0);
   const last = new Date(range.end);
-  last.setUTCHours(0, 0, 0, 0);
+  last.setHours(0, 0, 0, 0);
   while (cur <= last) {
-    const key = cur.toISOString().slice(0, 10);
+    const key = [cur.getFullYear(), cur.getMonth(), cur.getDate()].join('-');
     const v = sums.get(key) ?? { total: 0, orders: 0, profit: 0 };
     points.push({ label: formatDay(cur), total: v.total, orders: v.orders, profit: v.profit, voided: 0 });
-    cur.setUTCDate(cur.getUTCDate() + 1);
+    cur.setDate(cur.getDate() + 1);
   }
   return points;
 }
@@ -147,18 +147,28 @@ export function mergeVoidedIntoTrend(
 ): TrendPoint[] {
   const voidSums = new Map<string, number>();
   for (const t of voided) {
-    const key = new Date(t.date).toISOString().slice(0, 10);
+    const date = new Date(t.date);
+    const key = [date.getFullYear(), date.getMonth(), date.getDate()].join('-');
     voidSums.set(key, (voidSums.get(key) || 0) + Number(t.total || 0));
   }
 
-  return trend.map((p) => {
-    const dateKey = new Date(p.label).toISOString().slice(0, 10);
-    // For hourly, we need a different approach - but voided data for hourly isn't currently supported
-    // For now, we'll handle daily ranges
-    return {
-      ...p,
-      voided: voidSums.get(dateKey) || 0,
-    };
+  const hourly = range.preset === 'today' || (range.preset === 'custom' &&
+    (new Date(range.end).getTime() - new Date(range.start).getTime()) / 86_400_000 <= 1);
+  if (hourly) {
+    const hourlySums = new Map<number, number>();
+    for (const t of voided) {
+      const hour = new Date(t.date).getHours();
+      hourlySums.set(hour, (hourlySums.get(hour) || 0) + Number(t.total || 0));
+    }
+    return trend.map((point, index) => ({ ...point, voided: hourlySums.get(index) || 0 }));
+  }
+  return trend.map((point) => {
+    const match = [...voidSums.entries()].find(([key]) => {
+      const [year, month, day] = key.split('-').map(Number);
+      const date = new Date(year, month, day);
+      return formatDay(date) === point.label;
+    });
+    return { ...point, voided: match?.[1] || 0 };
   });
 }
 
