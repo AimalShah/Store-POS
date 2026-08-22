@@ -1,16 +1,15 @@
 "use client";
 
 import {
-  useTable,
-  flexRender,
-  columnVisibilityFeature,
-} from "@tanstack/react-table";
+  useLegacyTable as useTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+} from "@tanstack/react-table/legacy";
+import { flexRender } from "@tanstack/react-table";
 import {
   createColumnHelper,
-  createCoreRowModel,
-  createSortedRowModel,
-  createFilteredRowModel,
-  createPaginatedRowModel,
   SortingState,
   ColumnFiltersState,
   VisibilityState,
@@ -187,15 +186,15 @@ export function DataTable<TData extends Record<string, unknown>>({
     onPaginationChange: setPagination,
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
-    getCoreRowModel: createCoreRowModel(),
-    getSortedRowModel: createSortedRowModel(),
-    getFilteredRowModel: createFilteredRowModel(),
-    getPaginationRowModel: createPaginatedRowModel(),
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     getRowId,
     manualPagination: false,
     manualSorting: false,
     manualFiltering: false,
-  }, [columnVisibilityFeature]);
+  });
 
   useEffect(() => {
     if (onRowSelect) {
