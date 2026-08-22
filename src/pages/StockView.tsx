@@ -637,7 +637,7 @@ export default function StockView({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead>Amount Left</TableHead>
+                      <TableHead>Amount left</TableHead>
                       <TableHead>Price</TableHead>
                       <TableHead>Last Change</TableHead>
                       <TableHead className="w-12 text-right" aria-label="Actions" />

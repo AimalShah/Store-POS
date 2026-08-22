@@ -817,7 +817,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                 )}
                 {columns.cashier && (
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    CASHIER / TILL
+                    STAFF
                   </TableHead>
                 )}
                 {columns.order && (
@@ -923,7 +923,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                     colSpan={11}
                     className="py-12 text-center text-sm text-muted-foreground"
                   >
-                    No transactions found in this range.
+                    No sales found for these dates.
                   </TableCell>
                 </TableRow>
               ) : (

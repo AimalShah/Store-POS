@@ -408,7 +408,7 @@ export default function DashboardView({
           onClick: onSalesClick,
         },
         {
-          title: 'Profit & Margin',
+          title: 'Profit',
           value: fmt(k.profit),
           hint: `Margin ${(k.marginPct ?? 0).toFixed(1)}% of sales`,
           icon: <Wallet className="size-4 text-purple-600" />,
@@ -441,29 +441,11 @@ export default function DashboardView({
                   sparkColor: 'var(--chart-3)',
                   onClick: onDrawerClick,
                 },
-                {
-                  title: 'Last Reconciled',
-                  value: lastReconciled,
-                  hint: `Total sessions: ${ds.summary.totalSessions} · Total variance: ${fmt(ds.summary.totalVariance)}`,
-                  icon: <RotateCcw className="size-4 text-slate-600" />,
-                  iconBg: 'bg-slate-100',
-                  spark: state.trend.map(() => 0),
-                  sparkColor: 'var(--chart-4)',
-                },
               ];
             })()
           : []),
         ...(state.stock
           ? [
-              {
-                title: 'Items in Stock',
-                value: String(state.stock.items),
-                hint: 'Total tracked items',
-                icon: <Package className="size-4 text-teal-600" />,
-                iconBg: 'bg-teal-100',
-                spark: state.trend.map(() => 0),
-                sparkColor: 'var(--chart-1)',
-              },
               {
                 title: 'Out of Stock',
                 value: String(state.stock.outOfStock),

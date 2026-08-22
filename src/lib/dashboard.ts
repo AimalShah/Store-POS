@@ -117,7 +117,8 @@ export function buildTrendSeries(transactions: Transaction[], range: DateRange):
 
   const sums = new Map<string, { total: number; orders: number; profit: number }>();
   for (const t of transactions) {
-    const key = new Date(t.date).toISOString().slice(0, 10);
+    const date = new Date(t.date);
+    const key = [date.getFullYear(), date.getMonth(), date.getDate()].join('-');
     const cur = sums.get(key) ?? { total: 0, orders: 0, profit: 0 };
     cur.total += Number(t.total || 0);
     cur.orders += 1;

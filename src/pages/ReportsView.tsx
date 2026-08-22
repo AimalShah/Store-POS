@@ -112,7 +112,7 @@ export default function ReportsView({ symbol }: Props) {
       <Card>
         <CardContent className="flex flex-wrap items-center justify-center gap-x-6 gap-y-4 py-4">
           <div className='text-left w-full'>
-           <CardTitle>Select Date Range</CardTitle>
+           <CardTitle>Choose dates</CardTitle>
            <CardDescription>select a date range to view your sales report</CardDescription>
           </div>
           <div className="flex flex-wrap items-end gap-4">
@@ -199,7 +199,7 @@ export default function ReportsView({ symbol }: Props) {
                         <TableRow>
                           <TableHead className="w-12">#</TableHead>
                           <TableHead>Item</TableHead>
-                          <TableHead className="text-right">Qty</TableHead>
+                          <TableHead className="text-right">Items sold</TableHead>
                           <TableHead className="text-right">Revenue</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -227,7 +227,7 @@ export default function ReportsView({ symbol }: Props) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Banknote className="size-4 text-primary" />
-                  Totals by Payment Method
+                  Payment totals
                 </CardTitle>
                 <CardDescription>Collected amount per method.</CardDescription>
               </CardHeader>
