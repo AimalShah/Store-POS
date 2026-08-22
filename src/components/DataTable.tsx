@@ -3,6 +3,7 @@
 import {
   useTable,
   flexRender,
+  columnVisibilityFeature,
 } from "@tanstack/react-table";
 import {
   createColumnHelper,
@@ -194,7 +195,7 @@ export function DataTable<TData extends Record<string, unknown>>({
     manualPagination: false,
     manualSorting: false,
     manualFiltering: false,
-  });
+  }, [columnVisibilityFeature]);
 
   useEffect(() => {
     if (onRowSelect) {
