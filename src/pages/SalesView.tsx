@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Ban,
   Calendar as CalendarIcon,
@@ -65,12 +65,14 @@ import {
 import { Skeleton } from '../components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { printReportPdf } from '../lib/printing';
-import { buildInvoicePdf } from '../lib/reportPdf';
+import { buildInvoicePdf, buildSalesReportPdf } from '../lib/reportPdf';
 import { buildCsv, buildWorkbook, downloadFile, downloadCsv, salesRows } from '../lib/export';
 import { getPosBridge, isElectronBridge } from '../bridge';
 import Invoice from '../components/Invoice';
 import { toast } from 'sonner';
 import { DataTable, ColumnDef } from '../components/DataTable';
+import { DateRangePicker, type PickerValue } from '../components/DateRangePicker';
+import { buildDateRange } from '../lib/dateRange';
 
 type Props = {
   symbol: string;
@@ -149,10 +151,10 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
   // Filters
   const [userId, setUserId] = useState<string>(String(initialUserId));
   const [status, setStatus] = useState<string>(initialVoidFilter ? '2' : initialStatus);
-  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [datePreset, setDatePreset] = useState<DatePreset>('today');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
-  const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
+  const [dateValue, setDateValue] = useState<PickerValue>({ preset: 'today', range: buildDateRange('today') });
 
   // Modals
   const [invoice, setInvoice] = useState<Transaction | null>(null);
@@ -257,6 +259,10 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     } else if (datePreset === 'month') {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       list = list.filter((r) => new Date(r.date) >= startOfMonth);
+    } else if (datePreset === '90d') {
+      const cutoff = new Date(now);
+      cutoff.setDate(cutoff.getDate() - 90);
+      list = list.filter((r) => new Date(r.date) >= cutoff);
     } else if (datePreset === 'custom' && customStart) {
       const start = new Date(customStart);
       const end = customEnd ? new Date(customEnd) : new Date();
@@ -536,8 +542,27 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
   ], [symbol, settings]);
 
   // Print handler (defined before toolbar to avoid temporal dead zone)
-  const handlePrintReport = () => {
-    printReportPdf();
+  const handlePrintReport = async () => {
+    try {
+      const r =
+        dateValue.preset === 'custom'
+          ? dateValue.range
+          : buildDateRange(dateValue.preset);
+      const report = await api.getReportSummary({
+        start: r.start,
+        end: r.end,
+      });
+      printReportPdf(
+        buildSalesReportPdf({
+          settings,
+          start: r.start,
+          end: r.end,
+          report,
+        })
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate report');
+    }
   };
 
   // Toolbar for export/print
@@ -664,9 +689,26 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     }
   };
 
+  // Date range selection via the shared DateRangePicker
+  const handleDatePick = (v: PickerValue) => {
+    setDateValue(v);
+    if (v.preset === 'custom') {
+      setDatePreset('custom');
+      setCustomStart(v.range.start.slice(0, 10));
+      setCustomEnd(v.range.end.slice(0, 10));
+    } else {
+      const r = buildDateRange(v.preset);
+      setDatePreset(v.preset);
+      setCustomStart(r.start.slice(0, 10));
+      setCustomEnd(r.end.slice(0, 10));
+    }
+  };
+
   // Filter bar additional filters
   const additionalFilters = useMemo(() => (
     <>
+      <DateRangePicker value={dateValue} onChange={handleDatePick} />
+
       {/* Cashier Selector */}
       <Select
         value={userId}
@@ -712,10 +754,10 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         onClick={() => {
           setUserId('0');
           setStatus('all');
-          setDatePreset('all');
+          setDatePreset('today');
           setCustomStart('');
           setCustomEnd('');
-          setDateRange(null);
+          setDateValue({ preset: 'today', range: buildDateRange('today') });
         }}
         className="h-9 gap-1.5 text-muted-foreground hover:text-foreground"
       >
@@ -723,7 +765,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         <span>Clear</span>
       </Button>
     </>
-  ), [userId, status, datePreset, users]);
+  ), [userId, status, datePreset, dateValue, users]);
 
   // Date range trigger
   const dateTriggerLabel = useMemo(() => {
@@ -743,19 +785,6 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     }
     return 'All time';
   }, [datePreset, customStart, customEnd]);
-
-  const handleDateRangeChange = (range: { start: string; end: string } | null) => {
-    setDateRange(range);
-    if (range) {
-      setCustomStart(range.start);
-      setCustomEnd(range.end);
-      setDatePreset('custom');
-    } else {
-      setDatePreset('all');
-      setCustomStart('');
-      setCustomEnd('');
-    }
-  };
 
   return (
     <div className="space-y-5">
@@ -778,9 +807,6 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         </div>
       </div>
 
-      {/* Summary Cards */}
-      {summaryCards}
-
       {/* DataTable */}
       <DataTable<Transaction>
         columns={columns}
@@ -795,11 +821,8 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         selectedIds={[]}
         loading={loading}
         emptyMessage="No sales found for these dates."
-        toolbar={toolbar}
+        // toolbar={toolbar}
         summary={summaryCards}
-        dateRangeFilter={dateRange}
-        onDateRangeChange={handleDateRangeChange}
-        dateRangePlaceholder="Select date range"
         additionalFilters={additionalFilters}
       />
 

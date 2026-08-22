@@ -82,6 +82,7 @@ interface DataTableProps<TData> {
   additionalFilters?: React.ReactNode;
   toolbar?: React.ReactNode;
   summary?: React.ReactNode;
+  bordered?: boolean;
 }
 
 export function DataTable<TData extends Record<string, unknown>>({
@@ -106,6 +107,7 @@ export function DataTable<TData extends Record<string, unknown>>({
   additionalFilters,
   toolbar,
   summary,
+  bordered = false,
 }: DataTableProps<TData>) {
   const columnHelper = useMemo(() => createColumnHelper<TData>(), []);
 
@@ -314,7 +316,8 @@ export function DataTable<TData extends Record<string, unknown>>({
                         header.column.getSize() <= 50 && "w-10",
                         header.column.columnDef.meta?.align === "center" && "text-center",
                         header.column.columnDef.meta?.align === "right" && "text-right",
-                        header.column.columnDef.meta?.headerClassName
+                        header.column.columnDef.meta?.headerClassName,
+                        bordered && "border border-border"
                       )}
                       onClick={() => header.column.getCanSort() && handleSort(header.column.id)}
                       style={{ width: header.getSize() }}
@@ -333,7 +336,7 @@ export function DataTable<TData extends Record<string, unknown>>({
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={i}>
                     {visibleColumns.map((col) => (
-                      <TableCell key={col.id} className={cn(col.columnDef.meta?.className, col.columnDef.meta?.align === "center" && "text-center", col.columnDef.meta?.align === "right" && "text-right")}>
+                      <TableCell key={col.id} className={cn(col.columnDef.meta?.className, col.columnDef.meta?.align === "center" && "text-center", col.columnDef.meta?.align === "right" && "text-right", bordered && "border border-border")}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
                     ))}
@@ -352,16 +355,17 @@ export function DataTable<TData extends Record<string, unknown>>({
                     data-state={row.getIsSelected() ? "selected" : undefined}
                     className={cn("hover:bg-muted/50 transition-colors", row.original.__rowClassName)}
                   >
-                    {visibleColumns.map((col) => (
-                      <TableCell
-                        key={col.id}
-                        className={cn(
-                          col.columnDef.meta?.className,
-                          col.columnDef.meta?.align === "center" && "text-center",
-                          col.columnDef.meta?.align === "right" && "text-right"
-                        )}
-                      >
-                        {flexRender(col.columnDef.cell, row.getContext(), col)}
+                    {row.getVisibleCells().map((cell) => (
+                        <TableCell
+                          key={cell.id}
+                          className={cn(
+                            cell.column.columnDef.meta?.className,
+                            cell.column.columnDef.meta?.align === "center" && "text-center",
+                            cell.column.columnDef.meta?.align === "right" && "text-right",
+                            bordered && "border border-border"
+                          )}
+                        >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
                   </TableRow>

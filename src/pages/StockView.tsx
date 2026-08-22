@@ -50,6 +50,8 @@ import { Calendar as CalendarPicker } from '../components/ui/calendar';
 import { localInputToIso, monthRange } from '../lib/dates';
 import { downloadCsv } from '../lib/export';
 import { DataTable, ColumnDef } from '../components/DataTable';
+import { DateRangePicker, type PickerValue } from '../components/DateRangePicker';
+import { buildDateRange } from '../lib/dateRange';
 
 const emptyIngredient: { id: string; name: string; unit: Unit; costPerUnit: string } = {
   id: '',
@@ -157,10 +159,10 @@ export default function StockView({
   const [entries, setEntries] = useState<StockEntry[]>([]);
   const [filterIngredient, setFilterIngredient] = useState('all');
   const [filterType, setFilterType] = useState('all');
-  const [filterFrom, setFilterFrom] = useState('');
-  const [filterTo, setFilterTo] = useState('');
+  const initialHistory = buildDateRange('30d');
+  const [filterFrom, setFilterFrom] = useState(initialHistory.start.slice(0, 10));
+  const [filterTo, setFilterTo] = useState(initialHistory.end.slice(0, 10));
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
-  const [historyDateRange, setHistoryDateRange] = useState<{ start: string; end: string } | null>(null);
 
   // Stock list filter (for manage tab)
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>(initialFilter ?? 'all');
@@ -182,7 +184,16 @@ export default function StockView({
     variance: number;
     sellThrough: number;
     daysOfStock: number;
+    price: number;
+    totalPrice: number;
   }[]>([]);
+  const [reportEntries, setReportEntries] = useState<StockEntry[]>([]);
+  const [purchaseView, setPurchaseView] = useState<'day' | 'month'>('day');
+  const [purchaseFrom, setPurchaseFrom] = useState(initialRange.start);
+  const [purchaseTo, setPurchaseTo] = useState(initialRange.end);
+  const [purchaseDateRangeOpen, setPurchaseDateRangeOpen] = useState(false);
+  const [purchaseEntries, setPurchaseEntries] = useState<StockEntry[]>([]);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
 
@@ -237,6 +248,7 @@ export default function StockView({
         endDate: localInputToIso(reportTo, true),
       });
       const entries = res.entries;
+      setReportEntries(entries);
 
       // Aggregate by ingredient
       const byIngredient = new Map<number, {
@@ -297,6 +309,8 @@ export default function StockView({
           variance: Math.round(variance * 100) / 100,
           sellThrough: Math.round(sellThrough * 10) / 10,
           daysOfStock: Math.round(daysOfStock * 10) / 10,
+          price: ingredient?.costPerUnit ?? 0,
+          totalPrice: Math.round((ingredient?.costPerUnit ?? 0) * data.restocks * 100) / 100,
         });
       }
 
@@ -321,7 +335,8 @@ export default function StockView({
       'Actually Left',
       'Difference',
       '% Sold',
-      'Days Left',
+      'Price',
+      'Total Price',
     ];
     const rows = reportData.map((r) => [
       r.productName,
@@ -334,10 +349,86 @@ export default function StockView({
       r.actual,
       r.variance,
       r.sellThrough,
-      r.daysOfStock === Infinity || r.daysOfStock > 999 ? '∞' : r.daysOfStock,
+      r.price,
+      r.totalPrice,
     ]);
     downloadCsv(`stock-report-${reportFrom}-to-${reportTo}.csv`, header, rows);
   }, [reportData, reportFrom, reportTo]);
+
+  // Purchases grouped by day / month for the chosen purchase range
+  const loadPurchases = useCallback(async () => {
+    setPurchaseLoading(true);
+    try {
+      const res = await api.getStockEntries({
+        startDate: localInputToIso(purchaseFrom),
+        endDate: localInputToIso(purchaseTo, true),
+      });
+      setPurchaseEntries(res.entries);
+    } catch {
+      setPurchaseEntries([]);
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }, [purchaseFrom, purchaseTo]);
+
+  useEffect(() => {
+    void loadPurchases();
+  }, [loadPurchases]);
+
+  const purchaseGroups = useMemo(() => {
+    const costMap = new Map<number, number>();
+    const unitMap = new Map<number, string>();
+    list.forEach((i) => {
+      costMap.set(i.id, i.costPerUnit || 0);
+      unitMap.set(i.id, i.unit);
+    });
+    const periods = new Map<
+      string,
+      { label: string; items: Map<number, { name: string; unit: string; qty: number; price: number; total: number }> }
+    >();
+    for (const e of purchaseEntries) {
+      if (e.type !== 'restock') continue;
+      const d = new Date(e.createdAt);
+      const keyDate =
+        purchaseView === 'day'
+          ? d.toISOString().slice(0, 10)
+          : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label =
+        purchaseView === 'day'
+          ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+          : d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const price = costMap.get(e.ingredientId) ?? 0;
+      const qty = Number(e.quantity);
+      const period = periods.get(keyDate) || { label, items: new Map() };
+      const current = period.items.get(e.ingredientId) || {
+        name: e.ingredientName || `Item ${e.ingredientId}`,
+        unit: e.unit || unitMap.get(e.ingredientId) || 'pcs',
+        qty: 0,
+        price,
+        total: 0,
+      };
+      current.qty += qty;
+      current.total += qty * price;
+      period.items.set(e.ingredientId, current);
+      periods.set(keyDate, period);
+    }
+
+    const rows: { label: string; name: string; unit: string; qty: number; price: number; total: number }[] = [];
+    let totalQty = 0;
+    let totalCost = 0;
+    Array.from(periods.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .forEach(([, period]) => {
+        Array.from(period.items.values()).forEach((item) => {
+          const q = Math.round(item.qty * 100) / 100;
+          const t = Math.round(item.total * 100) / 100;
+          rows.push({ label: period.label, name: item.name, unit: item.unit, qty: q, price: item.price, total: t });
+          totalQty += q;
+          totalCost += t;
+        });
+      });
+    return { rows, total: { qty: Math.round(totalQty * 100) / 100, cost: Math.round(totalCost * 100) / 100 } };
+  }, [purchaseEntries, purchaseView, list]);
 
   useEffect(() => {
     void load();
@@ -755,17 +846,28 @@ export default function StockView({
       meta: { align: 'right' },
     },
     {
-      id: 'daysOfStock',
-      header: 'DAYS LEFT',
-      accessorKey: 'daysOfStock',
+      id: 'price',
+      header: 'PRICE',
+      accessorKey: 'price',
       cell: ({ row }) => (
         <span className="font-mono tabular-nums">
-          {row.original.daysOfStock === Infinity || row.original.daysOfStock > 999 ? '∞' : row.original.daysOfStock}
+          {symbol}{Number(row.original.price).toFixed(2)} / {row.original.unit}
         </span>
       ),
       meta: { align: 'right' },
     },
-  ], []);
+    {
+      id: 'totalPrice',
+      header: 'TOTAL PRICE',
+      accessorKey: 'totalPrice',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums font-semibold">
+          {symbol}{Number(row.original.totalPrice).toFixed(2)}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+  ], [symbol]);
 
   // Filtered stock items for manage tab
   const filteredStockItems = useMemo(() => {
@@ -803,88 +905,46 @@ export default function StockView({
           <SelectItem value="wastage">Wasted</SelectItem>
         </SelectContent>
       </Select>
-      <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
-            <CalendarIcon className="size-4" />
-            <span>
-              {filterFrom && filterTo
-                ? `${filterFrom} → ${filterTo}`
-                : filterFrom
-                ? `From ${filterFrom}`
-                : filterTo
-                ? `To ${filterTo}`
-                : 'Select date range'}
-            </span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start" forceMount={dateRangeOpen}>
-          {dateRangeOpen && (
-            <div className="p-3">
-              <CalendarPicker
-                mode="range"
-                selected={{ start: filterFrom ? new Date(filterFrom) : undefined, end: filterTo ? new Date(filterTo) : undefined }}
-                onSelect={(range) => {
-                  setFilterFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
-                  setFilterTo(range.end ? range.end.toISOString().slice(0, 10) : '');
-                  setDateRangeOpen(false);
-                }}
-                initialFocus
-                numberOfMonths={2}
-              />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => { setFilterFrom(''); setFilterTo(''); setHistoryDateRange(null); setDateRangeOpen(false); }}>
-                  Clear
-                </Button>
-              </div>
-            </div>
-          )}
-        </PopoverContent>
-      </Popover>
+      <DateRangePicker
+        value={
+          filterFrom && filterTo
+            ? { preset: 'custom', range: { preset: 'custom', start: new Date(filterFrom).toISOString(), end: new Date(filterTo).toISOString() } }
+            : { preset: '30d', range: buildDateRange('30d') }
+        }
+        onChange={(v) => {
+          if (v.preset === 'custom') {
+            setFilterFrom(v.range.start.slice(0, 10));
+            setFilterTo(v.range.end.slice(0, 10));
+          } else {
+            const r = buildDateRange(v.preset);
+            setFilterFrom(r.start.slice(0, 10));
+            setFilterTo(r.end.slice(0, 10));
+          }
+        }}
+      />
     </>
   ), [filterIngredient, filterType, filterFrom, filterTo, list]);
 
   // Report additional filters
   const reportAdditionalFilters = useMemo(() => (
     <>
-      <Popover open={reportDateRangeOpen} onOpenChange={setReportDateRangeOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
-            <CalendarIcon className="size-4" />
-            <span>
-              {reportFrom && reportTo
-                ? `${reportFrom} → ${reportTo}`
-                : reportFrom
-                ? `From ${reportFrom}`
-                : reportTo
-                ? `To ${reportTo}`
-                : 'Select date range'}
-            </span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start" forceMount={reportDateRangeOpen}>
-          {reportDateRangeOpen && (
-            <div className="p-3">
-              <CalendarPicker
-                mode="range"
-                selected={{ start: reportFrom ? new Date(reportFrom) : undefined, end: reportTo ? new Date(reportTo) : undefined }}
-                onSelect={(range) => {
-                  setReportFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
-                  setReportTo(range.end ? range.end.toISOString().slice(0, 10) : '');
-                  setReportDateRangeOpen(false);
-                }}
-                initialFocus
-                numberOfMonths={2}
-              />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => { setReportFrom(''); setReportTo(''); setReportDateRangeOpen(false); }}>
-                  Clear
-                </Button>
-              </div>
-            </div>
-          )}
-        </PopoverContent>
-      </Popover>
+      <DateRangePicker
+        value={
+          reportFrom && reportTo
+            ? { preset: 'custom', range: { preset: 'custom', start: new Date(reportFrom).toISOString(), end: new Date(reportTo).toISOString() } }
+            : { preset: '30d', range: buildDateRange('30d') }
+        }
+        onChange={(v) => {
+          if (v.preset === 'custom') {
+            setReportFrom(v.range.start.slice(0, 10));
+            setReportTo(v.range.end.slice(0, 10));
+          } else {
+            const r = buildDateRange(v.preset);
+            setReportFrom(r.start.slice(0, 10));
+            setReportTo(r.end.slice(0, 10));
+          }
+        }}
+      />
       <Button onClick={loadReport} disabled={reportLoading}>
         {reportLoading ? 'Loading…' : 'Apply'}
       </Button>
@@ -901,18 +961,7 @@ export default function StockView({
         </Tooltip>
       )}
     </>
-  ), [reportFrom, reportTo, reportDateRangeOpen, reportData.length, reportLoading]);
-
-  const handleHistoryDateRangeChange = (range: { start: string; end: string } | null) => {
-    setHistoryDateRange(range);
-    if (range) {
-      setFilterFrom(range.start);
-      setFilterTo(range.end);
-    } else {
-      setFilterFrom('');
-      setFilterTo('');
-    }
-  };
+  ), [reportFrom, reportTo, reportData.length, reportLoading]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -1130,6 +1179,7 @@ export default function StockView({
                 showPagination={true}
                 showColumnVisibility={true}
                 showRowSelection={false}
+                bordered={true}
                 loading={loading}
                 emptyMessage="No items yet. Tap 'Add New Item' to start."
                 additionalFilters={
@@ -1164,17 +1214,116 @@ export default function StockView({
                 showPagination={true}
                 showColumnVisibility={true}
                 showRowSelection={false}
+                bordered={true}
                 loading={false}
                 emptyMessage="Nothing here yet."
                 additionalFilters={historyAdditionalFilters}
-                dateRangeFilter={historyDateRange}
-                onDateRangeChange={handleHistoryDateRangeChange}
               />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="report" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+              <div className="space-y-1">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <PackagePlus className="size-4 text-primary" />
+                  Stock Purchased
+                </CardTitle>
+                <CardDescription>
+                  How much stock you bought in this date range, grouped by {purchaseView === 'day' ? 'day' : 'month'}.
+                </CardDescription>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <DateRangePicker
+                  value={
+                    purchaseFrom && purchaseTo
+                      ? { preset: 'custom', range: { preset: 'custom', start: new Date(purchaseFrom).toISOString(), end: new Date(purchaseTo).toISOString() } }
+                      : { preset: '30d', range: buildDateRange('30d') }
+                  }
+                  onChange={(v) => {
+                    if (v.preset === 'custom') {
+                      setPurchaseFrom(v.range.start.slice(0, 10));
+                      setPurchaseTo(v.range.end.slice(0, 10));
+                    } else {
+                      const r = buildDateRange(v.preset);
+                      setPurchaseFrom(r.start.slice(0, 10));
+                      setPurchaseTo(r.end.slice(0, 10));
+                    }
+                  }}
+                />
+                <div className="flex rounded-md border bg-muted/50 p-0.5">
+                <Button
+                  variant={purchaseView === 'day' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setPurchaseView('day')}
+                >
+                  By Day
+                </Button>
+                <Button
+                  variant={purchaseView === 'month' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setPurchaseView('month')}
+                >
+                  By Month
+                </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {purchaseGroups.rows.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No restocks in this range.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left font-semibold border border-border">
+                          {purchaseView === 'day' ? 'Date' : 'Month'}
+                        </th>
+                        <th className="px-4 py-2.5 text-left font-semibold border border-border">Item bought</th>
+                        <th className="px-4 py-2.5 text-right font-semibold border border-border">Quantity</th>
+                        <th className="px-4 py-2.5 text-right font-semibold border border-border">Price / unit</th>
+                        <th className="px-4 py-2.5 text-right font-semibold border border-border">Total price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseGroups.rows.map((g, i) => (
+                        <tr key={`${g.label}-${g.name}-${i}`} className="hover:bg-muted/50">
+                          <td className="px-4 py-2.5 font-medium border border-border whitespace-nowrap">{g.label}</td>
+                          <td className="px-4 py-2.5 border border-border">{g.name}</td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums border border-border">
+                            {g.qty} {g.unit}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums border border-border">
+                            {symbol}{g.price.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums border border-border">
+                            {symbol}{g.total.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-muted/60 font-semibold">
+                        <td className="px-4 py-2.5 border border-border" colSpan={3}>Total</td>
+                        <td className="px-4 py-2.5 text-right font-mono tabular-nums border border-border">
+                          {Math.round(purchaseGroups.total.qty * 100) / 100}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono tabular-nums border border-border">
+                          {symbol}{purchaseGroups.total.cost.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -1202,6 +1351,7 @@ export default function StockView({
                 showPagination={true}
                 showColumnVisibility={true}
                 showRowSelection={false}
+                bordered={true}
                 loading={reportLoading}
                 emptyMessage="No stock movements in this range."
                 additionalFilters={reportAdditionalFilters}
