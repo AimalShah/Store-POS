@@ -535,6 +535,11 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
   ], [symbol, settings]);
 
+  // Print handler (defined before toolbar to avoid temporal dead zone)
+  const handlePrintReport = () => {
+    printReportPdf();
+  };
+
   // Toolbar for export/print
   const toolbar = useMemo(() => (
     <div className="flex items-center gap-2">
@@ -657,10 +662,6 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export failed');
     }
-  };
-
-  const handlePrintReport = () => {
-    printReportPdf();
   };
 
   // Filter bar additional filters
