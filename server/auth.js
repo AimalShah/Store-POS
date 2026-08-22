@@ -65,6 +65,8 @@ export function setJwtSecret(secret) {
   jwtSecret = secret;
 }
 
+export const ROLES = ['Admin', 'Manager', 'Cashier'];
+
 export function signToken(user) {
   assertJwtSecret();
   return jwt.sign(
@@ -72,11 +74,6 @@ export function signToken(user) {
       id: user.id || user._id,
       username: user.username,
       fullname: user.fullname,
-      perm_products: user.perm_products,
-      perm_categories: user.perm_categories,
-      perm_transactions: user.perm_transactions,
-      perm_users: user.perm_users,
-      perm_settings: user.perm_settings,
     },
     jwtSecret,
     { expiresIn: '12h' }
@@ -102,28 +99,33 @@ export function authenticate(req, res, next) {
   }
 }
 
-export function requirePerm(perm) {
+// Role is resolved fresh from the database on every request, never trusted
+// from the token — a role change takes effect on the next request (ADR-0006).
+export function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    if (req.user.id === 1 || req.user[perm]) {
-      return next();
+    const row = getDb().prepare('SELECT role FROM users WHERE id = ?').get(req.user.id);
+    if (!row) {
+      return res.status(401).json({ error: 'Account no longer exists' });
     }
-    return res.status(403).json({ error: 'Permission denied' });
+    if (!roles.includes(row.role)) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+    req.role = row.role;
+    return next();
   };
 }
 
-export function requireAnyPerm(...perms) {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    if (req.user.id === 1 || perms.some((perm) => req.user[perm])) {
-      return next();
-    }
-    return res.status(403).json({ error: 'Permission denied' });
-  };
+export const requireAdmin = requireRole('Admin');
+export const requireManager = requireRole('Admin', 'Manager');
+export const requireStaff = requireRole('Admin', 'Manager', 'Cashier');
+
+function stampLastLogin(userId) {
+  getDb()
+    .prepare('UPDATE users SET last_login_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), userId);
 }
 
 export function loginUser(username, password) {
@@ -132,25 +134,17 @@ export function loginUser(username, password) {
     .get(username);
   if (!row) return null;
   if (!bcrypt.compareSync(password, row.password)) return null;
-
-  getDb()
-    .prepare('UPDATE users SET status = ? WHERE id = ?')
-    .run(`Logged In_${new Date().toISOString()}`, row.id);
-
+  stampLastLogin(row.id);
   return mapUser(row);
 }
 
-export function loginByPin(pin) {
-  const users = getDb().prepare("SELECT * FROM users WHERE pin != ''").all();
-  for (const row of users) {
-    if (bcrypt.compareSync(String(pin), row.pin)) {
-      getDb()
-        .prepare('UPDATE users SET status = ? WHERE id = ?')
-        .run(`Logged In_${new Date().toISOString()}`, row.id);
-      return mapUser(row);
-    }
-  }
-  return null;
+// Identity-first: verify against one specific member's hash — never iterate rows.
+export function loginByPinForUser(userId, pin) {
+  const row = getDb().prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!row || !row.pin) return null;
+  if (!bcrypt.compareSync(String(pin), row.pin)) return null;
+  stampLastLogin(row.id);
+  return mapUser(row);
 }
 
 export function hashPassword(password) {

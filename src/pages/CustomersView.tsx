@@ -22,6 +22,7 @@ import { Pencil, Trash2, UserPlus } from 'lucide-react';
 type Props = {
   customers: Customer[];
   onChanged: () => Promise<void>;
+  canManage?: boolean;
 };
 
 type FormState = {
@@ -34,7 +35,7 @@ type FormState = {
 
 const emptyForm: FormState = { id: '', name: '', phone: '', email: '', address: '' };
 
-export default function CustomersView({ customers, onChanged }: Props) {
+export default function CustomersView({ customers, onChanged, canManage = true }: Props) {
   const [list, setList] = useState<Customer[]>(customers);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [pendingId, setPendingId] = useState<number | null>(null);
@@ -91,6 +92,7 @@ export default function CustomersView({ customers, onChanged }: Props) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      {canManage && (
       <Card>
         <CardHeader>
           <CardTitle>{isEditing ? 'Edit customer' : 'New customer'}</CardTitle>
@@ -147,6 +149,7 @@ export default function CustomersView({ customers, onChanged }: Props) {
           </div>
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -177,6 +180,7 @@ export default function CustomersView({ customers, onChanged }: Props) {
                     <TableCell>{c.email || '—'}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{c.address || '—'}</TableCell>
                     <TableCell>
+                      canManage && (
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" aria-label={`Edit ${c.name}`} onClick={() => startEdit(c)}>
                           <Pencil className="size-4" />
@@ -191,6 +195,7 @@ export default function CustomersView({ customers, onChanged }: Props) {
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
+                      )
                     </TableCell>
                   </TableRow>
                 ))}

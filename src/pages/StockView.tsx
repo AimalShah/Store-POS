@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, EllipsisVertical, PackagePlus, PackageX, Pencil, Plus, Trash2, Utensils, RefreshCw } from 'lucide-react';
+import { AlertCircle, EllipsisVertical, PackagePlus, PackageX, Pencil, Plus, Trash2, Utensils, RefreshCw, BarChart3, Download, Calendar as CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '../components/ui/badge';
 import { api, Ingredient, StockEntry, UNITS, Unit } from '../api/client';
@@ -49,6 +49,14 @@ import {
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../components/ui/popover';
+import { Calendar as CalendarPicker } from '../components/ui/calendar';
+import { localInputToIso, monthRange } from '../lib/dates';
+import { downloadCsv } from '../lib/export';
 
 const emptyIngredient: { id: string; name: string; unit: Unit; costPerUnit: string } = {
   id: '',
@@ -92,6 +100,28 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
   const [filterType, setFilterType] = useState('all');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
+
+  // Report tab
+  const initialRange = monthRange();
+  const [reportFrom, setReportFrom] = useState(initialRange.start);
+  const [reportTo, setReportTo] = useState(initialRange.end);
+  const [reportDateRangeOpen, setReportDateRangeOpen] = useState(false);
+  const [reportData, setReportData] = useState<{
+    productName: string;
+    unit: string;
+    restocks: number;
+    sales: number;
+    wastage: number;
+    adjustments: number;
+    theoretical: number;
+    actual: number;
+    variance: number;
+    sellThrough: number;
+    daysOfStock: number;
+  }[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
 
@@ -135,6 +165,117 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
     }
   }, [filterIngredient, filterType, filterFrom, filterTo]);
 
+  const loadReport = useCallback(async () => {
+    setReportLoading(true);
+    setReportError(null);
+    try {
+      const res = await api.getStockEntries({
+        startDate: localInputToIso(reportFrom),
+        endDate: localInputToIso(reportTo, true),
+      });
+      const entries = res.entries;
+
+      // Aggregate by ingredient
+      const byIngredient = new Map<number, {
+        name: string;
+        unit: string;
+        restocks: number;
+        sales: number;
+        wastage: number;
+        adjustments: number;
+      }>();
+
+      for (const e of entries) {
+        const key = e.ingredientId;
+        const existing = byIngredient.get(key) || {
+          name: e.ingredientName || `Ingredient ${e.ingredientId}`,
+          unit: e.unit || 'pcs',
+          restocks: 0,
+          sales: 0,
+          wastage: 0,
+          adjustments: 0,
+        };
+        const qty = Number(e.quantity);
+        switch (e.type) {
+          case 'restock':
+            existing.restocks += qty;
+            break;
+          case 'usage':
+            existing.sales += qty;
+            break;
+          case 'wastage':
+            existing.wastage += qty;
+            break;
+        }
+        byIngredient.set(key, existing);
+      }
+
+      // Calculate theoretical, actual, variance, sell-through, days of stock
+      const reportRows = [];
+      for (const [ingredientId, data] of byIngredient) {
+        const ingredient = list.find((i) => i.id === ingredientId);
+        const actual = ingredient?.balance ?? 0;
+        const theoretical = data.restocks - data.sales - data.wastage - data.adjustments;
+        const variance = actual - theoretical;
+        const totalOut = data.sales + data.wastage + data.adjustments;
+        const sellThrough = totalOut > 0 ? (data.sales / totalOut) * 100 : 0;
+        const dailyRate = totalOut / Math.max(1, (new Date(reportTo).getTime() - new Date(reportFrom).getTime()) / 86400000 + 1);
+        const daysOfStock = dailyRate > 0 ? actual / dailyRate : 0;
+
+        reportRows.push({
+          productName: data.name,
+          unit: data.unit,
+          restocks: data.restocks,
+          sales: data.sales,
+          wastage: data.wastage,
+          adjustments: data.adjustments,
+          theoretical: Math.round(theoretical * 100) / 100,
+          actual: Math.round(actual * 100) / 100,
+          variance: Math.round(variance * 100) / 100,
+          sellThrough: Math.round(sellThrough * 10) / 10,
+          daysOfStock: Math.round(daysOfStock * 10) / 10,
+        });
+      }
+
+      setReportData(reportRows);
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Failed to load report');
+    } finally {
+      setReportLoading(false);
+    }
+  }, [reportFrom, reportTo, list]);
+
+  const exportReport = useCallback(() => {
+    if (!reportData.length) return;
+    const header = [
+      'Product',
+      'Unit',
+      'Received',
+      'Sold',
+      'Wasted',
+      'Adjusted',
+      'Should Be Left',
+      'Actually Left',
+      'Difference',
+      '% Sold',
+      'Days Left',
+    ];
+    const rows = reportData.map((r) => [
+      r.productName,
+      r.unit,
+      r.restocks,
+      r.sales,
+      r.wastage,
+      r.adjustments,
+      r.theoretical,
+      r.actual,
+      r.variance,
+      r.sellThrough,
+      r.daysOfStock === Infinity || r.daysOfStock > 999 ? '∞' : r.daysOfStock,
+    ]);
+    downloadCsv(`stock-report-${reportFrom}-to-${reportTo}.csv`, header, rows);
+  }, [reportData, reportFrom, reportTo]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -142,6 +283,10 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
   useEffect(() => {
     void loadEntries();
   }, [loadEntries]);
+
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
 
   // Auto-refresh every 60 seconds
   useEffect(() => {
@@ -159,11 +304,10 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
   );
 
   const restockQtyNum = Number(restockQty) || 0;
-  const restockPriceNum = Number(restockPaid) || 0;
-  const paidTotal = restockQtyNum * restockPriceNum;
+  const paidTotal = Number(restockPaid) || 0;
 
   const restock = async () => {
-    if (!selected || !Number(restockQty) || !Number(restockPaid)) return;
+    if (!selected || !Number(restockQty) || !paidTotal) return;
     setRestocking(true);
     try {
       await api.restock({
@@ -309,11 +453,11 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
           <CardContent className="flex flex-col gap-3 p-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-center justify-between gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                 <PackagePlus className="size-4 text-primary" />
               </span>
-              <span className="text-xs text-muted-foreground">Items you track</span>
+              <p className="text-sm text-semibold text-muted-foreground">Stock Items</p>
             </div>
             <p className="text-3xl font-bold leading-none tabular-nums text-center">{summary?.items ?? list.length}</p>
           </CardContent>
@@ -327,7 +471,7 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
           }
         >
           <CardContent className="flex flex-col gap-3 p-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-center justify-between gap-3">
               <span
                 className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
                   (summary?.outOfStock ?? 0) > 0 ? 'bg-destructive/15' : 'bg-muted'
@@ -337,7 +481,7 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                   className={`size-4 ${(summary?.outOfStock ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
                 />
               </span>
-              <span className="text-xs text-muted-foreground">Out of stock</span>
+              <p className="text-sm text-semibold text-muted-foreground">Out of Stock</p>
             </div>
             <p className="text-3xl font-bold leading-none tabular-nums text-center">
               {summary?.outOfStock ?? 0}
@@ -347,24 +491,27 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
 
         <Card>
           <CardContent className="flex flex-col gap-3 p-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-center justify-between gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-100">
                 <Utensils className="size-4 text-blue-700" />
               </span>
-              <span className="text-xs text-muted-foreground">Changes today</span>
+              <span className="text-sm text-semibold text-muted-foreground">Changes Today</span>
             </div>
             <p className="text-3xl font-bold leading-none tabular-nums text-center">{summary?.changesToday ?? 0}</p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="restock">
+<Tabs defaultValue="restock">
         <TabsList variant="line" className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
           <TabsTrigger value="restock" className="flex-none px-1 pb-2.5 pt-2 data-active:after:bg-primary">
             Add Stock
           </TabsTrigger>
           <TabsTrigger value="manage" className="flex-none px-1 pb-2.5 pt-2 data-active:after:bg-primary">
-            Items &amp; History
+            Items & History
+          </TabsTrigger>
+          <TabsTrigger value="report" className="flex-none px-1 pb-2.5 pt-2 data-active:after:bg-primary">
+            Report
           </TabsTrigger>
         </TabsList>
 
@@ -406,7 +553,7 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="restock-paid">Price per {selected?.unit ?? 'unit'} ({symbol})</Label>
+                  <Label htmlFor="restock-paid">Total price ({symbol})</Label>
                   <Input
                     id="restock-paid"
                     type="number"
@@ -414,11 +561,11 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                     min={0}
                     value={restockPaid}
                     onChange={(e) => setRestockPaid(e.target.value)}
-                    placeholder="Price per unit"
+                    placeholder="Total price"
                   />
                   {restockQtyNum > 0 && restockPriceNum > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Total: {symbol}{paidTotal.toFixed(2)}
+                      Per unit: {symbol}{(paidTotal / restockQtyNum).toFixed(2)}
                     </p>
                   )}
                 </div>
@@ -477,7 +624,7 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                   </TableHeader>
                   <TableBody>
                     {list.map((i) => {
-                      const outOfStock = i.entryCount > 0 && i.balance <= 0;
+                      const outOfStock = i.balance <= 0;
                       return (
                       <TableRow key={i.id} className={outOfStock ? 'bg-destructive/5' : undefined}>
                         <TableCell>
@@ -490,32 +637,58 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-right">
                           <span className="font-mono text-sm font-medium tabular-nums">
                             {Number(i.balance).toFixed(2)} {i.unit}
                           </span>
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm tabular-nums">
-                          {i.costPerUnit > 0 ? `${symbol}${Number(i.costPerUnit).toFixed(2)} / ${i.unit}` : '—'}
+                          {i.costPerUnit > 0 ? (
+                            `${symbol}${Number(i.costPerUnit).toFixed(2)} / ${i.unit}`
+                          ) : (
+                            <Badge variant="secondary" className="text-xs font-normal">
+                              Not set
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
-                          {i.lastEntry
-                            ? `${i.lastEntry.type === 'restock' ? 'Added' : i.lastEntry.type === 'usage' ? 'Used' : 'Wasted'} · by ${i.lastEntry.userName}`
-                            : 'Not stocked yet'}
+                        <TableCell className="max-w-[220px] truncate text-xs">
+                          {i.lastEntry ? (
+                            <Badge variant="outline" className="gap-1">
+                              {i.lastEntry.type === 'restock' ? (
+                                <>
+                                  <PackagePlus className="size-3" />
+                                  Added
+                                </>
+                              ) : i.lastEntry.type === 'usage' ? (
+                                <>
+                                  <Utensils className="size-3" />
+                                  Used
+                                </>
+                              ) : (
+                                <>
+                                  <PackageX className="size-3" />
+                                  Wasted
+                                </>
+                              )}
+                              <span className="text-muted-foreground">· by {i.lastEntry.userName}</span>
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              Not stocked yet
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={`Actions for ${i.name}`}
-                                >
-                                  <EllipsisVertical className="size-4" />
-                                </Button>
-                              }
-                            />
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Actions for ${i.name}`}
+                              >
+                                <EllipsisVertical className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-44">
                               <DropdownMenuItem onClick={() => openDeduct(i, 'usage')}>
                                 <Utensils className="size-4" /> Mark used
@@ -576,21 +749,44 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                     <SelectItem value="wastage">Wasted</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input
-                  aria-label="From date"
-                  type="date"
-                  className="h-9 w-[150px]"
-                  value={filterFrom}
-                  onChange={(e) => setFilterFrom(e.target.value)}
-                />
-                <span className="text-xs text-muted-foreground">to</span>
-                <Input
-                  aria-label="To date"
-                  type="date"
-                  className="h-9 w-[150px]"
-                  value={filterTo}
-                  onChange={(e) => setFilterTo(e.target.value)}
-                />
+                <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
+                      <CalendarIcon className="size-4" />
+                      <span>
+                        {filterFrom && filterTo
+                          ? `${filterFrom} → ${filterTo}`
+                          : filterFrom
+                          ? `From ${filterFrom}`
+                          : filterTo
+                          ? `To ${filterTo}`
+                          : 'Select date range'}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start" forceMount={dateRangeOpen}>
+                    {dateRangeOpen && (
+                      <div className="p-3">
+                        <CalendarPicker
+                          mode="range"
+                          selected={{ start: filterFrom ? new Date(filterFrom) : undefined, end: filterTo ? new Date(filterTo) : undefined }}
+                          onSelect={(range) => {
+                            setFilterFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
+                            setFilterTo(range.end ? range.end.toISOString().slice(0, 10) : '');
+                            setDateRangeOpen(false);
+                          }}
+                          initialFocus
+                          numberOfMonths={2}
+                        />
+                        <div className="mt-2 flex justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => { setFilterFrom(''); setFilterTo(''); setDateRangeOpen(false); }}>
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {entries.length === 0 ? (
@@ -648,9 +844,134 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                 </Table>
               )}
             </CardContent>
+</Card>
+          </TabsContent>
+
+        <TabsContent value="report" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <BarChart3 className="size-4 text-primary" />
+                Stock Report
+              </CardTitle>
+              <CardDescription>
+                What came in, what went out, and what should be left — for each product in this date range.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <Popover open={reportDateRangeOpen} onOpenChange={setReportDateRangeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
+                      <CalendarIcon className="size-4" />
+                      <span>
+                        {reportFrom && reportTo
+                          ? `${reportFrom} → ${reportTo}`
+                          : reportFrom
+                          ? `From ${reportFrom}`
+                          : reportTo
+                          ? `To ${reportTo}`
+                          : 'Select date range'}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start" forceMount={reportDateRangeOpen}>
+                    {reportDateRangeOpen && (
+                      <div className="p-3">
+                        <CalendarPicker
+                          mode="range"
+                          selected={{ start: reportFrom ? new Date(reportFrom) : undefined, end: reportTo ? new Date(reportTo) : undefined }}
+                          onSelect={(range) => {
+                            setReportFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
+                            setReportTo(range.end ? range.end.toISOString().slice(0, 10) : '');
+                            setReportDateRangeOpen(false);
+                          }}
+                          initialFocus
+                          numberOfMonths={2}
+                        />
+                        <div className="mt-2 flex justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => { setReportFrom(''); setReportTo(''); setReportDateRangeOpen(false); }}>
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+                <Button onClick={loadReport} disabled={reportLoading}>
+                  {reportLoading ? 'Loading…' : 'Apply'}
+                </Button>
+                {reportData.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button variant="outline" size="icon" onClick={exportReport} disabled={reportLoading}>
+                          <Download className="size-4" />
+                        </Button>
+                      }
+                    />
+                    <TooltipContent>Export CSV</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+
+              {reportError && (
+                <div className="flex items-center gap-2 rounded-md border bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  <AlertCircle className="size-4 shrink-0" />
+                  {reportError}
+                </div>
+              )}
+
+              {reportLoading ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">Loading report…</div>
+              ) : reportData.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">No stock movements in this range.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Product</TableHead>
+                        <TableHead className="text-right">Received</TableHead>
+                        <TableHead className="text-right">Sold</TableHead>
+                        <TableHead className="text-right">Wasted</TableHead>
+                        <TableHead className="text-right">Adjusted</TableHead>
+                        <TableHead className="text-right">Should Be Left</TableHead>
+                        <TableHead className="text-right">Actually Left</TableHead>
+                        <TableHead className="text-right">Difference</TableHead>
+                        <TableHead className="text-right">% Sold</TableHead>
+                        <TableHead className="text-right">Days Left</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reportData.map((row, idx) => (
+                        <TableRow key={idx} className={row.variance !== 0 ? 'bg-destructive/5' : undefined}>
+                          <TableCell className="font-medium">{row.productName}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.restocks} {row.unit}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.sales} {row.unit}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.wastage} {row.unit}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.adjustments} {row.unit}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.theoretical} {row.unit}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.actual} {row.unit}</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            <span className={row.variance < 0 ? 'text-destructive' : row.variance > 0 ? 'text-emerald-600' : ''}>
+                              {row.variance >= 0 ? '+' : ''}{row.variance} {row.unit}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">{row.sellThrough}%</TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            {row.daysOfStock === Infinity || row.daysOfStock > 999 ? '∞' : row.daysOfStock}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+        </Tabs>
 
       <AlertDialog
         open={!!deductTarget}

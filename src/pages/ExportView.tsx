@@ -24,12 +24,11 @@ import {
   catalogRows,
   customerRows,
   salesRows,
-  stockRows,
   type ExportRow,
 } from '../lib/export';
 
 type Format = 'xlsx' | 'csv';
-type DatasetId = 'sales' | 'catalog' | 'customers' | 'stock';
+type DatasetId = 'sales' | 'catalog' | 'customers';
 
 const PAYMENT_NAMES: Record<number, string> = { 1: 'Cash', 2: 'Card', 3: 'Mobile Wallet' };
 
@@ -40,9 +39,8 @@ const DATASETS: {
   icon: typeof Database;
 }[] = [
   { id: 'sales', label: 'Sales', description: 'All transactions with items and payments', icon: ReceiptText },
-  { id: 'catalog', label: 'Catalog', description: 'Products, prices, categories and stock', icon: Package },
+  { id: 'catalog', label: 'Catalog', description: 'Products, prices, categories', icon: Package },
   { id: 'customers', label: 'Customers', description: 'Customer names and contact details', icon: Users },
-  { id: 'stock', label: 'Stock movements', description: 'Every restock, wastage and sale deduction', icon: Warehouse },
 ];
 
 export default function ExportView() {
@@ -50,7 +48,6 @@ export default function ExportView() {
     sales: true,
     catalog: true,
     customers: true,
-    stock: true,
   });
   const [format, setFormat] = useState<Format>('xlsx');
   const [exporting, setExporting] = useState(false);
@@ -66,13 +63,6 @@ export default function ExportView() {
         return catalogRows(await api.getProducts());
       case 'customers':
         return customerRows(await api.getCustomers());
-      case 'stock': {
-        const [movements, products] = await Promise.all([
-          api.getStockMovements({ limit: 100000 }),
-          api.getProducts(),
-        ]);
-        return stockRows(movements.movements, products);
-      }
     }
   };
 
@@ -91,7 +81,6 @@ export default function ExportView() {
     sales: 'Sales',
     catalog: 'Catalog',
     customers: 'Customers',
-    stock: 'Stock movements',
   };
 
   const exportXlsx = async (rowsByDataset: Record<string, Record<string, unknown>[]>) => {

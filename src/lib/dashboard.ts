@@ -1,5 +1,6 @@
 import type { Category, Product, Transaction } from '../api/client';
 import type { DateRange } from './dateRange';
+import { isLowStock } from './stock';
 
 export type Kpis = {
   sales: number;
@@ -9,16 +10,16 @@ export type Kpis = {
   aov: number;
   aovDeltaPct: number;
   heldOrders: number;
-  lowStock: number;
   profit: number;
   marginPct: number;
+  lowStock: number;
 };
 
 export type KpiInput = {
   transactions: Transaction[];
   previous: Transaction[];
   held: Transaction[];
-  products: Product[];
+  products?: Product[];
 };
 
 function pctChange(current: number, previous: number): number {
@@ -33,7 +34,7 @@ function lineItemProfit(item: Transaction['items'][number]): number {
   return (price - cost) * qty;
 }
 
-export function computeKpis({ transactions, previous, held, products }: KpiInput): Kpis {
+export function computeKpis({ transactions, previous, held, products = [] }: KpiInput): Kpis {
   const sales = transactions.reduce((sum, t) => sum + Number(t.total || 0), 0);
   const prevSales = previous.reduce((sum, t) => sum + Number(t.total || 0), 0);
 
@@ -50,9 +51,7 @@ export function computeKpis({ transactions, previous, held, products }: KpiInput
   const marginPct = sales ? (profit / sales) * 100 : 0;
 
   const heldOrders = held.length;
-  const lowStock = products.filter(
-    (p) => p.trackStock && p.quantity <= p.lowStockThreshold
-  ).length;
+  const lowStock = products.filter(isLowStock).length;
 
   return {
     sales,
@@ -62,9 +61,9 @@ export function computeKpis({ transactions, previous, held, products }: KpiInput
     aov,
     aovDeltaPct: pctChange(aov, prevAov),
     heldOrders,
-    lowStock,
     profit,
     marginPct,
+    lowStock,
   };
 }
 

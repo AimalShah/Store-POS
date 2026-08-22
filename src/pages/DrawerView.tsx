@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, Settings, Transaction } from '../api/client';
+import { api, DrawerSession, Settings, Transaction } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -32,14 +32,14 @@ function EmptyState({ title, description }: { title: string; description: string
 }
 
 export default function DrawerView({ settings, onDrawerChange }: Props) {
-  const { user, hasPerm } = useAuth();
-  const [sessions, setSessions] = useState<{ id: number; till: number; floatAmount: number; countedCash: number; variance: number; status: string; openedAt: string; closedAt: string }[]>([]);
+  const { user, hasRole } = useAuth();
+  const [sessions, setSessions] = useState<DrawerSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDrawerDialog, setOpenDrawerDialog] = useState(false);
   const [floatAmount, setFloatAmount] = useState('');
   const [countedCash, setCountedCash] = useState('');
-  const [selectedSession, setSelectedSession] = useState<{ id: number; till: number; floatAmount: number; countedCash: number; variance: number; status: string; openedAt: string; closedAt: string } | null>(null);
+  const [selectedSession, setSelectedSession] = useState<DrawerSession | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const symbol = settings?.symbol || 'Rs';
   const till = settings?.till || 1;
@@ -49,17 +49,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
     setError(null);
     try {
       const list = await api.getDrawerSessions({ status: undefined, till });
-      const mapped = list.map((session) => ({
-        id: session.id,
-        till: session.till,
-        floatAmount: session.float_amount,
-        countedCash: session.counted_cash,
-        variance: session.variance,
-        status: session.status,
-        openedAt: session.opened_at,
-        closedAt: session.closed_at,
-      }));
-      setSessions(mapped);
+      setSessions(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load drawer sessions');
     } finally {
@@ -90,7 +80,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
     }
   };
 
-  const handleCloseDrawer = (session: { id: number; till: number; floatAmount: number; countedCash: number; variance: number; status: string; openedAt: string; closedAt: string }) => {
+  const handleCloseDrawer = (session: DrawerSession) => {
     setSelectedSession(session);
     setCountedCash(String(session.floatAmount + (session.variance || 0)));
   };
@@ -135,11 +125,11 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Drawer Reconciliation</h1>
-          <p className="text-muted-foreground">Manage cash drawer open/close counts and view variance</p>
+          <p className="text-muted-foreground">Count the money in the drawer at the start and end of the day.</p>
         </div>
-        {hasPerm('perm_transactions') && (
+        {hasRole('Admin', 'Manager') && (
           <Button onClick={() => setOpenDrawerDialog(true)}>
-            + Open Drawer
+            Start Day — Open Drawer
           </Button>
         )}
       </div>
@@ -153,25 +143,28 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
 
       {sessions.length === 0 && !loading && (
         <EmptyState
-          title="No drawer sessions yet"
-          description="Open a drawer with a starting float to begin cash reconciliation."
+          title="No drawer opened yet"
+          description="Tap “Start Day” and enter the cash you put in the drawer."
         />
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Drawer Sessions for Till #{till}</CardTitle>
+          <CardTitle>Money Drawer — Till #{till}</CardTitle>
+            <CardDescription className="mt-1 text-xs text-muted-foreground">
+              At closing, count the cash. More than expected = extra money (green). Less = money missing (red).
+            </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Cashier</TableHead>
+                <TableHead>Till</TableHead>
+                <TableHead>Opened By</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Float</TableHead>
-                <TableHead>Counted</TableHead>
-                <TableHead>Variance</TableHead>
+                <TableHead>Cash at Start</TableHead>
+                <TableHead>Cash Counted</TableHead>
+                <TableHead>Difference</TableHead>
                 <TableHead className="w-64 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -188,15 +181,19 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
                     <TableCell className="font-mono text-sm">{session.id}</TableCell>
                     <TableCell>{session.status === 'open' ? 'Cashier' : 'Unknown'}</TableCell>
                     <TableCell>{getStatusBadge(session.status)}</TableCell>
-                    <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{session.floatAmount.toFixed(2)}</span></TableCell>
-                    <TableCell className="font-medium"><span className={highlight.blue}>{session.countedCash != null ? `${symbol}${session.countedCash.toFixed(2)}` : '—'}</span></TableCell>
+                    <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{Number(session.floatAmount ?? 0).toFixed(2)}</span></TableCell>
+                    <TableCell className="font-medium"><span className={highlight.blue}>{session.countedCash != null ? `${symbol}${Number(session.countedCash).toFixed(2)}` : '—'}</span></TableCell>
                     <TableCell className="font-medium">
-                      {session.variance !== undefined ? (
-                        <span className={session.variance >= 0 ? highlight.green : highlight.red}>
-                          {session.variance >= 0 ? '+' : ''}{symbol}{session.variance.toFixed(2)}
+                      {session.variance != null ? (
+                        <span className={session.variance >= 0 ? highlight.red : highlight.green}>
+                          {session.variance === 0
+                            ? 'Exact'
+                            : session.variance > 0
+                              ? `${symbol}${Number(session.variance).toFixed(2)} missing`
+                              : `${symbol}${Math.abs(Number(session.variance)).toFixed(2)} extra`}
                         </span>
                       ) : (
-                        '—'
+                        'Not counted yet'
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -212,7 +209,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
                         {session.status === 'closed' && (
                           <Button variant="outline" size="sm" onClick={() => handleCloseDrawer(session)}>
                             <ReceiptText className="size-3.5 mr-1.5" />
-                            View Z Report
+                            View Report
                           </Button>
                         )}
                       </div>
@@ -229,14 +226,14 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
       <Dialog open={openDrawerDialog} onOpenChange={setOpenDrawerDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Open New Drawer</DialogTitle>
+            <DialogTitle>Start the Day — Open Drawer</DialogTitle>
             <DialogDescription>
-              Enter the starting cash float for Till #{till}. The drawer must be opened before taking payments.
+              How much cash are you putting in the drawer to start? You cannot take payments until the drawer is open.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="float-amount">Starting Float ({symbol})</Label>
+              <Label htmlFor="float-amount">Cash to start with ({symbol})</Label>
               <Input
                 id="float-amount"
                 type="number"
@@ -249,7 +246,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              The float is the starting cash in the drawer. All cash sales will be added to this amount.
+              This is the money in the drawer before any sales.
             </p>
           </div>
           <DialogFooter>
@@ -267,13 +264,13 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
       <Dialog open={!!selectedSession} onOpenChange={(open) => !open && setSelectedSession(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Close Drawer #{selectedSession?.id}</DialogTitle>
+            <DialogTitle>End of Day — Close Drawer</DialogTitle>
             <DialogDescription>
-              Enter the counted cash in the drawer to reconcile against expected cash.
+              Count all the cash in the drawer and type the total below.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="counted-cash">Counted Cash ({symbol})</Label>
+            <Label htmlFor="counted-cash">Total cash counted ({symbol})</Label>
             <Input
               id="counted-cash"
               type="number"

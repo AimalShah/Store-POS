@@ -2,7 +2,10 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { getDbPath } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireAdmin,
+} from '../auth.js';
 
 const router = Router();
 
@@ -26,7 +29,7 @@ function generateBackupName() {
 
 router.post(
   '/',
-  requirePerm('perm_settings'),
+  requireAdmin,
   asyncHandler(async (_req, res) => {
     const dbPath = getDbPath();
     if (!dbPath) {
@@ -54,7 +57,7 @@ router.post(
 
 router.get(
   '/',
-  requirePerm('perm_settings'),
+  requireAdmin,
   asyncHandler(async (_req, res) => {
     const backupsDir = getBackupsDir();
 
@@ -83,7 +86,7 @@ router.get(
 
 router.post(
   '/restore',
-  requirePerm('perm_settings'),
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const { filename, confirm } = req.body || {};
 

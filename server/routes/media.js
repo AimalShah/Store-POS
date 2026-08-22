@@ -4,7 +4,10 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getDb } from '../db.js';
-import { requireAnyPerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireManager,
+} from '../auth.js';
 import logger from '../logger.js';
 
 function mapMedia(row) {
@@ -49,7 +52,7 @@ export default function mediaRouter(uploadsPath) {
     res.json(rows.map(mapMedia));
   }));
 
-  router.post('/upload', requireAnyPerm('perm_products', 'perm_settings'), upload.single('image'), asyncHandler(async (req, res) => {
+  router.post('/upload', requireManager, upload.single('image'), asyncHandler(async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
@@ -65,7 +68,7 @@ export default function mediaRouter(uploadsPath) {
     res.json(mapMedia(row));
   }));
 
-  router.delete('/library/:id', requireAnyPerm('perm_products', 'perm_settings'), asyncHandler(async (req, res) => {
+  router.delete('/library/:id', requireManager, asyncHandler(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const row = getDb().prepare('SELECT * FROM media_library WHERE id = ?').get(id);
     if (!row) return res.status(404).json({ error: 'Not found' });

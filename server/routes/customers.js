@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { getDb, mapCustomer, auditLog } from '../db.js';
-import { asyncHandler, requirePerm } from '../auth.js';
+import {
+  asyncHandler,
+  requireManager,
+  requireStaff,
+} from '../auth.js';
 
 const router = Router();
 
@@ -16,7 +20,7 @@ router.get('/customer/:customerId', asyncHandler(async (req, res) => {
   res.json(mapCustomer(row));
 }));
 
-router.post('/customer', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
+router.post('/customer', requireStaff, asyncHandler(async (req, res) => {
   const body = req.body || {};
   const db = getDb();
   const authUser = req.user || {};
@@ -30,7 +34,7 @@ router.post('/customer', requirePerm('perm_settings'), asyncHandler(async (req, 
   res.sendStatus(200);
 }));
 
-router.put('/customer', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
+router.put('/customer', requireManager, asyncHandler(async (req, res) => {
   const body = req.body || {};
   const id = parseInt(body._id ?? body.id, 10);
   const db = getDb();
@@ -46,7 +50,7 @@ router.put('/customer', requirePerm('perm_settings'), asyncHandler(async (req, r
   res.sendStatus(200);
 }));
 
-router.delete('/customer/:customerId', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
+router.delete('/customer/:customerId', requireManager, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.customerId, 10);
   const db = getDb();
   const authUser = req.user || {};

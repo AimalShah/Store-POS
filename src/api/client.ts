@@ -1,17 +1,48 @@
 const TOKEN_KEY = 'pos_token';
 const USER_KEY = 'pos_user';
 
+export type Role = 'Admin' | 'Manager' | 'Cashier';
+
+export const UNITS = ['pcs', 'kg', 'g', 'L', 'ml'] as const;
+export type Unit = (typeof UNITS)[number];
+
+export type Ingredient = {
+  id: number;
+  name: string;
+  unit: Unit;
+  balance: number;
+  costPerUnit: number;
+  value: number;
+  entryCount: number;
+  lastEntry: {
+    type: string;
+    quantity: number;
+    note: string;
+    userName: string;
+    createdAt: string;
+  } | null;
+};
+
+export type StockEntry = {
+  id: number;
+  ingredientId: number;
+  ingredientName?: string;
+  unit?: string;
+  type: 'restock' | 'usage' | 'wastage';
+  quantity: number;
+  note: string;
+  userId: number;
+  userName: string;
+  createdAt: string;
+};
+
 export type User = {
   _id: number;
   id: number;
   username: string;
   fullname: string;
   has_pin?: boolean;
-  perm_products: number;
-  perm_categories: number;
-  perm_transactions: number;
-  perm_users: number;
-  perm_settings: number;
+  role: Role;
   status?: string;
 };
 
@@ -23,13 +54,13 @@ export type Product = {
   cost: number;
   category: string;
   category_id: number | null;
-  quantity: number;
-  stock: number;
-  trackStock: boolean;
-  lowStockThreshold: number;
   img: string;
   hot: boolean;
   featureAsDailySpecial: boolean;
+  quantity?: number;
+  stock?: number;
+  trackStock?: boolean;
+  lowStockThreshold?: number;
   components?: ProductComponent[];
   sizes?: ProductSize[];
   modifiers?: ModifierGroup[];
@@ -39,6 +70,7 @@ export type ProductSize = {
   id?: number;
   name: string;
   price: number;
+  cost: number;
   position?: number;
 };
 
@@ -56,24 +88,15 @@ export type ModifierGroup = { name: string; options: ModifierOption[] };
 export type SelectedVariant = { group: string; name: string; priceDelta: number };
 export type SelectedModifier = { name: string; priceDelta: number };
 
-export type StockMovement = {
+export type DrawerSession = {
   id: number;
-  productId: number;
-  type: 'sale' | 'restock' | 'wastage' | 'adjustment';
-  quantityChange: number;
-  quantityAfter: number;
-  reason?: string;
-  referenceId?: number;
-  referenceType?: string;
-  userId: number;
-  userName: string;
-  createdAt: string;
-  productName?: string;
-};
-
-export type StockMovementsResponse = {
-  movements: StockMovement[];
-  total: number;
+  till: number;
+  floatAmount: number;
+  countedCash: number | null;
+  variance: number | null;
+  status: string;
+  openedAt: string;
+  closedAt: string | null;
 };
 
 export type AuditLog = {
@@ -156,7 +179,6 @@ export type CartItem = {
   price: number;
   basePrice?: number;
   quantity: number;
-  stock: number;
   cost?: number;
   categoryId?: number;
   categoryName?: string;
@@ -277,7 +299,11 @@ export function getStoredUser(): User | null {
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const user = JSON.parse(raw) as User;
+    // Sessions saved before the roles upgrade carry perm_* fields and no role —
+    // treat them as signed out so the shell never renders with a missing role.
+    if (!user?.role) return null;
+    return user;
   } catch {
     return null;
   }
@@ -342,12 +368,62 @@ export const api = {
       false
     ),
 
-  loginByPin: (pin: string) =>
+  loginByPin: (userId: number, pin: string) =>
     request<{ user: User; token: string }>(
       '/users/login-pin',
-      { method: 'POST', body: JSON.stringify({ pin }) },
+      { method: 'POST', body: JSON.stringify({ userId, pin }) },
       false
     ),
+
+  getPinUsers: () =>
+    request<{ id: number; fullname: string; role: Role }[]>('/users/pin-users', {}, false),
+
+  getIngredients: () => request<Ingredient[]>('/stock/ingredients'),
+
+  createIngredient: (body: { name: string; unit: Unit; costPerUnit?: number }) =>
+    request<Ingredient>('/stock/ingredients', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateIngredient: (id: number, body: { name: string; unit: Unit; costPerUnit?: number }) =>
+    request(`/stock/ingredients/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  deleteIngredient: (id: number) =>
+    request(`/stock/ingredients/${id}`, { method: 'DELETE' }),
+
+  restock: (body: { ingredientId: number; quantity: number; paid?: number; note?: string }) =>
+    request<{ ok: boolean; id: number }>('/stock/restock', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getStockSummary: (params?: { start?: string; end?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.start) q.append('start', params.start);
+    if (params?.end) q.append('end', params.end);
+    return request<{
+      items: number;
+      outOfStock: number;
+      changesToday: number;
+      stockWorth: number;
+      spentTotal: number;
+    }>(`/stock/summary${q.toString() ? `?${q.toString()}` : ''}`);
+  },
+
+  getStockEntries: (params?: { ingredientId?: number; type?: string; startDate?: string; endDate?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.ingredientId) q.append('ingredientId', String(params.ingredientId));
+    if (params?.type) q.append('type', params.type);
+    if (params?.startDate) q.append('startDate', params.startDate);
+    if (params?.endDate) q.append('endDate', params.endDate);
+    return request<{ entries: StockEntry[]; total: number }>(
+      `/stock/entries${q.toString() ? `?${q.toString()}` : ''}`
+    );
+  },
+
+  logUsage: (body: { ingredientId: number; quantity: number; type: 'usage' | 'wastage'; note?: string }) =>
+    request<{ ok: boolean; id: number }>('/stock/usage', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   getFirstRun: () => request<{ firstRun: boolean }>('/setup/first-run', {}, false),
 
@@ -483,39 +559,7 @@ export const api = {
   deleteMedia: (id: number) =>
     request(`/media/library/${id}`, { method: 'DELETE' }),
 
-  adjustStock: (productId: number, body: {
-      type: 'restock' | 'wastage' | 'adjustment';
-      quantityChange: number;
-      reason?: string;
-      userId?: number;
-      userName?: string;
-    }) => request<Product>(`/inventory/product/${productId}/adjust-stock`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
 
-    getStockMovements: (params?: {
-      productId?: number;
-      type?: string;
-      startDate?: string;
-      endDate?: string;
-      limit?: number;
-      offset?: number;
-    }) => {
-      const q = new URLSearchParams();
-      if (params?.productId) q.append('productId', String(params.productId));
-      if (params?.type) q.append('type', params.type);
-      if (params?.startDate) q.append('startDate', params.startDate);
-      if (params?.endDate) q.append('endDate', params.endDate);
-      if (params?.limit) q.append('limit', String(params.limit));
-      if (params?.offset) q.append('offset', String(params.offset));
-      return request<StockMovementsResponse>(`/inventory/stock-movements?${q}`);
-    },
-
-    getProductStockMovements: (productId: number, limit = 100, offset = 0) =>
-      request<StockMovementsResponse>(
-        `/inventory/product/${productId}/stock-movements?limit=${limit}&offset=${offset}`
-      ),
 
     getPrinterSettings: () =>
       request<{ printer: PrinterSettings }>('/printer/settings'),
@@ -543,19 +587,19 @@ export const api = {
       const q = new URLSearchParams();
       if (params?.status) q.append('status', params.status);
       if (params?.till) q.append('till', String(params.till));
-      return request<{ id: number; till: number; float_amount: number; counted_cash: number; variance: number; status: string; opened_at: string; closed_at: string }[]>(
+      return request<DrawerSession[]>(
         `/drawer?${q}`
       );
     },
 
     openDrawerSession: (body: { floatAmount: number; till: number }) =>
-      request<{ id: number; till: number; float_amount: number; counted_cash: number; variance: number; status: string; opened_at: string; closed_at: string }>(
+      request<DrawerSession>(
         `/drawer/open`,
         { method: 'POST', body: JSON.stringify(body) }
       ),
 
     closeDrawerSession: (sessionId: number, body: { countedCash: number }) =>
-      request<{ id: number; till: number; float_amount: number; counted_cash: number; variance: number; status: string; opened_at: string; closed_at: string }>(
+      request<DrawerSession>(
         `/drawer/${sessionId}/close`,
         { method: 'POST', body: JSON.stringify(body) }
       ),

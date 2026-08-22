@@ -52,13 +52,10 @@ export async function initDatabase(filePath) {
       password TEXT NOT NULL,
       pin TEXT NOT NULL DEFAULT '',
       fullname TEXT NOT NULL DEFAULT '',
-      perm_products INTEGER NOT NULL DEFAULT 0,
-      perm_categories INTEGER NOT NULL DEFAULT 0,
-      perm_transactions INTEGER NOT NULL DEFAULT 0,
-      perm_users INTEGER NOT NULL DEFAULT 0,
-      perm_settings INTEGER NOT NULL DEFAULT 0,
+      role TEXT NOT NULL DEFAULT 'Cashier',
       status TEXT NOT NULL DEFAULT '',
-      force_password_change INTEGER NOT NULL DEFAULT 0
+      force_password_change INTEGER NOT NULL DEFAULT 0,
+      last_login_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS categories (
@@ -221,6 +218,29 @@ export async function initDatabase(filePath) {
     CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_till ON transactions(till);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+
+    CREATE TABLE IF NOT EXISTS ingredients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      unit TEXT NOT NULL,
+      cost_per_unit REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ingredient_id INTEGER NOT NULL,
+      type TEXT NOT NULL, -- 'restock' | 'usage' | 'wastage'
+      quantity REAL NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      user_id INTEGER NOT NULL DEFAULT 0,
+      user_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stock_entries_ingredient ON stock_entries(ingredient_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_entries_created ON stock_entries(created_at);
 
     CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -397,12 +417,13 @@ logger.debug('db.exec() completed successfully');
     /* ignore */
   }
 
-  // Migration: add cost column to product_sizes if it doesn't exist
+  // Migration: add cost column to product_sizes if it was created by an older
+  // schema without it (per-size cost rides these rows since ADR-0003).
   try {
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='product_sizes'").all();
-    if (tables.length === 0) {
-      // Table doesn't exist yet, add cost column in the main schema creation
-      // This will be handled by the main schema creation below
+    const sizeCols = db.prepare('PRAGMA table_info(product_sizes)').all();
+    if (sizeCols.length > 0 && !sizeCols.some((c) => c.name === 'cost')) {
+      logger.info('Adding cost column to product_sizes table');
+      db.exec('ALTER TABLE product_sizes ADD COLUMN cost REAL NOT NULL DEFAULT 0');
     }
   } catch {
     /* ignore */
@@ -414,6 +435,38 @@ logger.debug('db.exec() completed successfully');
     if (!cols.some((c) => c.name === 'shift_id')) {
       db.prepare("ALTER TABLE transactions ADD COLUMN shift_id INTEGER").run();
       db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_shift ON transactions(shift_id)").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: create ingredient ledger tables if they don't exist (ADR-0005)
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ingredients'").all();
+    if (tables.length === 0) {
+      db.exec(`
+        CREATE TABLE ingredients (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          unit TEXT NOT NULL,
+          cost_per_unit REAL NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE stock_entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ingredient_id INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          quantity REAL NOT NULL,
+          unit_cost REAL NOT NULL DEFAULT 0,
+          note TEXT NOT NULL DEFAULT '',
+          user_id INTEGER NOT NULL DEFAULT 0,
+          user_name TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_stock_entries_ingredient ON stock_entries(ingredient_id);
+        CREATE INDEX idx_stock_entries_created ON stock_entries(created_at);
+      `);
     }
   } catch {
     /* ignore */
@@ -512,6 +565,43 @@ logger.debug('db.exec() completed successfully');
     db.exec('ALTER TABLE users ADD COLUMN force_password_change INTEGER NOT NULL DEFAULT 0');
   }
 
+  // Migration: money columns for the stock ledger (what you paid / what it is worth)
+  try {
+    const ingCols = db.prepare('PRAGMA table_info(ingredients)').all();
+    if (ingCols.length > 0 && !ingCols.some((c) => c.name === 'cost_per_unit')) {
+      logger.info('Adding cost_per_unit column to ingredients table');
+      db.exec('ALTER TABLE ingredients ADD COLUMN cost_per_unit REAL NOT NULL DEFAULT 0');
+    }
+    const seCols = db.prepare('PRAGMA table_info(stock_entries)').all();
+    if (seCols.length > 0 && !seCols.some((c) => c.name === 'unit_cost')) {
+      logger.info('Adding unit_cost column to stock_entries table');
+      db.exec('ALTER TABLE stock_entries ADD COLUMN unit_cost REAL NOT NULL DEFAULT 0');
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migration: proper last-login data instead of 'Logged In_<timestamp>' in status.
+  if (!cols.includes('last_login_at')) {
+    logger.info('Adding last_login_at column to users table');
+    db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
+  }
+
+  // Migration: replace flat permission booleans with a single Role (ADR-0006).
+  // Existing users migrate sensibly: team/settings managers become Admin,
+  // anyone with menu/till access becomes Manager, everyone else Cashier.
+  if (!cols.includes('role')) {
+    logger.info('Adding role column to users table and migrating permission booleans');
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'Cashier'");
+    db.prepare("UPDATE users SET role = 'Admin' WHERE id = 1").run();
+    db.prepare(
+      "UPDATE users SET role = 'Admin' WHERE perm_users = 1 OR perm_settings = 1"
+    ).run();
+    db.prepare(
+      "UPDATE users SET role = 'Manager' WHERE role = 'Cashier' AND (perm_products = 1 OR perm_categories = 1 OR perm_transactions = 1)"
+    ).run();
+  }
+
   const settingsCols = db.prepare("PRAGMA table_info(settings)").all().map((c) => c.name);
   if (!settingsCols.includes('jwt_secret')) {
     logger.info('Adding jwt_secret column to settings table');
@@ -527,10 +617,12 @@ function seedDefaults() {
   if (!admin) {
     const hash = bcrypt.hashSync('admin', 10);
     db.prepare(
-      `INSERT INTO users (id, username, password, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings, force_password_change)
-       VALUES (1, 'admin', ?, 'Administrator', 1, 1, 1, 1, 1, 1)`
+      `INSERT INTO users (id, username, password, fullname, role, force_password_change)
+       VALUES (1, 'admin', ?, 'Administrator', 'Admin', 1)`
     ).run(hash);
   } else {
+    // The default admin account always holds the Admin role.
+    db.prepare("UPDATE users SET role = 'Admin' WHERE id = 1").run();
     // Ensure existing admin has force_password_change flag set
     db.prepare("UPDATE users SET force_password_change = 1 WHERE id = 1 AND username = 'admin'").run();
   }
@@ -575,13 +667,10 @@ export function mapUser(row) {
     username: row.username,
     fullname: row.fullname,
     has_pin: !!row.pin,
-    perm_products: row.perm_products,
-    perm_categories: row.perm_categories,
-    perm_transactions: row.perm_transactions,
-    perm_users: row.perm_users,
-    perm_settings: row.perm_settings,
+    role: row.role || 'Cashier',
     force_password_change: !!row.force_password_change,
     status: row.status,
+    lastLoginAt: row.last_login_at || null,
   };
 }
 
@@ -595,10 +684,6 @@ export function mapProduct(row) {
     cost: row.cost || 0,
     category: row.category,
     category_id: row.category_id,
-    quantity: row.quantity,
-    stock: row.stock,
-    trackStock: !!row.stock,
-    lowStockThreshold: row.low_stock_threshold || 10,
     img: row.img,
     components: [],
   };

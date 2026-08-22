@@ -9,3 +9,15 @@ The till previously had no order-type concept and a flat `Product` (single price
 When a Product has variants and/or modifiers, clicking it opens a selection popup; the chosen `variantSelections` and `modifiers` are stored on the cart **Item**, the line price is recomputed as `base + Σ variant deltas + Σ modifier deltas`, and both are persisted on the saved `Transaction` and printed on the receipt. This keeps recognition-first UI (compact tiles, only-prompt-when-needed) while moving the data model from flat to choice-aware.
 
 Deferred (explicit no-s): dine-in table numbers, per-topping quantity (e.g. double cheese), and variant/modifier management UI in the catalog — each is a separate follow-up.
+
+## Addendum (2026-08-22): either/or price rule for variants
+
+The "zero or more variant groups" framing above proved confusing in the product form,
+where a base price and per-size prices coexisted as two competing sources of truth
+(the till silently preferred size prices; cards always showed base). Superseding rule:
+a Product carries **either one base price or variant prices — never both**; adding the
+first variant replaces the base price in the form. Variants carry absolute prices (not
+deltas) and, like simple products, each also carries its own **cost** so margin is
+correct per size (`product_sizes.cost` existed but was never editable before this).
+Till cards show "From £<cheapest variant>" when sized. See CONTEXT.md **Variant**.
+

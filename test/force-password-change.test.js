@@ -45,7 +45,7 @@ describe('Force password change on first login', () => {
 
     const { status, data } = await app.client.request(
       '/api/users/login-pin',
-      { method: 'POST', body: JSON.stringify({ pin: '1234' }) }
+      { method: 'POST', body: JSON.stringify({ userId: 1, pin: '1234' }) }
     );
     expect(status).toBe(200);
     expect(data.force_password_change).toBe(true);

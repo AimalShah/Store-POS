@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { getDb, mapCategory } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireManager,
+} from '../auth.js';
 
 const router = Router();
 
@@ -9,7 +12,7 @@ router.get('/all', asyncHandler(async (_req, res) => {
   res.json(rows.map(mapCategory));
 }));
 
-router.post('/category', requirePerm('perm_categories'), asyncHandler(async (req, res) => {
+router.post('/category', requireManager, asyncHandler(async (req, res) => {
   const name = req.body?.name;
   const icon = req.body?.icon || 'Utensils';
   const color = req.body?.color || 'gray';
@@ -26,7 +29,7 @@ router.post('/category', requirePerm('perm_categories'), asyncHandler(async (req
   }
 }));
 
-router.put('/category', requirePerm('perm_categories'), asyncHandler(async (req, res) => {
+router.put('/category', requireManager, asyncHandler(async (req, res) => {
   const id = parseInt(req.body?.id ?? req.body?._id, 10);
   const name = req.body?.name;
   const icon = req.body?.icon || 'Utensils';
@@ -42,7 +45,7 @@ router.put('/category', requirePerm('perm_categories'), asyncHandler(async (req,
   }
 }));
 
-router.delete('/category/:categoryId', requirePerm('perm_categories'), asyncHandler(async (req, res) => {
+router.delete('/category/:categoryId', requireManager, asyncHandler(async (req, res) => {
   // ON DELETE SET NULL on category_id FK will handle setting products' category_id to NULL
   getDb()
     .prepare('DELETE FROM categories WHERE id = ?')

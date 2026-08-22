@@ -4,10 +4,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer } from '../server/index.js';
 
-export async function bootApp() {
+// bootApp({ dbPath }) reuses an existing database file (for legacy-upgrade
+// simulations); bootApp() creates a throwaway one.
+export async function bootApp({ dbPath: existingDbPath } = {}) {
   const tmp = path.join(os.tmpdir(), `pos-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const dbPath = path.join(tmp, 'pos-test.sqlite');
-  const uploadsPath = path.join(tmp, 'uploads');
+  const dbPath = existingDbPath || path.join(tmp, 'pos-test.sqlite');
+  const baseDir = existingDbPath ? path.dirname(existingDbPath) : tmp;
+  const uploadsPath = path.join(baseDir, 'uploads');
   fs.mkdirSync(uploadsPath, { recursive: true });
 
   const app = await createServer({
@@ -53,6 +56,7 @@ export async function bootApp() {
 
   return {
     client,
+    dbPath,
     async createProduct(name = 'Cola', price = 2.5, category = 'Drinks', stock = true, quantity = 10) {
       await client.login();
       const fd = new FormData();

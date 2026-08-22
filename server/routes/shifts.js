@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { getDb, mapShift, mapTransaction } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireManager,
+} from '../auth.js';
 
 const router = Router();
 
@@ -97,7 +100,7 @@ router.get('/open', asyncHandler(async (req, res) => {
 }));
 
 // Get all shifts with filters
-router.get('/', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.get('/', requireManager, asyncHandler(async (req, res) => {
   const db = getDb();
   const status = req.query.status;
   const till = parseInt(req.query.till, 10) || 0;
@@ -184,7 +187,7 @@ router.post('/:shiftId/close', asyncHandler(async (req, res) => {
 }));
 
 // Get X report for a shift
-router.get('/:shiftId/x-report', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.get('/:shiftId/x-report', requireManager, asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const db = getDb();
 
@@ -198,7 +201,7 @@ router.get('/:shiftId/x-report', requirePerm('perm_transactions'), asyncHandler(
 }));
 
 // Get Z report for a shift
-router.get('/:shiftId/z-report', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.get('/:shiftId/z-report', requireManager, asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const db = getDb();
 
@@ -212,7 +215,7 @@ router.get('/:shiftId/z-report', requirePerm('perm_transactions'), asyncHandler(
 }));
 
 // Get transactions for a shift
-router.get('/:shiftId/transactions', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.get('/:shiftId/transactions', requireManager, asyncHandler(async (req, res) => {
   const shiftId = parseInt(req.params.shiftId, 10);
   const db = getDb();
 

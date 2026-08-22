@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Store, Zap, ClipboardList, Utensils, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Store, Zap, ClipboardList, Utensils, ShieldCheck, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { api, Role } from '../api/client';
 import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -9,20 +11,42 @@ import PinPad from '../components/PinPad';
 
 const YEAR = new Date().getFullYear();
 
+type MemberTile = { id: number; fullname: string; role: Role };
+
 export default function LoginPage() {
   const { login, loginByPin, serverError } = useAuth();
-  const [mode, setMode] = useState<'pin' | 'password'>('pin');
+  const [mode, setMode] = useState<'tiles' | 'pin' | 'password'>('tiles');
+  const [members, setMembers] = useState<MemberTile[]>([]);
+  const [member, setMember] = useState<MemberTile | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    api
+      .getPinUsers()
+      .then((tiles) => {
+        setMembers(tiles);
+        // No PIN members configured — fall straight to password sign-in.
+        if (!tiles.length) setMode('password');
+      })
+      .catch(() => setMode('password'));
+  }, []);
+
+  const chooseMember = (m: MemberTile) => {
+    setMember(m);
+    setMode('pin');
+    setPinError(null);
+  };
+
   const onPinSubmit = async (pin: string) => {
+    if (!member) return;
     setPinError(null);
     setBusy(true);
     try {
-      await loginByPin(pin);
+      await loginByPin(member.id, pin);
     } catch (err) {
       setPinError(err instanceof Error ? err.message : 'Incorrect PIN');
       setBusy(false);
@@ -108,9 +132,9 @@ export default function LoginPage() {
               </div>
               <CardTitle className="text-xl">Welcome back</CardTitle>
               <CardDescription>
-                {mode === 'pin'
-                  ? 'Enter your PIN to open the till'
-                  : 'Sign in with your password'}
+                {mode === 'tiles' && 'Who is working the till?'}
+                {mode === 'pin' && `PIN for ${member?.fullname ?? ''}`}
+                {mode === 'password' && 'Admin sign in with your password'}
               </CardDescription>
             </CardHeader>
 
@@ -121,9 +145,70 @@ export default function LoginPage() {
                 </p>
               )}
 
-              {mode === 'pin' ? (
-                <PinPad onSubmit={onPinSubmit} error={pinError} busy={busy} autoSubmit />
-              ) : (
+              {mode === 'tiles' && (
+                <div className="grid grid-cols-2 gap-2">
+                  {members.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => chooseMember(m)}
+                      className="flex flex-col items-start gap-1.5 rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                        {(m.fullname || '?')
+                          .split(' ')
+                          .map((p) => p[0])
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .join('')
+                          .toUpperCase()}
+                      </span>
+                      <span className="w-full truncate text-sm font-medium">{m.fullname}</span>
+                      <Badge variant={m.role === 'Admin' ? 'default' : 'secondary'}>{m.role}</Badge>
+                    </button>
+                  ))}
+                  {!members.length && (
+                    <p className="col-span-2 text-center text-sm text-muted-foreground">
+                      No team members have a PIN yet.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {mode === 'tiles' && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full"
+                  onClick={() => {
+                    setMode('password');
+                    setPinError(null);
+                    setError(null);
+                  }}
+                >
+                  Sign in with password instead
+                </Button>
+              )}
+
+              {mode === 'pin' && member && (
+                <>
+                  <PinPad onSubmit={onPinSubmit} error={pinError} busy={busy} autoSubmit />
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="w-full"
+                    onClick={() => {
+                      setMode('tiles');
+                      setMember(null);
+                      setPinError(null);
+                    }}
+                  >
+                    <ChevronLeft className="size-4" /> Not you? Back to team
+                  </Button>
+                </>
+              )}
+
+              {mode === 'password' && (
                 <form className="flex flex-col gap-4" onSubmit={onPasswordSubmit}>
                   <div className="grid gap-2">
                     <Label htmlFor="username">Username</Label>
@@ -152,18 +237,19 @@ export default function LoginPage() {
                 </form>
               )}
 
-              <Button
-                type="button"
-                variant="link"
-                className="w-full"
-                onClick={() => {
-                  setMode(mode === 'pin' ? 'password' : 'pin');
-                  setPinError(null);
-                  setError(null);
-                }}
-              >
-                {mode === 'pin' ? 'Sign in with password instead' : 'Use PIN pad instead'}
-              </Button>
+              {mode === 'password' && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full"
+                  onClick={() => {
+                    setMode(members.length ? 'tiles' : 'password');
+                    setError(null);
+                  }}
+                >
+                  Use the team PIN board instead
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

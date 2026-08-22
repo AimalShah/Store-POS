@@ -57,6 +57,7 @@ import {
   buildTopProducts,
   type TopProduct,
 } from '../lib/dashboard';
+import { isLowStock, getStockQuantity, getLowStockThreshold } from '../lib/stock';
 
 type StockSummary = { items: number; outOfStock: number; changesToday: number; stockWorth: number; spentTotal: number } | null;
 
@@ -67,6 +68,7 @@ type DashboardState = {
   categorySlices: CategorySlice[];
   topProducts: TopProduct[];
   stock: StockSummary;
+  lowStockProducts: Product[];
   loading: boolean;
   error: string | null;
 };
@@ -109,6 +111,7 @@ export default function DashboardView({
     categorySlices: [],
     topProducts: [],
     stock: null,
+    lowStockProducts: [],
     loading: true,
     error: null,
   });
@@ -139,7 +142,7 @@ export default function DashboardView({
       const activeRange = range ?? buildDateRange('today');
       const prev = previousRange(activeRange);
 
-      const [current, prevTx, held, categories, stock] = await Promise.all([
+      const [current, prevTx, held, categories, stock, products] = await Promise.all([
         api
           .getByDate({ start: activeRange.start, end: activeRange.end, user: 0, till: 0, status: 1 })
           .catch(() => [] as Transaction[]),
@@ -152,12 +155,14 @@ export default function DashboardView({
         api
           .getStockSummary({ start: activeRange.start, end: activeRange.end })
           .catch(() => null),
+        api.getProducts().catch(() => [] as Product[]),
       ]);
-      const kpis = computeKpis({ transactions: current, previous: prevTx, held });
+      const kpis = computeKpis({ transactions: current, previous: prevTx, held, products });
       const trend = buildTrendSeries(current, activeRange);
       const prevTrend = buildTrendSeries(prevTx, prev);
       const categorySlices = buildCategoryBreakdown(current, categories);
       const topProducts = buildTopProducts(current, 5);
+      const lowStockProducts = products.filter(isLowStock);
 
 
       setState({
@@ -167,6 +172,7 @@ export default function DashboardView({
         categorySlices,
         topProducts,
         stock,
+        lowStockProducts,
         loading: false,
         error: null,
       });
@@ -262,16 +268,7 @@ export default function DashboardView({
                 spark: state.trend.map(() => 0),
                 sparkColor: 'var(--chart-2)',
               },
-              {
-                title: 'Stock Changes Today',
-                value: String(state.stock.changesToday),
-                hint: 'Restocks, usage & wastage',
-                icon: <RefreshCw className="size-4 text-blue-600" />,
-                iconBg: 'bg-blue-100',
-                spark: state.trend.map(() => 0),
-                sparkColor: 'var(--chart-3)',
-              },
-              {
+{
                 title: 'Stock Worth',
                 value: fmt(state.stock.stockWorth),
                 hint: `What your ${state.stock.items} stock items are worth`,
@@ -291,6 +288,18 @@ export default function DashboardView({
               },
             ]
           : []),
+        {
+          title: 'Low Stock Products',
+          value: String(state.lowStockProducts.length),
+          hint:
+            state.lowStockProducts.length > 0
+              ? `${state.lowStockProducts.length} product(s) need attention`
+              : 'All products well stocked',
+          icon: <AlertTriangle className="size-4 text-amber-600" />,
+          iconBg: state.lowStockProducts.length > 0 ? 'bg-amber-100' : 'bg-green-100',
+          spark: state.trend.map(() => 0),
+          sparkColor: 'var(--chart-3)',
+        },
       ]
     : [];
 

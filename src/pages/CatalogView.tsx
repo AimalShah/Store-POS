@@ -17,6 +17,7 @@ import { Separator } from '../components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { highlight } from '../lib/highlight';
+import { isLowStock, getStockQuantity, getLowStockThreshold } from '../lib/stock';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,7 +46,7 @@ type ComponentForm = {
 
 type OptionForm = { name: string; priceDelta: string };
 type GroupForm = { name: string; options: OptionForm[] };
-type SizeForm = { name: string; price: string };
+type SizeForm = { name: string; price: string; cost: string };
 
 const emptyProduct = {
   id: '',
@@ -54,9 +55,6 @@ const emptyProduct = {
   cost: '', // Cost per item (Advanced)
   category: '',
   category_id: '',
-  quantity: '0',
-  trackStock: false, // Track stock count (Advanced)
-  lowStockThreshold: 10, // Low-stock alert at (Advanced)
   featureAsDailySpecial: false, // Feature as daily special (Essentials)
   img: '', // Photo optional (Essentials)
   components: [] as ComponentForm[],
@@ -97,10 +95,6 @@ export default function CatalogView({
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
-  const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
-  const [adjustType, setAdjustType] = useState<'restock' | 'wastage' | 'adjustment'>('restock');
-  const [adjustQty, setAdjustQty] = useState('');
-  const [adjustReason, setAdjustReason] = useState('');
   const [pending, setPending] = useState<{ kind: 'product' | 'bulk' | 'category'; id?: number } | null>(null);
   const uploads = getUploadsBase();
 
@@ -122,8 +116,7 @@ export default function CatalogView({
     fd.append('price', form.price || '0');
     fd.append('cost', form.cost || '0');
     fd.append('category', form.category);
-    fd.append('quantity', form.quantity || '0');
-    fd.append('stock', form.trackStock ? '1' : 'on');
+    fd.append('category_id', form.category_id || '');
     fd.append('hot', form.featureAsDailySpecial ? '1' : '0');
     fd.append('img', form.img);
     fd.append('components', JSON.stringify(form.components.filter((c) => c.id).map((c) => ({ id: Number(c.id), quantity: Number(c.quantity) || 1 }))));
@@ -132,7 +125,12 @@ export default function CatalogView({
       JSON.stringify(
         form.sizes
           .filter((s) => s.name.trim())
-          .map((s, i) => ({ name: s.name.trim(), price: parseFloat(s.price) || 0, position: i }))
+          .map((s, i) => ({
+            name: s.name.trim(),
+            price: parseFloat(s.price) || 0,
+            cost: parseFloat(s.cost) || 0,
+            position: i,
+          }))
       )
     );
     fd.append(
@@ -151,40 +149,6 @@ export default function CatalogView({
     await api.saveProduct(fd);
     setForm(emptyProduct);
     await onChanged();
-  };
-
-  const openAdjustDialog = (product: Product, type: 'restock' | 'wastage' | 'adjustment') => {
-    setAdjustProduct(product);
-    setAdjustType(type);
-    setAdjustQty('');
-    setAdjustReason('');
-  };
-
-  const handleAdjust = async () => {
-    if (!adjustProduct || !adjustQty.trim()) return;
-    const qty = parseInt(adjustQty, 10);
-    if (isNaN(qty) || qty === 0) return;
-
-    const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
-    const userId = user.id || 0;
-    const userName = user.fullname || '';
-
-    setBusy(true);
-    try {
-      await api.adjustStock(adjustProduct.id, {
-        type: adjustType,
-        quantityChange: adjustType === 'wastage' ? -Math.abs(qty) : qty,
-        reason: adjustReason,
-        userId,
-        userName,
-      });
-      setAdjustProduct(null);
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Adjustment failed');
-    } finally {
-      setBusy(false);
-    }
   };
 
   const addComponent = () => {
@@ -272,9 +236,6 @@ export default function CatalogView({
       cost: String(p.cost ?? '0'),
       category: p.category,
       category_id: p.category_id ? String(p.category_id) : '',
-      quantity: String(p.quantity),
-      trackStock: !!p.trackStock,
-      lowStockThreshold: p.lowStockThreshold || 10,
       featureAsDailySpecial: !!p.featureAsDailySpecial || p.hot,
       img: p.img || '',
       components: (p.components || []).map((c) => ({
@@ -284,6 +245,7 @@ export default function CatalogView({
       sizes: (p.sizes || []).map((s) => ({
         name: s.name,
         price: String(s.price),
+        cost: String(s.cost ?? 0),
       })),
       modifiers: (p.modifiers || []).map((g) => ({
         name: g.name,
@@ -429,18 +391,24 @@ export default function CatalogView({
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="product-price">Price</Label>
-                  <Input
-                    id="product-price"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={form.price}
-                    onChange={(e) => setForm({ ...form, price: e.target.value })}
-                    placeholder="0.00"
-                  />
-                </div>
+                {form.sizes.length === 0 ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="product-price">Price</Label>
+                    <Input
+                      id="product-price"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      value={form.price}
+                      onChange={(e) => setForm({ ...form, price: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Priced by size below — base price comes from the cheapest size.
+                  </p>
+                )}
 
                 <PhotoPicker
                   value={form.img}
@@ -484,58 +452,23 @@ export default function CatalogView({
                 >
                   <div>
                     <h3 className="text-sm font-semibold">Advanced</h3>
-                    <p className="text-xs text-muted-foreground">Managers only — cost, stock, modifiers, combos.</p>
+                    <p className="text-xs text-muted-foreground">Managers only — cost, modifiers, combos.</p>
                   </div>
                   <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', showAdvanced && 'rotate-180')} />
                 </button>
                 {showAdvanced && (
                   <div className="space-y-4 border-t p-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="product-cost">Cost per item</Label>
-                      <Input
-                        id="product-cost"
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        value={form.cost}
-                        onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="track-stock"
-                        checked={form.trackStock}
-                        onCheckedChange={(checked) => setForm({ ...form, trackStock: checked })}
-                      />
-                      <Label htmlFor="track-stock">Track stock count</Label>
-                    </div>
-
-                    {form.trackStock && (
+                    {form.sizes.length === 0 && (
                       <div className="space-y-2">
-                        <Label htmlFor="product-quantity">Quantity on hand</Label>
+                        <Label htmlFor="product-cost">Cost per item</Label>
                         <Input
-                          id="product-quantity"
+                          id="product-cost"
                           type="number"
+                          step="0.01"
                           min={0}
-                          value={form.quantity}
-                          onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                          placeholder="0"
-                        />
-                      </div>
-                    )}
-
-                    {form.trackStock && (
-                      <div className="space-y-2">
-                        <Label htmlFor="product-low-stock">Low-stock alert at</Label>
-                        <Input
-                          id="product-low-stock"
-                          type="number"
-                          min={1}
-                          value={form.lowStockThreshold || 10}
-                          onChange={(e) => setForm({ ...form, lowStockThreshold: parseInt(e.target.value, 10) || 10 })}
-                          placeholder="10"
+                          value={form.cost}
+                          onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                          placeholder="0.00"
                         />
                       </div>
                     )}
@@ -552,7 +485,7 @@ export default function CatalogView({
                       {form.components.length === 0 && (
                         <p className="text-sm text-muted-foreground">
                           No components. Add products to create a combo (e.g., Meal = Burger + Fries + Drink).
-                          Components are printed on receipts but do not affect stock.
+                          Components are printed on receipts.
                         </p>
                       )}
                       {form.components.map((comp, idx) => (
@@ -597,15 +530,17 @@ export default function CatalogView({
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>
-                          Sizes
+                          {form.sizes.length > 0 ? 'Sells by size' : 'Sizes'}
                           <span className="ml-1 text-xs font-normal text-muted-foreground">
-                            each size has its own price
+                            {form.sizes.length > 0
+                              ? 'each size carries its own price and cost'
+                              : 'add one to replace the base price'}
                           </span>
                         </Label>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setForm((prev) => ({ ...prev, sizes: [...prev.sizes, { name: '', price: '' }] }))}
+                          onClick={() => setForm((prev) => ({ ...prev, sizes: [...prev.sizes, { name: '', price: '', cost: '' }] }))}
                         >
                           + Add Size
                         </Button>
@@ -640,8 +575,24 @@ export default function CatalogView({
                                   sizes: prev.sizes.map((x, i) => (i === si ? { ...x, price: e.target.value } : x)),
                                 }))
                               }
-                              placeholder="0.00"
-                              className="h-9 w-24"
+                              placeholder="Price"
+                              className="h-9 w-20"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">{symbol}</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={s.cost}
+                              onChange={(e) =>
+                                setForm((prev) => ({
+                                  ...prev,
+                                  sizes: prev.sizes.map((x, i) => (i === si ? { ...x, cost: e.target.value } : x)),
+                                }))
+                              }
+                              placeholder="Cost"
+                              className="h-9 w-20"
                             />
                           </div>
                           <Button
@@ -766,8 +717,6 @@ export default function CatalogView({
                     <TableHead>ID</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Price</TableHead>
-                    <TableHead>Stock</TableHead>
-                    <TableHead>Low Stock</TableHead>
                     <TableHead className="w-64 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -814,44 +763,24 @@ export default function CatalogView({
                       </TableCell>
                       <TableCell className="font-mono text-sm">{p.id}</TableCell>
                       <TableCell>
-                        <div className="font-medium">{p.name}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{p.name}</span>
+                          {isLowStock(p) && (
+                            <Badge variant="destructive" className="text-xs">
+                              Low stock
+                            </Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{p.category || 'Uncategorized'}</div>
+                        {isLowStock(p) && (
+                          <p className="text-xs text-destructive mt-1">
+                            Only {getStockQuantity(p)} left (threshold: {getLowStockThreshold(p)})
+                          </p>
+                        )}
                       </TableCell>
                         <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{Number(p.price).toFixed(2)}</span></TableCell>
-                      <TableCell>
-                        {p.trackStock ? (
-                          <>
-                            <span className={p.quantity <= 0 ? highlight.red : p.quantity <= (p.lowStockThreshold || 10) ? highlight.amber : highlight.green}>
-                              {p.quantity}
-                            </span>
-                            {p.quantity <= 0 && <Badge variant="destructive" className="ml-1 text-xs">Out of stock</Badge>}
-                            {p.quantity > 0 && p.quantity <= (p.lowStockThreshold || 10) && (
-                              <Badge variant="secondary" className="ml-1 text-xs">Low stock</Badge>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {p.trackStock ? (
-                          <Badge variant="outline" className="text-xs">{p.lowStockThreshold || 10}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {p.trackStock && (
-                            <>
-                              <Button variant="outline" size="sm" onClick={() => openAdjustDialog(p, 'restock')}>
-                                + Restock
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => openAdjustDialog(p, 'wastage')}>
-                                - Wastage
-                              </Button>
-                    </>
-                    )}
                           <Button variant="ghost" size="icon" aria-label={`Edit ${p.name}`} onClick={() => editProduct(p)}>
                             <Pencil className="size-4" />
                           </Button>
@@ -870,7 +799,7 @@ export default function CatalogView({
                   ))}
                   {!visible.length && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                         No products yet
                       </TableCell>
                     </TableRow>
@@ -1048,76 +977,6 @@ export default function CatalogView({
       )}
 
       {/* Stock Adjustment Dialog */}
-      <Dialog open={!!adjustProduct} onOpenChange={(open) => !open && setAdjustProduct(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {adjustType === 'restock' ? 'Restock' : adjustType === 'wastage' ? 'Record Wastage' : 'Adjust Stock'}
-              {adjustProduct && <span className="ml-2 text-base font-normal text-muted-foreground">— {adjustProduct.name}</span>}
-            </DialogTitle>
-            <DialogDescription>
-              {adjustType === 'restock'
-                ? 'Add inventory to increase stock on hand.'
-                : adjustType === 'wastage'
-                ? 'Record items that were wasted, damaged, or expired.'
-                : 'Manually adjust stock level (positive or negative).'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="adjust-type">Type</Label>
-              <Select value={adjustType} onValueChange={(v) => setAdjustType(v as 'restock' | 'wastage' | 'adjustment')}>
-                <SelectTrigger id="adjust-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="restock">Restock (+)</SelectItem>
-                  <SelectItem value="wastage">Wastage (-)</SelectItem>
-                  <SelectItem value="adjustment">Adjustment (±)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="adjust-qty">Quantity</Label>
-              <Input
-                id="adjust-qty"
-                type="number"
-                step={1}
-                value={adjustQty}
-                onChange={(e) => setAdjustQty(e.target.value)}
-                placeholder={adjustType === 'wastage' ? 'Quantity wasted' : 'Quantity to add'}
-                min={1}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="adjust-reason">Reason</Label>
-              <Input
-                id="adjust-reason"
-                value={adjustReason}
-                onChange={(e) => setAdjustReason(e.target.value)}
-                placeholder="e.g., New delivery, Damaged goods, Inventory count correction"
-              />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Current stock: <span className="font-medium">{adjustProduct?.quantity || 0}</span>
-              {' '}
-              {adjustProduct?.trackStock && (
-                <>
-                  | Low stock threshold: <span className="font-medium">{adjustProduct?.lowStockThreshold || 10}</span>
-                </>
-              )}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustProduct(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAdjust} disabled={busy || !adjustQty.trim()}>
-              {busy ? 'Saving...' : 'Save Adjustment'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
         <AlertDialogContent>

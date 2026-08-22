@@ -29,7 +29,7 @@ export default function AuditLogView({ canSettings }: Props) {
       <div className="space-y-6">
         <Card>
           <CardContent className="py-12 text-center">
-            <div className="text-destructive">Access denied. Requires perm_settings.</div>
+            <div className="text-destructive">Access denied. Requires the Admin role.</div>
           </CardContent>
         </Card>
       </div>

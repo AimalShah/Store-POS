@@ -13,12 +13,11 @@ afterEach(async () => {
 
 describe('JWT token generation and verification', () => {
   test('signToken produces a verifiable token', () => {
-    const user = { id: 1, username: 'admin', fullname: 'Administrator', perm_settings: 1 };
+    const user = { id: 1, username: 'admin', fullname: 'Administrator' };
     const token = signToken(user);
     const decoded = verifyToken(token);
     expect(decoded.id).toBe(1);
     expect(decoded.username).toBe('admin');
-    expect(decoded.perm_settings).toBe(1);
   });
 
   test('verifyToken rejects a token signed with the wrong secret', () => {
@@ -65,7 +64,7 @@ describe('Password login', () => {
 });
 
 describe('PIN login', () => {
-  test('correct PIN returns a token and user', async () => {
+  test('correct PIN for a specific member returns a token and user', async () => {
     const adminLogin = await app.client.login();
     await app.client.request(
       '/api/users/post',
@@ -78,7 +77,7 @@ describe('PIN login', () => {
 
     const { status, data } = await app.client.request(
       '/api/users/login-pin',
-      { method: 'POST', body: JSON.stringify({ pin: '1234' }) }
+      { method: 'POST', body: JSON.stringify({ userId: 1, pin: '1234' }) }
     );
     expect(status).toBe(200);
     expect(data.token).toBeTruthy();
@@ -87,7 +86,7 @@ describe('PIN login', () => {
   test('wrong PIN returns 401', async () => {
     const { status } = await app.client.request(
       '/api/users/login-pin',
-      { method: 'POST', body: JSON.stringify({ pin: '9999' }) }
+      { method: 'POST', body: JSON.stringify({ userId: 1, pin: '9999' }) }
     );
     expect(status).toBe(401);
   });
@@ -95,33 +94,28 @@ describe('PIN login', () => {
   test('empty PIN is rejected', async () => {
     const { status } = await app.client.request(
       '/api/users/login-pin',
-      { method: 'POST', body: JSON.stringify({ pin: '' }) }
+      { method: 'POST', body: JSON.stringify({ userId: 1, pin: '' }) }
     );
     expect([400, 401]).toContain(status);
   });
 });
 
-describe('Permission middleware (requirePerm)', () => {
-  test('returns 403 when the user lacks the permission', async () => {
+describe('Role middleware', () => {
+  test('returns 403 when the role is not allowed for the area', async () => {
     const adminLogin = await app.client.login();
-    const { data: created } = await app.client.request('/api/users/post', {
+    await app.client.request('/api/users/post', {
       method: 'POST',
       body: JSON.stringify({
-        username: 'noperms',
-        password: 'noperms123',
-        fullname: 'No Perms',
-        perm_products: 0,
-        perm_categories: 0,
-        perm_transactions: 0,
-        perm_users: 0,
-        perm_settings: 0,
+        username: 'cashier',
+        password: 'cashier123',
+        fullname: 'Cashier',
+        role: 'Cashier',
       }),
     }, adminLogin.token);
-    expect(created.id).toBeTruthy();
 
     const login = await app.client.request(
       '/api/users/login',
-      { method: 'POST', body: JSON.stringify({ username: 'noperms', password: 'noperms123' }) }
+      { method: 'POST', body: JSON.stringify({ username: 'cashier', password: 'cashier123' }) }
     );
     const token = login.data.token;
 
@@ -129,7 +123,7 @@ describe('Permission middleware (requirePerm)', () => {
     expect(status).toBe(403);
   });
 
-  test('returns 200 when the user has the permission', async () => {
+  test('returns 200 when the role is allowed for the area', async () => {
     const login = await app.client.login();
     const { status } = await app.client.request('/api/printer/settings', {}, login.token);
     expect(status).toBe(200);

@@ -4,7 +4,10 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getDb, mapSettings, auditLog } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireAdmin,
+} from '../auth.js';
 import logger from '../logger.js';
 
 export default function settingsRouter(uploadsPath) {
@@ -35,7 +38,7 @@ export default function settingsRouter(uploadsPath) {
 
   router.post(
     '/post',
-    requirePerm('perm_settings'),
+    requireAdmin,
     upload.single('imagename'),
     asyncHandler(async (req, res) => {
       const body = req.body || {};

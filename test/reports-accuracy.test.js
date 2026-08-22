@@ -305,7 +305,6 @@ describe('computeKpis — UI dashboard maths', () => {
       transactions,
       previous: [],
       held: [{ id: 1 }],
-      products: [{ trackStock: true, quantity: 3, lowStockThreshold: 10 }],
     });
 
     expect(kpis.sales).toBeCloseTo(22);
@@ -315,11 +314,10 @@ describe('computeKpis — UI dashboard maths', () => {
     expect(kpis.profit).toBeCloseTo(12);
     expect(kpis.marginPct).toBeCloseTo((12 / 22) * 100);
     expect(kpis.heldOrders).toBe(1);
-    expect(kpis.lowStock).toBe(1);
   });
 
   test('handles an empty period without dividing by zero', () => {
-    const kpis = computeKpis({ transactions: [], previous: [], held: [], products: [] });
+    const kpis = computeKpis({ transactions: [], previous: [], held: [] });
     expect(kpis.aov).toBe(0);
     expect(kpis.marginPct).toBe(0);
     expect(kpis.orders).toBe(0);

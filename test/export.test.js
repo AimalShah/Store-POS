@@ -4,8 +4,7 @@ import {
   buildWorkbook,
   salesRows,
   catalogRows,
-  customerRows,
-  stockRows,
+  customerRows
 } from '../src/lib/export';
 
 describe('Export: CSV building', () => {
@@ -54,15 +53,8 @@ describe('Export: row builders map domain entities to flat rows', () => {
     expect(rows[0].items).toBe(3);
   });
 
-  test('customerRows and stockRows keep their columns', () => {
+  test('customerRows keeps its columns', () => {
     const c = customerRows([{ id: 1, name: 'Jo', phone: '1', email: 'a@b.c', address: 'St' }]);
     expect(c[0]).toEqual({ id: 1, name: 'Jo', phone: '1', email: 'a@b.c', address: 'St' });
-
-    const s = stockRows(
-      [{ id: 9, productId: 2, type: 'sale', quantityChange: -1, quantityAfter: 9, reason: 'Sale', referenceType: 'transaction', referenceId: 7, userName: 'admin', createdAt: 't' }],
-      [{ id: 2, name: 'Fries' }]
-    );
-    expect(s[0].product).toBe('Fries');
-    expect(s[0].quantity_change).toBe(-1);
   });
 });

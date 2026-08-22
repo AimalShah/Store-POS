@@ -70,15 +70,9 @@ describe('computeKpis', () => {
     expect(k.salesDeltaPct).toBe(100);
   });
 
-  test('counts held orders and low-stock products', () => {
+  test('counts held orders', () => {
     const held = [tx({ status: 0, ref_number: 'H-1' })];
-    const products = [
-      prod({ quantity: 3, lowStockThreshold: 10 }), // low stock
-      prod({ quantity: 50, lowStockThreshold: 10 }), // ok
-      prod({ quantity: 2, lowStockThreshold: 10, trackStock: false }), // not tracked
-    ];
-    const k = computeKpis({ transactions: [], previous: [], held, products });
+    const k = computeKpis({ transactions: [], previous: [], held, products: [] });
     expect(k.heldOrders).toBe(1);
-    expect(k.lowStock).toBe(1);
   });
 });

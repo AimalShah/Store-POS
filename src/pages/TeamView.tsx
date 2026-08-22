@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Pencil } from 'lucide-react';
-import { api } from '../api/client';
+import { Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { api, type Role } from '../api/client';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Checkbox } from '../components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
 import {
   Table,
   TableBody,
@@ -18,17 +36,21 @@ import { highlight } from '../lib/highlight';
 
 type UserRow = Awaited<ReturnType<typeof api.getUsers>>[number];
 
+const ROLES: Role[] = ['Admin', 'Manager', 'Cashier'];
+
+const ROLE_DESCRIPTION: Record<Role, string> = {
+  Admin: 'Everything, including Team and Settings',
+  Manager: 'Menu, Stock, Reports, Drawer — plus everything a Cashier can do',
+  Cashier: 'Till: orders, payment, customers',
+};
+
 type Form = {
   id: string;
   username: string;
   password: string;
   pin: string;
   fullname: string;
-  perm_products: boolean;
-  perm_categories: boolean;
-  perm_transactions: boolean;
-  perm_users: boolean;
-  perm_settings: boolean;
+  role: Role;
 };
 
 const EMPTY: Form = {
@@ -37,33 +59,15 @@ const EMPTY: Form = {
   password: '',
   pin: '',
   fullname: '',
-  perm_products: true,
-  perm_categories: true,
-  perm_transactions: true,
-  perm_users: false,
-  perm_settings: false,
+  role: 'Cashier',
 };
-
-type PermKey =
-  | 'perm_products'
-  | 'perm_categories'
-  | 'perm_transactions'
-  | 'perm_users'
-  | 'perm_settings';
-
-const PERMS: { key: PermKey; label: string }[] = [
-  ['perm_products', 'Catalog products'],
-  ['perm_categories', 'Categories'],
-  ['perm_transactions', 'Sales history'],
-  ['perm_users', 'Team'],
-  ['perm_settings', 'Settings'],
-].map(([key, label]) => ({ key: key as PermKey, label }));
 
 export default function TeamView() {
   const [list, setList] = useState<UserRow[]>([]);
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
 
   const load = async () => setList(await api.getUsers());
 
@@ -90,6 +94,7 @@ export default function TeamView() {
       await api.saveUser({ ...form });
       await load();
       setForm(EMPTY);
+      toast.success(form.id ? 'Team member updated' : 'Team member added');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -104,18 +109,26 @@ export default function TeamView() {
       password: '',
       pin: '',
       fullname: u.fullname,
-      perm_products: !!u.perm_products,
-      perm_categories: !!u.perm_categories,
-      perm_transactions: !!u.perm_transactions,
-      perm_users: !!u.perm_users,
-      perm_settings: !!u.perm_settings,
+      role: u.role ?? 'Cashier',
     });
+
+  const remove = async (u: UserRow) => {
+    try {
+      await api.deleteUser(u.id);
+      await load();
+      toast.success(`${u.fullname || u.username} removed`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{form.id ? 'Edit user' : 'New user'}</CardTitle>
+          <CardTitle className="text-base">{form.id ? 'Edit team member' : 'New team member'}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -134,6 +147,25 @@ export default function TeamView() {
               value={form.fullname}
               onChange={(e) => setForm({ ...form, fullname: e.target.value })}
             />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="role">Role</Label>
+            <Select
+              value={form.role}
+              onValueChange={(v) => setForm({ ...form, role: v as Role })}
+            >
+              <SelectTrigger id="role" className="w-full">
+                <SelectValue placeholder="Choose a role" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{ROLE_DESCRIPTION[form.role]}</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password">Password {form.id ? '(blank = keep)' : ''}</Label>
@@ -160,19 +192,8 @@ export default function TeamView() {
               }
             />
           </div>
-          <div className="flex flex-col gap-2">
-            {PERMS.map(({ key, label }) => (
-              <Label key={key} className="flex items-center gap-2 font-normal">
-                <Checkbox
-                  checked={form[key]}
-                  onCheckedChange={(checked) => setForm({ ...form, [key]: !!checked })}
-                />
-                {label}
-              </Label>
-            ))}
-          </div>
           <Button type="button" onClick={save} disabled={busy}>
-            {form.id ? 'Update' : 'Add'} user
+            {form.id ? 'Update' : 'Add'} team member
           </Button>
         </CardContent>
       </Card>
@@ -187,6 +208,7 @@ export default function TeamView() {
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Name</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>PIN</TableHead>
                 <TableHead className="text-right" />
               </TableRow>
@@ -196,6 +218,9 @@ export default function TeamView() {
                 <TableRow key={u.id}>
                   <TableCell className="font-medium"><span className={highlight.blue}>{u.username}</span></TableCell>
                   <TableCell>{u.fullname}</TableCell>
+                  <TableCell>
+                    <Badge variant={u.role === 'Admin' ? 'default' : 'secondary'}>{u.role}</Badge>
+                  </TableCell>
                   <TableCell>{u.has_pin ? 'Set' : '—'}</TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -207,6 +232,16 @@ export default function TeamView() {
                     >
                       <Pencil className="size-4" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove ${u.username}`}
+                      disabled={u.id === 1}
+                      onClick={() => setDeleteTarget(u)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -214,6 +249,23 @@ export default function TeamView() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {deleteTarget?.fullname || deleteTarget?.username}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              They will immediately lose access to the system. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => deleteTarget && remove(deleteTarget)}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

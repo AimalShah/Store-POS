@@ -7,6 +7,7 @@ import {
   setBaseUrl,
   storeSession,
   User,
+  Role,
   healthCheck,
 } from '../api/client';
 import type { ApiInfo } from '../vite-env';
@@ -20,11 +21,11 @@ type AuthState = {
   serverError: string | null;
   firstRun: boolean;
   login: (username: string, password: string) => Promise<void>;
-  loginByPin: (pin: string) => Promise<void>;
+  loginByPin: (userId: number, pin: string) => Promise<void>;
   completeFirstRun: (store: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshApiInfo: () => Promise<ApiInfo>;
-  hasPerm: (perm: keyof User) => boolean;
+  hasRole: (...roles: Role[]) => boolean;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -90,9 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setFirstRun(false);
   };
 
-  const loginByPin = async (pin: string) => {
+  const loginByPin = async (userId: number, pin: string) => {
     await refreshApiInfo();
-    const result = await api.loginByPin(pin);
+    const result = await api.loginByPin(userId, pin);
     storeSession(result.token, result.user);
     setToken(result.token);
     setUser(result.user);
@@ -118,10 +119,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  const hasPerm = (perm: keyof User) => {
+  const hasRole = (...roles: Role[]) => {
     if (!user) return false;
-    if (user._id === 1) return true;
-    return Boolean(user[perm]);
+    return roles.includes(user.role);
   };
 
   const value = useMemo(
@@ -137,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       completeFirstRun,
       logout,
       refreshApiInfo,
-      hasPerm,
+      hasRole,
     }),
     [ready, user, token, apiInfo, serverError, firstRun]
   );

@@ -117,11 +117,11 @@ describe('Checkout: split payment + change on cash line', () => {
     expect(tx.change).toBe(0);
   });
 
-  test('deducts stock for tracked products on paid completion', async () => {
+  test('completing a sale leaves product payloads untouched', async () => {
     const created = await app.createProduct('Stocked Cola', 2.5, 'Drinks', true, 10);
     const productId = created.id;
 
-    await app.client.request('/api/new', {
+    const { status } = await app.client.request('/api/new', {
       method: 'POST',
       body: JSON.stringify(
         saleBody({
@@ -132,37 +132,11 @@ describe('Checkout: split payment + change on cash line', () => {
         })
       ),
     });
+    expect(status).toBe(200);
 
     const { data: products } = await app.client.request('/api/inventory/products');
     const after = products.find((p) => p.id === productId);
-    expect(after.quantity).toBe(8);
-
-    const { data: movements } = await app.client.request(
-      '/api/inventory/stock-movements?productId=' + productId
-    );
-    expect(movements.movements.some((m) => m.type === 'sale' && m.quantityChange === -2)).toBe(
-      true
-    );
-  });
-
-  test('does not deduct stock for untracked products', async () => {
-    const created = await app.createProduct('Fresh Fries', 3, 'Food', false, 10);
-    const productId = created.id;
-
-    await app.client.request('/api/new', {
-      method: 'POST',
-      body: JSON.stringify(
-        saleBody({
-          total: 3,
-          paid: 3,
-          payment_breakdown: [{ method: 'cash', amount: 3 }],
-          items: [{ id: productId, name: 'Fresh Fries', price: 3, quantity: 1 }],
-        })
-      ),
-    });
-
-    const { data: products } = await app.client.request('/api/inventory/products');
-    const after = products.find((p) => p.id === productId);
-    expect(after.quantity).toBe(10);
+    expect(after.name).toBe('Stocked Cola');
+    expect(after).not.toHaveProperty('quantity');
   });
 });

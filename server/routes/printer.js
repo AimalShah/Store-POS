@@ -2,7 +2,10 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { getDb, mapPrinterSettings, getUploadsPath } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireAdmin,
+} from '../auth.js';
 import logger from '../logger.js';
 
 const router = Router();
@@ -53,7 +56,7 @@ router.get('/settings', asyncHandler(async (_req, res) => {
   res.json({ printer: mapPrinterSettings(row) });
 }));
 
-router.post('/settings', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
+router.post('/settings', requireAdmin, asyncHandler(async (req, res) => {
   const body = req.body || {};
   const db = getDb();
   const existing = db.prepare('SELECT * FROM printer_settings WHERE id = 1').get();
@@ -118,7 +121,7 @@ router.post('/settings', requirePerm('perm_settings'), asyncHandler(async (req, 
   res.json({ printer: mapPrinterSettings(row) });
 }));
 
-router.post('/test', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
+router.post('/test', requireAdmin, asyncHandler(async (req, res) => {
   const db = getDb();
   const printer = db.prepare('SELECT * FROM printer_settings WHERE id = 1').get();
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();

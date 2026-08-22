@@ -75,9 +75,10 @@ import { useStoreData } from '../hooks/useStoreData';
 import { getPosBridge } from '../bridge';
 import { getUploadsBase } from '../api/client';
 import { buildLogoUrl } from '../lib/branding';
-import { buildNavGroups, resolveInitialView, type NavItemId, type Permissions } from '../lib/nav';
+import { buildNavGroups, canAccess, resolveInitialView, type NavItemId } from '../lib/nav';
 import { buildDateRange, type DateRange } from '../lib/dateRange';
 import { api, type Transaction } from '../api/client';
+import { isLowStock } from '../lib/stock';
 import { DateRangePicker, type PickerValue } from '../components/DateRangePicker';
 import { CommandPalette, type PaletteCommand } from '../components/CommandPalette';
 import { StoreSwitcher, type Outlet } from '../components/StoreSwitcher';
@@ -85,14 +86,14 @@ import CatalogView from '../pages/CatalogView';
 import CustomersView from '../pages/CustomersView';
 import DashboardView from '../pages/DashboardView';
 import SettingsView from '../pages/SettingsView';
-import StockHistoryView from '../pages/StockHistoryView';
 import TeamView from '../pages/TeamView';
 import ReportsView from '../pages/ReportsView';
 import DrawerView from '../pages/DrawerView';
 import ExportView from '../pages/ExportView';
 import PrinterSettingsView from '../pages/PrinterSettingsView';
 import AuditLogView from '../pages/AuditLogView';
-import TransactionsModal from '../components/TransactionsModal';
+import SalesView from '../pages/SalesView';
+import StockView from '../pages/StockView';
 import TillView from '../pages/TillView';
 
 const ICONS: Record<string, typeof Package> = {
@@ -221,7 +222,7 @@ function Landing({
 }
 
 export default function AppShell() {
-  const { user, hasPerm, logout } = useAuth();
+  const { user, hasRole, logout } = useAuth();
   const { products, categories, customers, settings, error, loading, reload } = useStoreData();
   const [mode, setMode] = useState<Mode>('till');
   const [landed, setLanded] = useState(false);
@@ -266,14 +267,8 @@ export default function AppShell() {
     action?.();
   }, []);
 
-  const perms: Permissions = {
-    perm_products: hasPerm('perm_products') ? 1 : 0,
-    perm_categories: hasPerm('perm_categories') ? 1 : 0,
-    perm_transactions: hasPerm('perm_transactions') ? 1 : 0,
-    perm_users: hasPerm('perm_users') ? 1 : 0,
-    perm_settings: hasPerm('perm_settings') ? 1 : 0,
-  };
-  const groups = buildNavGroups(perms);
+  const role = user?.role ?? 'Cashier';
+  const groups = buildNavGroups(role);
   const [view, setView] = useState<NavItemId>('dashboard');
 
   const visibleIds = groups.flatMap((g) => g.items.map((i) => i.id));
@@ -286,14 +281,6 @@ export default function AppShell() {
     (id: NavItemId) =>
       groups.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? String(id),
     [groups]
-  );
-
-  const lowStockCount = useMemo(
-    () =>
-      products.filter(
-        (p) => p.trackStock && p.quantity <= p.lowStockThreshold
-      ).length,
-    [products]
   );
 
   const loadHeld = useCallback(async () => {
@@ -339,6 +326,7 @@ export default function AppShell() {
 
   const goTo = useCallback(
     (v: NavItemId) => {
+      if (!canAccess(role, v)) return;
       if (mode === 'dashboard') {
         setView(v);
         return;
@@ -352,7 +340,7 @@ export default function AppShell() {
         }
       );
     },
-    [mode, requestConfirm, labelFor]
+    [mode, requestConfirm, labelFor, role]
   );
 
   const outlets: Outlet[] = useMemo(
@@ -410,7 +398,6 @@ export default function AppShell() {
             range={date.range}
             onQuickSale={() => setMode('till')}
             onHeldClick={() => goTo('sales')}
-            onLowStockClick={() => goTo('menu')}
           />
         );
       case 'menu':
@@ -419,28 +406,26 @@ export default function AppShell() {
             products={products}
             categories={categories}
             symbol={symbol}
-            canProducts={hasPerm('perm_products')}
-            canCategories={hasPerm('perm_categories')}
+            canProducts={hasRole('Admin', 'Manager')}
+            canCategories={hasRole('Admin', 'Manager')}
             onChanged={reload}
             loading={loading}
           />
         );
       case 'sales':
         return (
-          <TransactionsModal
-            embedded
-            open
+          <SalesView
             symbol={symbol}
             settings={settings}
             onClose={() => setView('dashboard')}
           />
         );
       case 'customers':
-        return <CustomersView customers={customers} onChanged={reload} />;
-      case 'stock-history':
-        return <StockHistoryView products={products} symbol={symbol} />;
+        return <CustomersView customers={customers} onChanged={reload} canManage={hasRole('Admin', 'Manager')} />;
       case 'reports':
         return <ReportsView symbol={symbol} />;
+      case 'stock':
+        return <StockView symbol={symbol} />;
       case 'drawer':
         return <DrawerView settings={settings} onDrawerChange={reload} />;
       case 'team':
@@ -452,7 +437,7 @@ export default function AppShell() {
       case 'printers':
         return <PrinterSettingsView />;
       case 'audit-log':
-        return <AuditLogView canSettings={hasPerm('perm_settings')} />;
+        return <AuditLogView canSettings={hasRole('Admin')} />;
       default:
         return null;
     }
@@ -574,19 +559,21 @@ export default function AppShell() {
 
           <HeldBell />
 
-          <UpdateIndicator />
-
-          {lowStockCount > 0 && (
+          {products.some(isLowStock) && (
             <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-amber-600 hover:text-amber-700"
-              title={`${lowStockCount} products low on stock`}
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-amber-600 border-amber-200 bg-amber-50"
               onClick={() => goTo('menu')}
             >
               <AlertTriangle className="size-4" />
+              <span className="hidden md:inline">
+                {products.filter(isLowStock).length} Low Stock
+              </span>
             </Button>
           )}
+
+          <UpdateIndicator />
 
           <Button size="sm" onClick={() => setMode('till')}>
             <PlusCircle className="size-4" />

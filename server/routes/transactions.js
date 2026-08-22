@@ -1,96 +1,36 @@
 import { Router } from 'express';
 import { getDb, mapTransaction, auditLog } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireStaff,
+} from '../auth.js';
 
 const router = Router();
 
-function decrementInventory(items, db, transactionId, userId, userName) {
-  for (const item of items || []) {
-    const id = parseInt(item.id ?? item._id, 10);
-    const qty = parseInt(item.quantity, 10) || 0;
-    if (!id || !qty) continue;
-    const product = db.prepare('SELECT id, quantity, stock FROM products WHERE id = ?').get(id);
-    if (!product) continue;
+// Delivery completion is strict (CONTEXT.md Fulfillment): a completed delivery
+// needs either a chosen Customer or complete one-time contact details.
+// Held orders are exempt — they are parked, not sold.
+function validateDelivery(body, db) {
+  if ((body.fulfillment || 'takeaway') !== 'delivery') return null;
+  const completed = body.status === 1 || body.status === '1';
+  if (!completed) return null;
 
-    // Decrement parent product stock if tracked
-    if (product.stock !== 0) {
-      const updated = Math.max(0, (product.quantity || 0) - qty);
-      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(updated, id);
+  const customerId = String(body.customer ?? '0');
+  const hasCustomer = customerId !== '0' && db
+    .prepare('SELECT id FROM customers WHERE id = ?')
+    .get(parseInt(customerId, 10));
+  const hasOneTime =
+    String(body.delivery_name || '').trim() &&
+    String(body.delivery_contact || '').trim() &&
+    String(body.delivery_address || '').trim();
 
-      // Log stock movement for sale
-      db.prepare(
-        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
-         VALUES (?, 'sale', ?, ?, 'Sale deduction', ?, 'transaction', ?, ?, ?)`
-      ).run(id, -qty, updated, transactionId, userId, userName, new Date().toISOString());
-    }
-
-    // Decrement component stock for combo meals (regardless of parent's stock tracking)
-    const components = db
-      .prepare(
-        `SELECT pc.component_product_id as id, pc.quantity as comp_qty, p.quantity, p.stock
-         FROM product_components pc
-         JOIN products p ON p.id = pc.component_product_id
-         WHERE pc.parent_product_id = ?`
-      )
-      .all(id);
-    for (const comp of components) {
-      if (!comp || comp.stock === 0) continue;
-      const compQty = qty * (comp.comp_qty || 1);
-      const compUpdated = Math.max(0, (comp.quantity || 0) - compQty);
-      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(compUpdated, comp.id);
-
-      // Log stock movement for component sale
-      db.prepare(
-        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
-         VALUES (?, 'sale', ?, ?, 'Sale deduction (component)', ?, 'transaction', ?, ?, ?)`
-      ).run(comp.id, -compQty, compUpdated, transactionId, userId, userName, new Date().toISOString());
-    }
-  }
+  if (hasCustomer || hasOneTime) return null;
+  return {
+    error:
+      'Delivery orders need a chosen customer or complete one-time details (name, phone and address)',
+  };
 }
 
-function restoreInventory(items, db, transactionId, userId, userName) {
-  for (const item of items || []) {
-    const id = parseInt(item.id ?? item._id, 10);
-    const qty = parseInt(item.quantity, 10) || 0;
-    if (!id || !qty) continue;
-    const product = db.prepare('SELECT id, quantity, stock FROM products WHERE id = ?').get(id);
-    if (!product) continue;
-
-    // Restore parent product stock if tracked
-    if (product.stock !== 0) {
-      const updated = (product.quantity || 0) + qty;
-      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(updated, id);
-
-      // Log stock movement for restock (void)
-      db.prepare(
-        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
-         VALUES (?, 'restock', ?, ?, 'Void restock', ?, 'transaction', ?, ?, ?)`
-      ).run(id, qty, updated, transactionId, userId, userName, new Date().toISOString());
-    }
-
-    // Restore component stock for combo meals
-    const components = db
-      .prepare(
-        `SELECT pc.component_product_id as id, pc.quantity as comp_qty, p.quantity, p.stock
-         FROM product_components pc
-         JOIN products p ON p.id = pc.component_product_id
-         WHERE pc.parent_product_id = ?`
-      )
-      .all(id);
-    for (const comp of components) {
-      if (!comp || comp.stock === 0) continue;
-      const compQty = qty * (comp.comp_qty || 1);
-      const compUpdated = (comp.quantity || 0) + compQty;
-      db.prepare('UPDATE products SET quantity = ? WHERE id = ?').run(compUpdated, comp.id);
-
-      // Log stock movement for component restock (void)
-      db.prepare(
-        `INSERT INTO stock_movements (product_id, type, quantity_change, quantity_after, reason, reference_id, reference_type, user_id, user_name, created_at)
-         VALUES (?, 'restock', ?, ?, 'Void restock (component)', ?, 'transaction', ?, ?, ?)`
-      ).run(comp.id, compQty, compUpdated, transactionId, userId, userName, new Date().toISOString());
-    }
-  }
-}
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -98,6 +38,7 @@ function pad2(n) {
 
 // Snapshot cost (COGS) and categoryId onto each line item at sale time so
 // historical reports stay accurate even if the product is later edited.
+// For sized products the cost rides the size row: the sold variant decides.
 function snapshotItems(items, db) {
   return (items || []).map((item) => {
     const id = parseInt(item.id ?? item._id, 10);
@@ -106,9 +47,23 @@ function snapshotItems(items, db) {
     const categoryRow = categoryName
       ? db.prepare('SELECT id FROM categories WHERE name = ?').get(categoryName)
       : null;
+
+    let cost = product ? Number(product.cost) || 0 : Number(item.cost) || 0;
+    const sizeVariant = (item.selectedVariants || []).find(
+      (v) => (v.group || '').toLowerCase() === 'size' && v.name
+    );
+    if (id && sizeVariant) {
+      const sizeRow = db
+        .prepare('SELECT cost FROM product_sizes WHERE product_id = ? AND name = ?')
+        .get(id, sizeVariant.name);
+      if (sizeRow) {
+        cost = Number(sizeRow.cost) || 0;
+      }
+    }
+
     return {
       ...item,
-      cost: product ? Number(product.cost) || 0 : Number(item.cost) || 0,
+      cost,
       categoryId: categoryRow ? categoryRow.id : 0,
     };
   });
@@ -163,7 +118,7 @@ function nextInvoiceNumber(db, iso) {
   return `INV-${localDay(iso)}-${String((row.n || 0) + 1).padStart(3, '0')}`;
 }
 
-router.get('/all', requirePerm('perm_transactions'), (_req, res) => {
+router.get('/all', requireStaff, (_req, res) => {
   const rows = getDb().prepare('SELECT * FROM transactions ORDER BY date DESC').all();
   res.json(rows.map(mapTransaction));
 });
@@ -190,7 +145,7 @@ router.get('/customer-orders', (_req, res) => {
   res.json(rows.map(mapTransaction));
 });
 
-router.get('/by-date', requirePerm('perm_transactions'), (req, res) => {
+router.get('/by-date', requireStaff, (req, res) => {
   const startDate = new Date(String(req.query.start || ''));
   const endDate = new Date(String(req.query.end || ''));
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
@@ -231,7 +186,7 @@ function validateItems(items) {
   return null;
 }
 
-router.post('/new', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.post('/new', requireStaff, asyncHandler(async (req, res) => {
   const body = req.body || {};
   const discount = parseFloat(body.discount) || 0;
   if (discount < 0) {
@@ -241,6 +196,11 @@ router.post('/new', requirePerm('perm_transactions'), asyncHandler(async (req, r
   if (itemError) {
     return res.status(400).json({ error: itemError });
   }
+  const deliveryError = validateDelivery(body, getDb());
+  if (deliveryError) {
+    return res.status(400).json(deliveryError);
+  }
+
   const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
   const { paymentBreakdown, paid, change } = derivePayment(body);
@@ -291,7 +251,6 @@ router.post('/new', requirePerm('perm_transactions'), asyncHandler(async (req, r
       );
 
     if (isPaid) {
-      decrementInventory(items, db, result.lastInsertRowid, parseInt(body.user_id, 10) || 0, body.user || body.user_name || '');
     }
 
     return result.lastInsertRowid;
@@ -301,7 +260,7 @@ router.post('/new', requirePerm('perm_transactions'), asyncHandler(async (req, r
   res.json({ ok: true, id, ref_number: invoiceRef });
 }));
 
-router.put('/new/:id', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.put('/new/:id', requireStaff, asyncHandler(async (req, res) => {
   const body = req.body || {};
   const discount = parseFloat(body.discount) || 0;
   if (discount < 0) {
@@ -312,6 +271,11 @@ router.put('/new/:id', requirePerm('perm_transactions'), asyncHandler(async (req
     return res.status(400).json({ error: itemError });
   }
   const id = parseInt(req.params.id ?? body._id ?? body.id, 10);
+  const deliveryError = validateDelivery(body, getDb());
+  if (deliveryError) {
+    return res.status(400).json(deliveryError);
+  }
+
   const items = snapshotItems(body.items || [], getDb());
   const total = parseFloat(body.total) || 0;
   const { paymentBreakdown, paid, change } = derivePayment(body);
@@ -364,7 +328,6 @@ router.put('/new/:id', requirePerm('perm_transactions'), asyncHandler(async (req
 
     // Decrement stock when completing a previously unpaid/hold order
     if (transitionToPaid) {
-      decrementInventory(items, db, id, parseInt(body.user_id, 10) || 0, body.user || body.user_name || '');
     }
   });
 
@@ -372,7 +335,7 @@ router.put('/new/:id', requirePerm('perm_transactions'), asyncHandler(async (req
   res.json({ ok: true, id, ref_number: invoiceRef });
 }));
 
-router.post('/delete', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.post('/delete', requireStaff, asyncHandler(async (req, res) => {
   const orderId = parseInt(req.body?.orderId ?? req.body?._id, 10);
   const db = getDb();
   const authUser = req.user || {};
@@ -388,7 +351,7 @@ router.post('/delete', requirePerm('perm_transactions'), asyncHandler(async (req
 }));
 
 // Void a transaction (refund) - restores stock and sets status to 2
-router.post('/transactions/:id/void', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.post('/transactions/:id/void', requireStaff, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const authUser = req.user || {};
   const userId = authUser.id || 0;
@@ -413,7 +376,6 @@ router.post('/transactions/:id/void', requirePerm('perm_transactions'), asyncHan
   const items = JSON.parse(transaction.items_json || '[]');
 
   // Restore inventory
-  restoreInventory(items, db, id, userId, userName);
 
   // Update transaction status to voided (2)
   db.prepare('UPDATE transactions SET status = 2 WHERE id = ?').run(id);

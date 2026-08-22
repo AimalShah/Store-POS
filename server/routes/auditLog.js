@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { getDb, mapAuditLog } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireAdmin,
+} from '../auth.js';
 
 const router = Router();
 
-router.get('/', requirePerm('perm_settings'), asyncHandler(async (req, res) => {
+router.get('/', requireAdmin, asyncHandler(async (req, res) => {
   const db = getDb();
   const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
   const entityType = req.query.entityType;

@@ -2,7 +2,7 @@
 // these; reports reuse the same path to push a report out.
 
 import * as XLSX from 'xlsx';
-import type { Customer, Product, StockMovement, Transaction } from '../api/client';
+import type { Customer, Product, Transaction } from '../api/client';
 
 function escapeCsv(value: string | number | null | undefined): string {
   const s = String(value ?? '');
@@ -72,9 +72,6 @@ export function catalogRows(products: Product[]): ExportRow[] {
     name: p.name,
     category: p.category,
     price: Number(p.price),
-    quantity: p.quantity,
-    stock: p.stock,
-    low_stock_threshold: p.lowStockThreshold,
   }));
 }
 
@@ -85,23 +82,6 @@ export function customerRows(customers: Customer[]): ExportRow[] {
     phone: c.phone,
     email: c.email,
     address: c.address,
-  }));
-}
-
-export function stockRows(movements: StockMovement[], products: Product[]): ExportRow[] {
-  const names = new Map(products.map((p) => [p.id, p.name]));
-  return movements.map((m) => ({
-    id: m.id,
-    product: names.get(m.productId) || String(m.productId),
-    product_id: m.productId,
-    type: m.type,
-    quantity_change: m.quantityChange,
-    quantity_after: m.quantityAfter,
-    reason: m.reason || '',
-    reference_type: m.referenceType || '',
-    reference_id: m.referenceId || '',
-    user: m.userName,
-    created_at: m.createdAt,
   }));
 }
 

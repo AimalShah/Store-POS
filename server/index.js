@@ -26,6 +26,7 @@ import drawerRouter from './routes/drawer.js';
 import reportsRouter from './routes/reports.js';
 import printerRouter from './routes/printer.js';
 import auditLogRouter from './routes/auditLog.js';
+import stockRouter from './routes/stock.js';
 import versionRouter from './routes/version.js';
 
 export async function createServer({ dbPath, uploadsPath: up }) {
@@ -72,6 +73,7 @@ export async function createServer({ dbPath, uploadsPath: up }) {
   app.use('/api/reports', authenticate, reportsRouter);
   app.use('/api/printer', authenticate, printerRouter);
   app.use('/api/audit-log', authenticate, auditLogRouter);
+  app.use('/api/stock', authenticate, stockRouter);
   app.use('/api', authenticate, transactionsRouter);
 
   app.use((err, _req, res, _next) => {

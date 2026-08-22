@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { requirePerm, asyncHandler } from '../auth.js';
+import {
+  asyncHandler,
+  requireManager,
+} from '../auth.js';
 
 const router = Router();
 
@@ -33,7 +36,7 @@ router.get('/open', asyncHandler(async (req, res) => {
 }));
 
 // Get all drawer sessions with filters
-router.get('/', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.get('/', requireManager, asyncHandler(async (req, res) => {
   const db = getDb();
   const status = req.query.status;
   const till = parseInt(req.query.till, 10) || 0;
@@ -119,7 +122,7 @@ router.post('/:sessionId/close', asyncHandler(async (req, res) => {
 }));
 
 // Get reconciliation summary for a till
-router.get('/summary', requirePerm('perm_transactions'), asyncHandler(async (req, res) => {
+router.get('/summary', requireManager, asyncHandler(async (req, res) => {
   const till = parseInt(req.query.till, 10) || 1;
   const db = getDb();
   

@@ -35,7 +35,7 @@ describe('Printer: test print endpoint', () => {
     expect(data.content).toMatch(/Interface: network/);
   });
 
-  test('requires perm_settings permission', async () => {
+  test('printer settings are Admin-only', async () => {
     await app.client.request('/api/printer/settings', {
       method: 'POST',
       body: JSON.stringify({ interface: 'usb', usbDevice: '0x0416:0x5011', width: 58, autoPrintKot: false }),
@@ -47,11 +47,7 @@ describe('Printer: test print endpoint', () => {
         username: 'cashier',
         password: 'cashier123',
         fullName: 'Cashier',
-        perm_products: 0,
-        perm_categories: 0,
-        perm_transactions: 1,
-        perm_users: 0,
-        perm_settings: 0,
+        role: 'Cashier',
       }),
     });
     const login = await app.client.request('/api/users/login', {

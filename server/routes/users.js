@@ -3,9 +3,9 @@ import bcrypt from 'bcryptjs';
 import { getDb, mapUser, auditLog } from '../db.js';
 import {
   authenticate,
-  requirePerm,
+  requireAdmin,
   loginUser,
-  loginByPin,
+  loginByPinForUser,
   signToken,
   hashPassword,
   asyncHandler,
@@ -28,16 +28,24 @@ router.post('/login', loginRateLimit, asyncHandler(async (req, res) => {
 }));
 
 router.post('/login-pin', loginRateLimit, asyncHandler(async (req, res) => {
-  const { pin } = req.body || {};
-  if (!pin) {
-    return res.status(400).json({ error: 'PIN required' });
+  const { userId, pin } = req.body || {};
+  if (!userId || !pin) {
+    return res.status(400).json({ error: 'User and PIN required' });
   }
-  const user = loginByPin(String(pin));
+  const user = loginByPinForUser(parseInt(userId, 10), String(pin));
   if (!user) {
     return res.status(401).json({ error: 'Incorrect PIN' });
   }
   const token = signToken(user);
   res.json({ user, token, force_password_change: user.force_password_change });
+}));
+
+// Team member tiles for the identity-first login screen.
+router.get('/pin-users', asyncHandler(async (_req, res) => {
+  const rows = getDb()
+    .prepare("SELECT id, fullname, role FROM users WHERE pin != '' ORDER BY fullname")
+    .all();
+  res.json(rows);
 }));
 
 router.get('/check', asyncHandler(async (_req, res) => {
@@ -55,20 +63,17 @@ router.get('/user/:userId', asyncHandler(async (req, res) => {
 }));
 
 router.get('/logout/:userId', asyncHandler(async (req, res) => {
-  getDb()
-    .prepare('UPDATE users SET status = ? WHERE id = ?')
-    .run(`Logged Out_${new Date().toISOString()}`, parseInt(req.params.userId, 10));
   res.sendStatus(200);
 }));
 
-router.get('/all', requirePerm('perm_users'), asyncHandler(async (_req, res) => {
+router.get('/all', requireAdmin, asyncHandler(async (_req, res) => {
   const rows = getDb().prepare('SELECT * FROM users ORDER BY id').all();
   res.json(rows.map(mapUser));
 }));
 
 router.delete(
   '/user/:userId',
-  requirePerm('perm_users'),
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const id = parseInt(req.params.userId, 10);
     if (id === 1) {
@@ -85,34 +90,40 @@ router.delete(
   })
 );
 
-router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) => {
+const VALID_ROLES = ['Admin', 'Manager', 'Cashier'];
+
+function resolveRole(body) {
+  if (!VALID_ROLES.includes(body.role)) return null;
+  return body.role;
+}
+
+router.post('/post', requireAdmin, asyncHandler(async (req, res) => {
   const body = req.body || {};
-  const perms = {
-    perm_products: body.perm_products ? 1 : 0,
-    perm_categories: body.perm_categories ? 1 : 0,
-    perm_transactions: body.perm_transactions ? 1 : 0,
-    perm_users: body.perm_users ? 1 : 0,
-    perm_settings: body.perm_settings ? 1 : 0,
-  };
   const db = getDb();
   const authUser = req.user || {};
+
+  if (body.id && parseInt(body.id, 10) === 1 && body.role && body.role !== 'Admin') {
+    return res.status(400).json({ error: 'The default admin must remain an Admin' });
+  }
+  const role = body.id
+    ? (resolveRole(body) ?? db.prepare('SELECT role FROM users WHERE id = ?').get(parseInt(body.id, 10))?.role)
+    : resolveRole(body);
+  if (!role) {
+    return res.status(400).json({ error: 'Role must be one of Admin, Manager, Cashier' });
+  }
 
   if (!body.id) {
     const result = db
       .prepare(
-        `INSERT INTO users (username, password, pin, fullname, perm_products, perm_categories, perm_transactions, perm_users, perm_settings)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO users (username, password, pin, fullname, role)
+         VALUES (?, ?, ?, ?, ?)`
       )
       .run(
         body.username,
         hashPassword(body.password || 'password'),
         body.pin ? hashPassword(String(body.pin)) : '',
         body.fullname || '',
-        perms.perm_products,
-        perms.perm_categories,
-        perms.perm_transactions,
-        perms.perm_users,
-        perms.perm_settings
+        role
       );
     const row = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
     auditLog(db, authUser.id || 0, authUser.fullname || 'Unknown', 'create', 'user', row.id, null, row);
@@ -121,24 +132,8 @@ router.post('/post', requirePerm('perm_users'), asyncHandler(async (req, res) =>
 
   const id = parseInt(body.id, 10);
   const oldRow = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  const updates = [
-    'username = ?',
-    'fullname = ?',
-    'perm_products = ?',
-    'perm_categories = ?',
-    'perm_transactions = ?',
-    'perm_users = ?',
-    'perm_settings = ?',
-  ];
-  const params = [
-    body.username,
-    body.fullname || '',
-    perms.perm_products,
-    perms.perm_categories,
-    perms.perm_transactions,
-    perms.perm_users,
-    perms.perm_settings,
-  ];
+  const updates = ['username = ?', 'fullname = ?', 'role = ?'];
+  const params = [body.username, body.fullname || '', role];
   if (body.password) {
     updates.push('password = ?');
     params.push(hashPassword(body.password));
