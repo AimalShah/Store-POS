@@ -85,6 +85,7 @@ import { StoreSwitcher, type Outlet } from '../components/StoreSwitcher';
 import CatalogView from '../pages/CatalogView';
 import CustomersView from '../pages/CustomersView';
 import DashboardView from '../pages/DashboardView';
+import ShiftSummaryView from '../pages/ShiftSummaryView';
 import SettingsView from '../pages/SettingsView';
 import TeamView from '../pages/TeamView';
 import ReportsView from '../pages/ReportsView';
@@ -241,6 +242,10 @@ export default function AppShell() {
     range: buildDateRange('today'),
   });
   const [heldOrders, setHeldOrders] = useState<Transaction[]>([]);
+  const [salesInitialStatus, setSalesInitialStatus] = useState<string>('all');
+  const [salesInitialUserId, setSalesInitialUserId] = useState<number>(0);
+  const [salesInitialVoidFilter, setSalesInitialVoidFilter] = useState<boolean>(false);
+  const [stockFilter, setStockFilter] = useState<'low' | 'out' | null>(null);
 
   // Confirmation gate for leaving the current mode/screen.
   const pendingAction = useRef<(() => void) | null>(null);
@@ -273,6 +278,28 @@ export default function AppShell() {
 
   const visibleIds = groups.flatMap((g) => g.items.map((i) => i.id));
   const activeView = visibleIds.includes(view) ? view : resolveInitialView(groups);
+
+  // Reset sales initial status when navigating away from sales view
+  useEffect(() => {
+    if (activeView !== 'sales') {
+      setSalesInitialStatus('all');
+      setSalesInitialUserId(0);
+    }
+  }, [activeView]);
+
+  // Reset void filter when navigating away from sales view
+  useEffect(() => {
+    if (activeView !== 'sales') {
+      setSalesInitialVoidFilter(false);
+    }
+  }, [activeView]);
+
+  // Reset stock filter when navigating away from stock view
+  useEffect(() => {
+    if (activeView !== 'stock') {
+      setStockFilter(null);
+    }
+  }, [activeView]);
   const symbol = settings?.symbol || 'Rs';
   const logoUrl = buildLogoUrl(settings?.img, getUploadsBase());
   const storeName = settings?.store || 'Store POS';
@@ -343,6 +370,45 @@ export default function AppShell() {
     [mode, requestConfirm, labelFor, role]
   );
 
+  const goToSalesWithUserId = useCallback(
+    (userId?: number) => {
+      if (userId) setSalesInitialUserId(userId);
+      if (mode === 'dashboard') {
+        setView('sales');
+        return;
+      }
+      requestConfirm(
+        'Leave the till?',
+        `You'll switch to the management dashboard and open Sales${userId ? ' filtered by cashier' : ''}. Any in-progress order will be parked.`,
+        () => {
+          setMode('dashboard');
+          setView('sales');
+        }
+      );
+    },
+    [mode, requestConfirm]
+  );
+
+  const goToSalesWithVoidFilter = useCallback(
+    () => {
+      setSalesInitialVoidFilter(true);
+      setSalesInitialStatus('2');
+      if (mode === 'dashboard') {
+        setView('sales');
+        return;
+      }
+      requestConfirm(
+        'Leave the till?',
+        'You\'ll switch to the management dashboard and open Sales filtered by voided transactions. Any in-progress order will be parked.',
+        () => {
+          setMode('dashboard');
+          setView('sales');
+        }
+      );
+    },
+    [mode, requestConfirm]
+  );
+
   const outlets: Outlet[] = useMemo(
     () => [{ id: 'main', name: storeName, logoUrl }],
     [storeName, logoUrl]
@@ -392,12 +458,31 @@ export default function AppShell() {
   function renderView() {
     switch (activeView) {
       case 'dashboard':
+        if (role === 'Cashier') {
+          return (
+            <ShiftSummaryView
+              settings={settings}
+              range={date.range}
+              onNewSale={() => setMode('till')}
+              onHeldOrders={() => goTo('sales')}
+              onEndShift={() => goTo('drawer')}
+            />
+          );
+        }
         return (
           <DashboardView
             settings={settings}
             range={date.range}
             onQuickSale={() => setMode('till')}
             onHeldClick={() => goTo('sales')}
+            onVoidClick={goToSalesWithVoidFilter}
+            onSalesClick={() => goTo('sales')}
+            onStockClick={(filter) => {
+              setStockFilter(filter);
+              goTo('stock');
+            }}
+            onReportsClick={() => goTo('reports')}
+            onDrawerClick={() => goTo('drawer')}
           />
         );
       case 'menu':
@@ -417,7 +502,15 @@ export default function AppShell() {
           <SalesView
             symbol={symbol}
             settings={settings}
-            onClose={() => setView('dashboard')}
+            onClose={() => {
+              setSalesInitialStatus('all');
+              setSalesInitialUserId(0);
+              setSalesInitialVoidFilter(false);
+              setView('dashboard');
+            }}
+            initialStatus={salesInitialStatus}
+            initialUserId={salesInitialUserId}
+            initialVoidFilter={salesInitialVoidFilter}
           />
         );
       case 'customers':
@@ -425,7 +518,7 @@ export default function AppShell() {
       case 'reports':
         return <ReportsView symbol={symbol} />;
       case 'stock':
-        return <StockView symbol={symbol} />;
+        return <StockView symbol={symbol} initialFilter={stockFilter ?? undefined} />;
       case 'drawer':
         return <DrawerView settings={settings} onDrawerChange={reload} />;
       case 'team':

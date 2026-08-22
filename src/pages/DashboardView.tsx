@@ -13,6 +13,11 @@ import {
   BarChart3,
   AlertTriangle,
   RefreshCw,
+  RotateCcw,
+  Users,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import {
   Area,
@@ -35,7 +40,8 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 
-import { api, Category, Product, Settings, Transaction } from '../api/client';
+
+import { api, Category, Product, Settings, Transaction, User, DrawerSession } from '../api/client';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { Badge } from '../components/ui/badge';
@@ -43,8 +49,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { getPosBridge, isElectronBridge } from '../bridge';
 import { Sparkline } from '@/components/Sparkline';
 import { LiveOrderQueue } from '@/components/LiveOrderQueue';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 import { useAuth } from '../context/AuthContext';
 import { buildDateRange, previousRange, type DateRange } from '../lib/dateRange';
 import {
@@ -56,10 +78,32 @@ import {
   type CategorySlice,
   buildTopProducts,
   type TopProduct,
+  buildFulfillmentBreakdown,
+  type FulfillmentSlice,
+  buildCashierPerformance,
+  type CashierPerformance,
+  buildTeamOverview,
+  type TeamMemberOverview,
+  buildDashboardExportData,
+  type DashboardExportData,
+  exportDashboardToCsv,
+  exportDashboardToXlsx,
 } from '../lib/dashboard';
 import { isLowStock, getStockQuantity, getLowStockThreshold } from '../lib/stock';
 
 type StockSummary = { items: number; outOfStock: number; changesToday: number; stockWorth: number; spentTotal: number } | null;
+
+type DrawerSummary = {
+  till: number;
+  openSession: DrawerSession | null;
+  closedSessions: DrawerSession[];
+  summary: {
+    totalSessions: number;
+    totalFloat: number;
+    totalClose: number;
+    totalVariance: number;
+  };
+} | null;
 
 type DashboardState = {
   kpis: Kpis | null;
@@ -67,8 +111,13 @@ type DashboardState = {
   prevTrend: TrendPoint[];
   categorySlices: CategorySlice[];
   topProducts: TopProduct[];
+  fulfillmentSlices: FulfillmentSlice[];
   stock: StockSummary;
+  drawerSummary: DrawerSummary;
   lowStockProducts: Product[];
+  cashierPerformance: CashierPerformance[];
+  users: User[];
+  teamOverview: TeamMemberOverview[];
   loading: boolean;
   error: string | null;
 };
@@ -98,24 +147,42 @@ export default function DashboardView({
   range,
   onQuickSale,
   onHeldClick,
+  onVoidClick,
+  onSalesClick,
+  onStockClick,
+  onReportsClick,
+  onDrawerClick,
 }: {
   settings: Settings | null;
   range?: DateRange;
   onQuickSale?: () => void;
   onHeldClick?: () => void;
+  onVoidClick?: () => void;
+  onSalesClick?: (userId?: number) => void;
+  onStockClick?: (filter: 'low' | 'out') => void;
+  onReportsClick?: () => void;
+  onDrawerClick?: () => void;
 }) {
+  const { hasRole } = useAuth();
+  const isManagerOrAdmin = hasRole('Manager', 'Admin');
   const [state, setState] = useState<DashboardState>({
     kpis: null,
     trend: [],
     prevTrend: [],
     categorySlices: [],
     topProducts: [],
+    fulfillmentSlices: [],
     stock: null,
+    drawerSummary: null,
     lowStockProducts: [],
+    cashierPerformance: [],
+    users: [],
+    teamOverview: [],
     loading: true,
     error: null,
   });
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
+  const [viewMode, setViewMode] = useState<'line' | 'heatmap'>('line');
   const symbol = settings?.symbol || 'Rs';
   const fmt = (n: number) => `${symbol}${Number(n).toFixed(2)}`;
   const greeting = useMemo(() => getGreeting(), []);
@@ -136,13 +203,32 @@ export default function DashboardView({
     return cfg;
   }, [state.categorySlices]);
 
+  const fulfillmentConfig = useMemo<ChartConfig>(() => {
+    const cfg: ChartConfig = {};
+    state.fulfillmentSlices.forEach((s, i) => {
+      cfg[s.fulfillment] = { label: s.fulfillment, color: `var(--chart-${(i % 5) + 1})` };
+    });
+    return cfg;
+  }, [state.fulfillmentSlices]);
+
   const loadData = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const activeRange = range ?? buildDateRange('today');
       const prev = previousRange(activeRange);
 
-      const [current, prevTx, held, categories, stock, products] = await Promise.all([
+      const [
+        current,
+        prevTx,
+        held,
+        categories,
+        voidedTx,
+        stock,
+        products,
+        drawerSummary,
+        users,
+        drawerSessions,
+      ] = await Promise.all([
         api
           .getByDate({ start: activeRange.start, end: activeRange.end, user: 0, till: 0, status: 1 })
           .catch(() => [] as Transaction[]),
@@ -151,19 +237,39 @@ export default function DashboardView({
           .catch(() => [] as Transaction[]),
         api.getOnHold().catch(() => [] as Transaction[]),
         api.getCategories().catch(() => [] as Category[]),
+        // Voided transactions for KPIs
+        api
+          .getByDate({ start: activeRange.start, end: activeRange.end, user: 0, till: 0, status: 2 })
+          .catch(() => [] as Transaction[]),
         // Stock money is Manager/Admin only — cashiers simply don't see these tiles
         api
           .getStockSummary({ start: activeRange.start, end: activeRange.end })
           .catch(() => null),
         api.getProducts().catch(() => [] as Product[]),
+        // Drawer summary for Manager/Admin only
+        isManagerOrAdmin
+          ? api.getDrawerSummary(settings?.till).catch(() => null)
+          : Promise.resolve(null),
+        // Users for cashier performance (Manager/Admin only)
+        isManagerOrAdmin ? api.getUsers().catch(() => [] as User[]) : Promise.resolve([] as User[]),
+        // Drawer sessions for team overview (Manager/Admin only)
+        isManagerOrAdmin
+          ? api.getDrawerSessions({ status: 'open', till: settings?.till }).catch(() => [] as DrawerSession[])
+          : Promise.resolve([] as DrawerSession[]),
       ]);
-      const kpis = computeKpis({ transactions: current, previous: prevTx, held, products });
+      const kpis = computeKpis({ transactions: current, previous: prevTx, held, voided: voidedTx, products });
       const trend = buildTrendSeries(current, activeRange);
       const prevTrend = buildTrendSeries(prevTx, prev);
       const categorySlices = buildCategoryBreakdown(current, categories);
       const topProducts = buildTopProducts(current, 5);
+      const fulfillmentSlices = buildFulfillmentBreakdown(current);
       const lowStockProducts = products.filter(isLowStock);
-
+      const cashierPerformance = isManagerOrAdmin
+        ? buildCashierPerformance(current, users)
+        : [];
+      const teamOverview = isManagerOrAdmin
+        ? buildTeamOverview(drawerSessions, held, current, users)
+        : [];
 
       setState({
         kpis,
@@ -171,8 +277,13 @@ export default function DashboardView({
         prevTrend,
         categorySlices,
         topProducts,
+        fulfillmentSlices,
         stock,
+        drawerSummary,
         lowStockProducts,
+        cashierPerformance,
+        users,
+        teamOverview,
         loading: false,
         error: null,
       });
@@ -185,13 +296,84 @@ export default function DashboardView({
       }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range?.start, range?.end, range?.preset]);
+  }, [range?.start, range?.end, range?.preset, isManagerOrAdmin, settings?.till]);
 
   useEffect(() => {
     void loadData();
     const id = setInterval(() => void loadData(), 60_000);
     return () => clearInterval(id);
   }, [loadData]);
+
+  const handleExport = async (format: 'xlsx' | 'csv') => {
+    if (!state.kpis) return;
+    try {
+      const activeRange = range ?? buildDateRange('today');
+      const prev = previousRange(activeRange);
+      
+      const exportData = buildDashboardExportData(
+        state.trend.length > 0 ? [] : [], // We need the actual transactions - they're not stored in state
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        activeRange
+      );
+      
+      // Instead, we'll use the data already computed in state
+      const data: DashboardExportData = {
+        kpis: {
+          sales: state.kpis.sales,
+          orders: state.kpis.orders,
+          aov: state.kpis.aov,
+          profit: state.kpis.profit,
+          marginPct: state.kpis.marginPct,
+          heldOrders: state.kpis.heldOrders,
+          lowStock: state.kpis.lowStock,
+          voidCount: state.kpis.voidCount,
+          voidAmount: state.kpis.voidAmount,
+          voidRate: state.kpis.voidRate,
+        },
+        trend: state.trend,
+        categoryBreakdown: state.categorySlices,
+        topProducts: state.topProducts,
+        fulfillmentBreakdown: state.fulfillmentSlices,
+        cashierPerformance: state.cashierPerformance,
+      };
+
+      const symbol = settings?.symbol || 'Rs';
+
+      if (format === 'xlsx') {
+        const workbook = exportDashboardToXlsx(data, symbol);
+        const base64 = Buffer.from(workbook).toString('base64');
+        const bridge = getPosBridge();
+        await bridge.saveFile({
+          defaultName: `dashboard-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          type: 'xlsx',
+          data: base64,
+        });
+      } else {
+        const files = exportDashboardToCsv(data, symbol);
+        const bridge = getPosBridge();
+        const toBase64 = (s: string) => {
+          const bytes = new TextEncoder().encode(s);
+          let bin = '';
+          bytes.forEach((b) => (bin += String.fromCharCode(b)));
+          return btoa(bin);
+        };
+        for (const file of files) {
+          await bridge.saveFile({
+            defaultName: file.filename,
+            type: 'csv',
+            data: toBase64(file.content),
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   if (state.error) {
     return (
@@ -228,6 +410,7 @@ export default function DashboardView({
           iconBg: 'bg-green-100',
           spark: state.trend.map((p) => p.total),
           sparkColor: 'var(--chart-1)',
+          onClick: onSalesClick,
         },
         {
           title: 'Orders',
@@ -238,6 +421,7 @@ export default function DashboardView({
           iconBg: 'bg-blue-100',
           spark: state.trend.map((p) => p.orders),
           sparkColor: 'var(--chart-2)',
+          onClick: onSalesClick,
         },
         {
           title: 'Profit & Margin',
@@ -247,7 +431,44 @@ export default function DashboardView({
           iconBg: 'bg-purple-100',
           spark: state.trend.map((p) => p.profit),
           sparkColor: 'var(--chart-5)',
+          onClick: onReportsClick,
         },
+        ...(isManagerOrAdmin && state.drawerSummary
+          ? (() => {
+              const ds = state.drawerSummary!;
+              const open = ds.openSession;
+              const variance = open?.variance ?? 0;
+              const variancePct = open?.floatAmount ? (variance / open.floatAmount) * 100 : 0;
+              const lastReconciled = ds.closedSessions.length > 0
+                ? new Date(ds.closedSessions[0].closedAt!).toLocaleString()
+                : 'Never';
+              return [
+                {
+                  title: 'Cash Drawer',
+                  value: fmt(open?.countedCash ?? open?.floatAmount ?? 0),
+                  hint: `Float: ${fmt(open?.floatAmount ?? 0)} · Variance: ${fmt(variance)} (${variancePct >= 0 ? '+' : ''}${variancePct.toFixed(1)}%)`,
+                  icon: <Wallet className="size-4 text-emerald-600" />,
+                  iconBg: variance >= 0 ? 'bg-emerald-100' : 'bg-red-100',
+                  badge: {
+                    label: variance >= 0 ? 'Balanced' : 'Variance',
+                    variant: variance >= 0 ? 'default' : 'destructive',
+                  },
+                  spark: state.trend.map(() => 0),
+                  sparkColor: 'var(--chart-3)',
+                  onClick: onDrawerClick,
+                },
+                {
+                  title: 'Last Reconciled',
+                  value: lastReconciled,
+                  hint: `Total sessions: ${ds.summary.totalSessions} · Total variance: ${fmt(ds.summary.totalVariance)}`,
+                  icon: <RotateCcw className="size-4 text-slate-600" />,
+                  iconBg: 'bg-slate-100',
+                  spark: state.trend.map(() => 0),
+                  sparkColor: 'var(--chart-4)',
+                },
+              ];
+            })()
+          : []),
         ...(state.stock
           ? [
               {
@@ -267,6 +488,7 @@ export default function DashboardView({
                 iconBg: state.stock.outOfStock > 0 ? 'bg-red-100' : 'bg-green-100',
                 spark: state.trend.map(() => 0),
                 sparkColor: 'var(--chart-2)',
+                onClick: () => onStockClick?.('out'),
               },
 {
                 title: 'Stock Worth',
@@ -299,6 +521,7 @@ export default function DashboardView({
           iconBg: state.lowStockProducts.length > 0 ? 'bg-amber-100' : 'bg-green-100',
           spark: state.trend.map(() => 0),
           sparkColor: 'var(--chart-3)',
+          onClick: () => onStockClick?.('low'),
         },
       ]
     : [];
@@ -321,16 +544,38 @@ export default function DashboardView({
             <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
           </span>
           Live · updated {Math.round((Date.now() - updatedAt) / 1000)}s ago
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="outline" size="icon-sm" className="ml-1" aria-label="Refresh" onClick={loadData}>
-                  <RefreshCw className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent>Refresh</TooltipContent>
-          </Tooltip>
+<Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="outline" size="icon-sm" className="ml-1" aria-label="Refresh" onClick={loadData}>
+                    <RefreshCw className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Refresh</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="icon-sm" className="ml-1" aria-label="Export dashboard">
+                        <Download className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={() => handleExport('xlsx')}>
+                        <FileSpreadsheet className="size-4 mr-2" /> Export to Excel (.xlsx)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport('csv')}>
+                        <FileText className="size-4 mr-2" /> Export to CSV (multiple files)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                }
+              />
+              <TooltipContent>Export Dashboard</TooltipContent>
+            </Tooltip>
         </div>
       </header>
 
@@ -372,9 +617,26 @@ export default function DashboardView({
         <div className="grid gap-3">
           {/* Sales Trend — full-width, the primary chart */}
           <Card>
-            <CardHeader>
-              <CardTitle>Daily Selling Activity</CardTitle>
-              <p className="text-xs text-muted-foreground">{rangeLabel} vs previous period</p>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div>
+                <CardTitle>Daily Selling Activity</CardTitle>
+                <p className="text-xs text-muted-foreground">{rangeLabel} vs previous period</p>
+              </div>
+              {(range?.preset === 'today' || (range?.preset === 'custom' && 
+                (new Date(range.end).getTime() - new Date(range.start).getTime()) / 86_400_000 <= 1)) && (
+                <Tabs value={viewMode} onValueChange={setViewMode} className="w-auto">
+                  <TabsList className="h-7 bg-transparent">
+                    <TabsTrigger value="line" className="h-6 px-2 text-xs gap-1">
+                      <BarChart3 className="size-3.5" aria-hidden="true" />
+                      Line
+                    </TabsTrigger>
+                    <TabsTrigger value="heatmap" className="h-6 px-2 text-xs gap-1">
+                      <Package className="size-3.5" aria-hidden="true" />
+                      Heatmap
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              )}
             </CardHeader>
             <CardContent>
               {state.loading ? (
@@ -385,6 +647,11 @@ export default function DashboardView({
                   title="No sales in this period"
                   description="Completed sales will appear here as a trend against the previous period."
                 />
+              ) : viewMode === 'heatmap' && (range?.preset === 'today' || (range?.preset === 'custom' && 
+                (new Date(range.end).getTime() - new Date(range.start).getTime()) / 86_400_000 <= 1)) ? (
+                <div className="h-[280px] w-full">
+                  <HourlyHeatmap trend={state.trend} symbol={symbol} />
+                </div>
               ) : (
                 <ChartContainer config={trendConfig} className="h-[280px] w-full">
                   <AreaChart data={activity} margin={{ left: 4, right: 8, top: 8 }}>
@@ -443,7 +710,7 @@ export default function DashboardView({
             </CardContent>
           </Card>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-3">
             {/* Category donut with side legend */}
             <Card>
               <CardHeader>
@@ -533,9 +800,141 @@ export default function DashboardView({
                 )}
               </CardContent>
             </Card>
+
+            {/* Fulfillment breakdown */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Fulfillment Type</CardTitle>
+                <p className="text-xs text-muted-foreground">Sales split by order type</p>
+              </CardHeader>
+              <CardContent>
+                {state.loading ? (
+                  <Skeleton className="h-[260px] w-full" />
+                ) : state.fulfillmentSlices.length === 0 ? (
+                  <EmptyInline
+                    icon={<Package className="size-6" />}
+                    title="No fulfillment data"
+                    description="Sales by fulfillment type will appear here."
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-4 sm:flex-row">
+                    <ChartContainer
+                      config={fulfillmentConfig}
+                      className="mx-auto h-[220px] w-[220px] shrink-0"
+                    >
+                      <PieChart>
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent nameKey="fulfillment" formatter={fmtTooltip} />
+                          }
+                        />
+                        <Pie
+                          data={state.fulfillmentSlices}
+                          dataKey="revenue"
+                          nameKey="fulfillment"
+                          innerRadius={50}
+                          outerRadius={85}
+                          paddingAngle={2}
+                        >
+                          {state.fulfillmentSlices.map((s) => (
+                            <Cell key={s.fulfillment} fill={`var(--color-${s.fulfillment})`} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ChartContainer>
+                    <ul className="flex w-full flex-col gap-1.5">
+                      {state.fulfillmentSlices.map((s, i) => {
+                        const fulfillmentTotal = state.fulfillmentSlices.reduce((sum, f) => sum + f.revenue, 0);
+                        const pct = fulfillmentTotal ? (s.revenue / fulfillmentTotal) * 100 : 0;
+                        return (
+                          <li key={s.fulfillment} className="flex items-center gap-2 text-sm">
+                            <span
+                              className="size-2.5 shrink-0 rounded-full"
+                              style={{ background: `var(--chart-${(i % 5) + 1})` }}
+                            />
+                            <span className="flex-1 truncate capitalize">{s.fulfillment}</span>
+                            <span className="tabular-nums text-muted-foreground">
+                              {pct.toFixed(0)}%
+                            </span>
+                            <span className="w-20 text-right font-medium tabular-nums">
+                              {compactCurrency(s.revenue, symbol)}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </section>
+
+      {/* Team Performance — Manager/Admin only */}
+      {isManagerOrAdmin && state.cashierPerformance.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Team Performance
+          </h2>
+          <Card>
+            <CardHeader>
+              <CardTitle>Cashier KPIs</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {rangeLabel} · Click a row to view filtered sales
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-4">
+                        CASHIER
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                        SALES
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                        ORDERS
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                        AOV
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                        VOIDS
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {state.cashierPerformance.map((cp) => (
+                      <TableRow
+                        key={cp.userId}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => onSalesClick?.(cp.userId)}
+                      >
+                        <TableCell className="font-medium pl-4">{cp.userName}</TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">{fmt(cp.sales)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{cp.orders}</TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">{fmt(cp.aov)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {cp.voids > 0 ? (
+                            <Badge variant="destructive" className="text-xs">
+                              {cp.voids}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">0</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Live + Inventory */}
       <section className="space-y-3">
@@ -543,11 +942,88 @@ export default function DashboardView({
           Operations
         </h2>
         <div className="grid gap-3 lg:grid-cols-2">
+          <TeamOverview team={state.teamOverview} symbol={symbol} onResumeHeld={onHeldClick} />
           <LiveOrderQueue symbol={symbol} onResume={() => onQuickSale?.()} />
-
         </div>
       </section>
     </div>
+  );
+}
+
+/* ── Team Overview widget ────────────────────────────── */
+
+function TeamOverview({
+  team,
+  symbol,
+  onResumeHeld,
+}: {
+  team: TeamMemberOverview[];
+  symbol: string;
+  onResumeHeld?: (userId: number) => void;
+}) {
+  if (team.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="size-4" />
+            Team Overview
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">No active cashiers</p>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-4">No cashiers currently clocked in</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="size-4" />
+          Team Overview
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">{team.length} cashier(s) clocked in</p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-muted/40">
+              <TableRow>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-4">CASHIER</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">HELD ORDERS</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">HELD TOTAL</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">SALES TODAY</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">ORDERS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {team.map((member) => (
+                <TableRow key={member.userId} className="hover:bg-muted/50 transition-colors">
+                  <TableCell className="font-medium pl-4">{member.userName}</TableCell>
+                  <TableCell className="text-right tabular-nums pr-4">
+                    {member.heldOrdersCount > 0 ? (
+                      <Badge variant="secondary" className="text-xs cursor-pointer hover:var(--accent)" onClick={() => onResumeHeld?.(member.userId)}>
+                        {member.heldOrdersCount}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums pr-4">
+                    {member.heldOrdersTotal > 0 ? `${symbol}${member.heldOrdersTotal.toFixed(2)}` : <span className="text-muted-foreground">—</span>}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums pr-4">{symbol}{member.salesToday.toFixed(2)}</TableCell>
+                  <TableCell className="text-right tabular-nums pr-4">{member.ordersToday}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -587,24 +1063,32 @@ type CardDef = {
             <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBg ?? 'bg-muted'} text-muted-foreground`}>
               {icon}
             </span>
-            {hasTrend &&
-              (up ? (
-                <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
-                  <TrendingUp className="size-3.5" />
-                  {up ? '+' : ''}
-                  {(pct as number).toFixed(0)}%
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400">
-                  <TrendingDown className="size-3.5" />
-                  {(pct as number).toFixed(0)}%
-                </span>
-              ))}
+            <div className="flex items-center gap-2">
+              {hasTrend &&
+                (up ? (
+                  <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                    <TrendingUp className="size-3.5" />
+                    {up ? '+' : ''}
+                    {(pct as number).toFixed(0)}%
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400">
+                    <TrendingDown className="size-3.5" />
+                    {(pct as number).toFixed(0)}%
+                  </span>
+                ))}
+              {badge && (
+                <Badge variant={badge.variant} className="text-xs">
+                  {badge.label}
+                </Badge>
+              )}
+            </div>
           </div>
           <div>
           <span className="text-sm font-normal text-muted-foreground">{title}</span>
           </div>
           <div className="text-2xl font-bold leading-none tracking-tight">{value}</div>
+          {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
         </CardContent>
       </Card>
     </Wrapper>
@@ -675,6 +1159,87 @@ function BestSellersChart({
           />
         </BarChart>
       </ChartContainer>
+    </div>
+  );
+}
+
+/* ── Hourly Heatmap ──────────────────────────────────────── */
+
+function HourlyHeatmap({
+  trend,
+  symbol,
+}: {
+  trend: TrendPoint[];
+  symbol: string;
+}) {
+  const maxTotal = Math.max(1, ...trend.map((p) => p.total));
+  const maxOrders = Math.max(1, ...trend.map((p) => p.orders));
+  const [metric, setMetric] = useState<'total' | 'orders'>('total');
+
+  const getIntensity = (value: number, max: number) => {
+    const ratio = max === 0 ? 0 : value / max;
+    if (ratio === 0) return 'bg-muted';
+    if (ratio < 0.25) return 'bg-primary/10';
+    if (ratio < 0.5) return 'bg-primary/30';
+    if (ratio < 0.75) return 'bg-primary/60';
+    return 'bg-primary';
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Sales intensity by hour (darker = busier)</p>
+        <Tabs value={metric} onValueChange={setMetric} className="w-auto">
+          <TabsList className="h-7 bg-transparent">
+            <TabsTrigger value="total" className="h-6 px-2 text-xs">Revenue</TabsTrigger>
+            <TabsTrigger value="orders" className="h-6 px-2 text-xs">Orders</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+      <div className="grid grid-cols-12 gap-1" role="img" aria-label="Hourly sales heatmap">
+        {trend.map((point, index) => {
+          const value = metric === 'total' ? point.total : point.orders;
+          const max = metric === 'total' ? maxTotal : maxOrders;
+          const intensity = getIntensity(value, max);
+          const label = `${point.label}`;
+          const displayValue = metric === 'total' 
+            ? `${symbol}${Number(value).toFixed(2)}` 
+            : `${value} orders`;
+          
+          return (
+            <div
+              key={index}
+              className={`relative flex flex-col items-center justify-end p-2 rounded-md transition-colors hover:shadow-md ${intensity}`}
+              style={{ minHeight: '80px' }}
+              title={`${label}: ${displayValue}`}
+            >
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 text-[10px] font-medium text-primary">
+                {displayValue}
+              </div>
+              <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-muted" />
+          <span>Quiet</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-primary/10" />
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-primary/30" />
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-primary/60" />
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-primary" />
+          <span>Peak</span>
+        </span>
+      </div>
     </div>
   );
 }

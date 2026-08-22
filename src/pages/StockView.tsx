@@ -65,7 +65,13 @@ const emptyIngredient: { id: string; name: string; unit: Unit; costPerUnit: stri
   costPerUnit: '',
 };
 
-export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
+export default function StockView({ 
+  symbol = 'Rs',
+  initialFilter,
+}: { 
+  symbol?: string;
+  initialFilter?: 'low' | 'out';
+}) {
   const [list, setList] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +107,9 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
+
+  // Stock list filter (for manage tab)
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>(initialFilter ?? 'all');
 
   // Report tab
   const initialRange = monthRange();
@@ -592,24 +601,36 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="manage" className="mt-4 space-y-4">
+<TabsContent value="manage" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="flex-row items-start justify-between space-y-0">
               <div className="space-y-1.5">
                 <CardTitle className="text-base">What We Have</CardTitle>
                 <CardDescription>How much of each item is left right now.</CardDescription>
               </div>
-              <Button type="button" size="sm" onClick={openCreate}>
-                <Plus className="size-4" />
-                Add New Item
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as 'all' | 'low' | 'out')}>
+                  <SelectTrigger className="w-[160px] h-9">
+                    <SelectValue placeholder="All stock" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All stock</SelectItem>
+                    <SelectItem value="low">Low stock</SelectItem>
+                    <SelectItem value="out">Out of stock</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button type="button" size="sm" onClick={openCreate}>
+                  <Plus className="size-4" />
+                  Add New Item
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {loading ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
               ) : list.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No items yet. Tap “Add New Item” to start.
+                  No items yet. Tap "Add New Item" to start.
                 </p>
               ) : (
                 <Table>
@@ -623,7 +644,13 @@ export default function StockView({ symbol = 'Rs' }: { symbol?: string }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {list.map((i) => {
+                    {list
+                      .filter((i) => {
+                        if (stockFilter === 'low') return isLowStock(i) && i.balance > 0;
+                        if (stockFilter === 'out') return i.balance <= 0;
+                        return true;
+                      })
+                      .map((i) => {
                       const outOfStock = i.balance <= 0;
                       return (
                       <TableRow key={i.id} className={outOfStock ? 'bg-destructive/5' : undefined}>

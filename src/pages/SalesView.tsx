@@ -84,6 +84,9 @@ type Props = {
   symbol: string;
   settings: Settings | null;
   onClose?: () => void;
+  initialStatus?: string;
+  initialUserId?: number;
+  initialVoidFilter?: boolean;
 };
 
 type DatePreset = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom';
@@ -123,7 +126,7 @@ function getItemCount(row: Transaction) {
   return row.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 }
 
-export default function SalesView({ symbol, settings }: Props) {
+export default function SalesView({ symbol, settings, onClose, initialStatus = 'all', initialUserId = 0, initialVoidFilter = false }: Props) {
   const [rows, setRows] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,8 +134,8 @@ export default function SalesView({ symbol, settings }: Props) {
 
   // Filters
   const [query, setQuery] = useState('');
-  const [userId, setUserId] = useState<string>('0');
-  const [status, setStatus] = useState<string>('all');
+  const [userId, setUserId] = useState<string>(String(initialUserId));
+  const [status, setStatus] = useState<string>(initialVoidFilter ? '2' : initialStatus);
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');

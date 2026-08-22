@@ -2,6 +2,7 @@ export type Role = 'Admin' | 'Manager' | 'Cashier';
 
 export type NavItemId =
   | 'dashboard'
+  | 'shift-summary'
   | 'sales'
   | 'customers'
   | 'menu'
@@ -16,7 +17,8 @@ export type NavItemId =
 
 // ADR-0006 matrix: which roles may see each navigation area.
 const ROLE_AREAS: Record<NavItemId, Role[]> = {
-  dashboard: ['Admin', 'Manager', 'Cashier'],
+  dashboard: ['Admin', 'Manager'],
+  'shift-summary': ['Cashier'],
   sales: ['Admin', 'Manager', 'Cashier'],
   customers: ['Admin', 'Manager', 'Cashier'],
   menu: ['Admin', 'Manager'],
@@ -43,7 +45,10 @@ const NAV: NavDef[] = [
   {
     group: 'overview',
     label: 'Overview',
-    items: [{ id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' }],
+    items: [
+      { id: 'shift-summary', label: 'Shift Summary', icon: 'LayoutDashboard' },
+      { id: 'dashboard', label: 'Dashboard', icon: 'BarChart3' },
+    ],
   },
   {
     group: 'sales',

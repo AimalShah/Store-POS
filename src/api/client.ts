@@ -97,6 +97,8 @@ export type DrawerSession = {
   status: string;
   openedAt: string;
   closedAt: string | null;
+  userId?: number;
+  userName?: string;
 };
 
 export type AuditLog = {
@@ -590,6 +592,22 @@ export const api = {
       return request<DrawerSession[]>(
         `/drawer?${q}`
       );
+    },
+
+    getDrawerSummary: (till?: number) => {
+      const q = new URLSearchParams();
+      if (till) q.append('till', String(till));
+      return request<{
+        till: number;
+        openSession: DrawerSession | null;
+        closedSessions: DrawerSession[];
+        summary: {
+          totalSessions: number;
+          totalFloat: number;
+          totalClose: number;
+          totalVariance: number;
+        };
+      }>(`/drawer/summary${q.toString() ? `?${q.toString()}` : ''}`);
     },
 
     openDrawerSession: (body: { floatAmount: number; till: number }) =>
