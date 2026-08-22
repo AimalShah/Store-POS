@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, EllipsisVertical, PackagePlus, PackageX, Pencil, Plus, Trash2, Utensils, RefreshCw, BarChart3, Download, Calendar as CalendarIcon } from 'lucide-react';
+import { AlertCircle, EllipsisVertical, PackagePlus, PackageX, Pencil, Plus, Trash2, Utensils, RefreshCw, BarChart3, Download, Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, Columns3, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '../components/ui/badge';
 import { api, Ingredient, StockEntry, UNITS, Unit } from '../api/client';
@@ -31,14 +31,6 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../components/ui/table';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -57,6 +49,7 @@ import {
 import { Calendar as CalendarPicker } from '../components/ui/calendar';
 import { localInputToIso, monthRange } from '../lib/dates';
 import { downloadCsv } from '../lib/export';
+import { DataTable, ColumnDef } from '../components/DataTable';
 
 const emptyIngredient: { id: string; name: string; unit: Unit; costPerUnit: string } = {
   id: '',
@@ -64,6 +57,66 @@ const emptyIngredient: { id: string; name: string; unit: Unit; costPerUnit: stri
   unit: 'kg',
   costPerUnit: '',
 };
+
+const DEFAULT_LOW_STOCK_THRESHOLD = 10;
+
+function isLowStock(ingredient: Ingredient): boolean {
+  return ingredient.balance > 0 && ingredient.balance <= DEFAULT_LOW_STOCK_THRESHOLD;
+}
+
+function getTypeBadge(type: string) {
+  if (type === 'restock') {
+    return (
+      <Badge variant="outline" className="gap-1 bg-emerald-50 text-emerald-700 border-emerald-200">
+        <PackagePlus className="size-3" />
+        Added
+      </Badge>
+    );
+  }
+  if (type === 'usage') {
+    return (
+      <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-200">
+        <Utensils className="size-3" />
+        Used
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="gap-1 bg-red-50 text-red-700 border-red-200">
+      <PackageX className="size-3" />
+      Wasted
+    </Badge>
+  );
+}
+
+function getStatusBadge(type: string) {
+  if (type === 'restock') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">
+        <PackagePlus className="size-3" />
+        Added
+      </span>
+    );
+  }
+  if (type === 'usage') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+        <Utensils className="size-3" />
+        Used
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">
+      <PackageX className="size-3" />
+      Wasted
+    </span>
+  );
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleString();
+}
 
 export default function StockView({ 
   symbol = 'Rs',
@@ -107,6 +160,7 @@ export default function StockView({
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
+  const [historyDateRange, setHistoryDateRange] = useState<{ start: string; end: string } | null>(null);
 
   // Stock list filter (for manage tab)
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>(initialFilter ?? 'all');
@@ -420,6 +474,446 @@ export default function StockView({
     }
   };
 
+  // ===== DataTable Column Definitions =====
+
+  // Manage tab - Stock Items table
+  const stockItemColumns = useMemo<ColumnDef<Ingredient>[]>(() => [
+    {
+      id: 'name',
+      header: 'NAME',
+      accessorKey: 'name',
+      cell: ({ row }) => {
+        const i = row.original;
+        const outOfStock = i.balance <= 0;
+        return (
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{i.name}</span>
+            {outOfStock && (
+              <Badge variant="destructive" className="text-xs">
+                Out of stock
+              </Badge>
+            )}
+          </div>
+        );
+      },
+      meta: { align: 'left' },
+    },
+    {
+      id: 'balance',
+      header: 'AMOUNT LEFT',
+      accessorKey: 'balance',
+      cell: ({ row }) => (
+        <span className="font-mono text-sm font-medium tabular-nums">
+          {Number(row.original.balance).toFixed(2)} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'price',
+      header: 'PRICE',
+      accessorKey: 'costPerUnit',
+      cell: ({ row }) => {
+        const i = row.original;
+        return i.costPerUnit > 0 ? (
+          <span className="font-mono text-sm tabular-nums">
+            {symbol}{Number(i.costPerUnit).toFixed(2)} / {i.unit}
+          </span>
+        ) : (
+          <Badge variant="secondary" className="text-xs font-normal">
+            Not set
+          </Badge>
+        );
+      },
+      meta: { align: 'right' },
+    },
+    {
+      id: 'lastChange',
+      header: 'LAST CHANGE',
+      accessorKey: 'lastEntry',
+      cell: ({ row }) => {
+        const i = row.original;
+        if (!i.lastEntry) {
+          return (
+            <Badge variant="secondary" className="text-xs">
+              Not stocked yet
+            </Badge>
+          );
+        }
+        return (
+          <Badge variant="outline" className="gap-1 max-w-[220px] truncate">
+            {getTypeBadge(i.lastEntry.type).props.children}
+            <span className="text-muted-foreground">· by {i.lastEntry.userName}</span>
+          </Badge>
+        );
+      },
+      meta: { align: 'left' },
+    },
+    {
+      id: 'actions',
+      header: 'ACTIONS',
+      accessorKey: 'id',
+      enableSorting: false,
+      enableFiltering: false,
+      cell: ({ row }) => {
+        const i = row.original;
+        const outOfStock = i.balance <= 0;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Actions for ${i.name}`}
+              >
+                <EllipsisVertical className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={() => openDeduct(i, 'usage')}>
+                <Utensils className="size-4" /> Mark used
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={() => openDeduct(i, 'wastage')}>
+                <PackageX className="size-4" /> Mark wasted
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => editIngredient(i)}>
+                <Pencil className="size-4" /> Edit item
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(i)}>
+                <Trash2 className="size-4" /> Delete item
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+      meta: { align: 'right', className: 'w-12' },
+    },
+  ], [symbol]);
+
+  // Stock History table
+  const historyColumns = useMemo<ColumnDef<StockEntry>[]>(() => [
+    {
+      id: 'date',
+      header: 'DATE',
+      accessorKey: 'createdAt',
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {formatDate(row.original.createdAt)}
+        </span>
+      ),
+      meta: { align: 'left' },
+    },
+    {
+      id: 'ingredient',
+      header: 'INGREDIENT',
+      accessorKey: 'ingredientName',
+      cell: ({ row }) => (
+        <span className="font-medium">{row.original.ingredientName}</span>
+      ),
+      meta: { align: 'left' },
+    },
+    {
+      id: 'type',
+      header: 'TYPE',
+      accessorKey: 'type',
+      cell: ({ row }) => getStatusBadge(row.original.type),
+      meta: { align: 'left' },
+    },
+    {
+      id: 'quantity',
+      header: 'QUANTITY',
+      accessorKey: 'quantity',
+      cell: ({ row }) => {
+        const e = row.original;
+        return (
+          <span className="font-mono tabular-nums">
+            {e.type === 'restock' ? '+' : '−'}
+            {Number(e.quantity)} {e.unit}
+          </span>
+        );
+      },
+      meta: { align: 'right' },
+    },
+    {
+      id: 'by',
+      header: 'BY',
+      accessorKey: 'userName',
+      cell: ({ row }) => row.original.userName,
+      meta: { align: 'left' },
+    },
+    {
+      id: 'note',
+      header: 'NOTE / REASON',
+      accessorKey: 'note',
+      cell: ({ row }) => (
+        <span className="max-w-[220px] truncate text-muted-foreground">
+          {row.original.note || '—'}
+        </span>
+      ),
+      meta: { align: 'left' },
+    },
+  ], []);
+
+  // Stock Report table
+  const reportColumns = useMemo<ColumnDef<typeof reportData[0]>[]>(() => [
+    {
+      id: 'productName',
+      header: 'PRODUCT',
+      accessorKey: 'productName',
+      cell: ({ row }) => (
+        <span className="font-medium">{row.original.productName}</span>
+      ),
+      meta: { align: 'left' },
+    },
+    {
+      id: 'restocks',
+      header: 'RECEIVED',
+      accessorKey: 'restocks',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.restocks} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'sales',
+      header: 'SOLD',
+      accessorKey: 'sales',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.sales} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'wastage',
+      header: 'WASTED',
+      accessorKey: 'wastage',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.wastage} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'adjustments',
+      header: 'ADJUSTED',
+      accessorKey: 'adjustments',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.adjustments} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'theoretical',
+      header: 'SHOULD BE LEFT',
+      accessorKey: 'theoretical',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.theoretical} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'actual',
+      header: 'ACTUALLY LEFT',
+      accessorKey: 'actual',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.actual} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'variance',
+      header: 'DIFFERENCE',
+      accessorKey: 'variance',
+      cell: ({ row }) => (
+        <span className={row.original.variance < 0 ? 'text-destructive' : row.original.variance > 0 ? 'text-emerald-600' : ''}>
+          {row.original.variance >= 0 ? '+' : ''}{row.original.variance} {row.original.unit}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'sellThrough',
+      header: '% SOLD',
+      accessorKey: 'sellThrough',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.sellThrough}%
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+    {
+      id: 'daysOfStock',
+      header: 'DAYS LEFT',
+      accessorKey: 'daysOfStock',
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">
+          {row.original.daysOfStock === Infinity || row.original.daysOfStock > 999 ? '∞' : row.original.daysOfStock}
+        </span>
+      ),
+      meta: { align: 'right' },
+    },
+  ], []);
+
+  // Filtered stock items for manage tab
+  const filteredStockItems = useMemo(() => {
+    return list.filter((i) => {
+      if (stockFilter === 'low') return isLowStock(i) && i.balance > 0;
+      if (stockFilter === 'out') return i.balance <= 0;
+      return true;
+    });
+  }, [list, stockFilter]);
+
+  // History additional filters
+  const historyAdditionalFilters = useMemo(() => (
+    <>
+      <Select value={filterIngredient} onValueChange={(v) => setFilterIngredient(v ?? 'all')}>
+        <SelectTrigger aria-label="Pick an item" className="h-9 w-[160px] shrink-0">
+          <SelectValue placeholder="All items" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All items</SelectItem>
+          {list.map((i) => (
+            <SelectItem key={i.id} value={String(i.id)}>
+              {i.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={filterType} onValueChange={(v) => setFilterType(v ?? 'all')}>
+        <SelectTrigger aria-label="What to show" className="h-9 w-[140px] shrink-0">
+          <SelectValue placeholder="Everything" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Everything</SelectItem>
+          <SelectItem value="restock">Added</SelectItem>
+          <SelectItem value="usage">Used</SelectItem>
+          <SelectItem value="wastage">Wasted</SelectItem>
+        </SelectContent>
+      </Select>
+      <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
+            <CalendarIcon className="size-4" />
+            <span>
+              {filterFrom && filterTo
+                ? `${filterFrom} → ${filterTo}`
+                : filterFrom
+                ? `From ${filterFrom}`
+                : filterTo
+                ? `To ${filterTo}`
+                : 'Select date range'}
+            </span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start" forceMount={dateRangeOpen}>
+          {dateRangeOpen && (
+            <div className="p-3">
+              <CalendarPicker
+                mode="range"
+                selected={{ start: filterFrom ? new Date(filterFrom) : undefined, end: filterTo ? new Date(filterTo) : undefined }}
+                onSelect={(range) => {
+                  setFilterFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
+                  setFilterTo(range.end ? range.end.toISOString().slice(0, 10) : '');
+                  setDateRangeOpen(false);
+                }}
+                initialFocus
+                numberOfMonths={2}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { setFilterFrom(''); setFilterTo(''); setHistoryDateRange(null); setDateRangeOpen(false); }}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+    </>
+  ), [filterIngredient, filterType, filterFrom, filterTo, list]);
+
+  // Report additional filters
+  const reportAdditionalFilters = useMemo(() => (
+    <>
+      <Popover open={reportDateRangeOpen} onOpenChange={setReportDateRangeOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
+            <CalendarIcon className="size-4" />
+            <span>
+              {reportFrom && reportTo
+                ? `${reportFrom} → ${reportTo}`
+                : reportFrom
+                ? `From ${reportFrom}`
+                : reportTo
+                ? `To ${reportTo}`
+                : 'Select date range'}
+            </span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start" forceMount={reportDateRangeOpen}>
+          {reportDateRangeOpen && (
+            <div className="p-3">
+              <CalendarPicker
+                mode="range"
+                selected={{ start: reportFrom ? new Date(reportFrom) : undefined, end: reportTo ? new Date(reportTo) : undefined }}
+                onSelect={(range) => {
+                  setReportFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
+                  setReportTo(range.end ? range.end.toISOString().slice(0, 10) : '');
+                  setReportDateRangeOpen(false);
+                }}
+                initialFocus
+                numberOfMonths={2}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { setReportFrom(''); setReportTo(''); setReportDateRangeOpen(false); }}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+      <Button onClick={loadReport} disabled={reportLoading}>
+        {reportLoading ? 'Loading…' : 'Apply'}
+      </Button>
+      {reportData.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="outline" size="icon" onClick={exportReport} disabled={reportLoading}>
+                <Download className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>Export CSV</TooltipContent>
+        </Tooltip>
+      )}
+    </>
+  ), [reportFrom, reportTo, reportDateRangeOpen, reportData.length, reportLoading]);
+
+  const handleHistoryDateRangeChange = (range: { start: string; end: string } | null) => {
+    setHistoryDateRange(range);
+    if (range) {
+      setFilterFrom(range.start);
+      setFilterTo(range.end);
+    } else {
+      setFilterFrom('');
+      setFilterTo('');
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
       <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -511,7 +1005,7 @@ export default function StockView({
         </Card>
       </div>
 
-<Tabs defaultValue="restock">
+      <Tabs defaultValue="restock">
         <TabsList variant="line" className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
           <TabsTrigger value="restock" className="flex-none px-1 pb-2.5 pt-2 data-active:after:bg-primary">
             Add Stock
@@ -601,7 +1095,7 @@ export default function StockView({
           </Card>
         </TabsContent>
 
-<TabsContent value="manage" className="mt-4 space-y-4">
+        <TabsContent value="manage" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="flex-row items-start justify-between space-y-0">
               <div className="space-y-1.5">
@@ -626,119 +1120,31 @@ export default function StockView({
               </div>
             </CardHeader>
             <CardContent>
-              {loading ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
-              ) : list.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No items yet. Tap "Add New Item" to start.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Amount left</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Last Change</TableHead>
-                      <TableHead className="w-12 text-right" aria-label="Actions" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {list
-                      .filter((i) => {
-                        if (stockFilter === 'low') return isLowStock(i) && i.balance > 0;
-                        if (stockFilter === 'out') return i.balance <= 0;
-                        return true;
-                      })
-                      .map((i) => {
-                      const outOfStock = i.balance <= 0;
-                      return (
-                      <TableRow key={i.id} className={outOfStock ? 'bg-destructive/5' : undefined}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{i.name}</span>
-                            {outOfStock && (
-                              <Badge variant="destructive" className="text-xs">
-                                Out of stock
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="font-mono text-sm font-medium tabular-nums">
-                            {Number(i.balance).toFixed(2)} {i.unit}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm tabular-nums">
-                          {i.costPerUnit > 0 ? (
-                            `${symbol}${Number(i.costPerUnit).toFixed(2)} / ${i.unit}`
-                          ) : (
-                            <Badge variant="secondary" className="text-xs font-normal">
-                              Not set
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-[220px] truncate text-xs">
-                          {i.lastEntry ? (
-                            <Badge variant="outline" className="gap-1">
-                              {i.lastEntry.type === 'restock' ? (
-                                <>
-                                  <PackagePlus className="size-3" />
-                                  Added
-                                </>
-                              ) : i.lastEntry.type === 'usage' ? (
-                                <>
-                                  <Utensils className="size-3" />
-                                  Used
-                                </>
-                              ) : (
-                                <>
-                                  <PackageX className="size-3" />
-                                  Wasted
-                                </>
-                              )}
-                              <span className="text-muted-foreground">· by {i.lastEntry.userName}</span>
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-xs">
-                              Not stocked yet
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Actions for ${i.name}`}
-                              >
-                                <EllipsisVertical className="size-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              <DropdownMenuItem onClick={() => openDeduct(i, 'usage')}>
-                                <Utensils className="size-4" /> Mark used
-                              </DropdownMenuItem>
-                              <DropdownMenuItem variant="destructive" onClick={() => openDeduct(i, 'wastage')}>
-                                <PackageX className="size-4" /> Mark wasted
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => editIngredient(i)}>
-                                <Pencil className="size-4" /> Edit item
-                              </DropdownMenuItem>
-                              <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(i)}>
-                                <Trash2 className="size-4" /> Delete item
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
+              <DataTable<Ingredient>
+                columns={stockItemColumns}
+                data={filteredStockItems}
+                keyField="id"
+                searchPlaceholder="Search items..."
+                pageSize={15}
+                showSearch={true}
+                showPagination={true}
+                showColumnVisibility={true}
+                showRowSelection={false}
+                loading={loading}
+                emptyMessage="No items yet. Tap 'Add New Item' to start."
+                additionalFilters={
+                  <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as 'all' | 'low' | 'out')}>
+                    <SelectTrigger className="w-[160px] h-9">
+                      <SelectValue placeholder="All stock" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All stock</SelectItem>
+                      <SelectItem value="low">Low stock</SelectItem>
+                      <SelectItem value="out">Out of stock</SelectItem>
+                    </SelectContent>
+                  </Select>
+                }
+              />
             </CardContent>
           </Card>
 
@@ -748,131 +1154,25 @@ export default function StockView({
               <CardDescription>Everything added, used or wasted — who did it, when, and how much.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Select value={filterIngredient} onValueChange={(v) => setFilterIngredient(v ?? 'all')}>
-                  <SelectTrigger
-                    aria-label="Pick an item"
-                    className="h-9 w-[160px] shrink-0"
-                  >
-                    <SelectValue placeholder="All items" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All items</SelectItem>
-                    {list.map((i) => (
-                      <SelectItem key={i.id} value={String(i.id)}>
-                        {i.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={filterType} onValueChange={(v) => setFilterType(v ?? 'all')}>
-                  <SelectTrigger aria-label="What to show" className="h-9 w-[140px] shrink-0">
-                    <SelectValue placeholder="Everything" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Everything</SelectItem>
-                    <SelectItem value="restock">Added</SelectItem>
-                    <SelectItem value="usage">Used</SelectItem>
-                    <SelectItem value="wastage">Wasted</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
-                      <CalendarIcon className="size-4" />
-                      <span>
-                        {filterFrom && filterTo
-                          ? `${filterFrom} → ${filterTo}`
-                          : filterFrom
-                          ? `From ${filterFrom}`
-                          : filterTo
-                          ? `To ${filterTo}`
-                          : 'Select date range'}
-                      </span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start" forceMount={dateRangeOpen}>
-                    {dateRangeOpen && (
-                      <div className="p-3">
-                        <CalendarPicker
-                          mode="range"
-                          selected={{ start: filterFrom ? new Date(filterFrom) : undefined, end: filterTo ? new Date(filterTo) : undefined }}
-                          onSelect={(range) => {
-                            setFilterFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
-                            setFilterTo(range.end ? range.end.toISOString().slice(0, 10) : '');
-                            setDateRangeOpen(false);
-                          }}
-                          initialFocus
-                          numberOfMonths={2}
-                        />
-                        <div className="mt-2 flex justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => { setFilterFrom(''); setFilterTo(''); setDateRangeOpen(false); }}>
-                            Clear
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {entries.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Nothing here yet.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Ingredient</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Quantity</TableHead>
-                      <TableHead>By</TableHead>
-                      <TableHead>Note / reason</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {entries.map((e) => (
-                      <TableRow key={e.id}>
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {new Date(e.createdAt).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-medium">{e.ingredientName}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                              e.type === 'restock'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : e.type === 'usage'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {e.type === 'restock' ? (
-                              <PackagePlus className="size-3" />
-                            ) : e.type === 'usage' ? (
-                              <Utensils className="size-3" />
-                            ) : (
-                              <PackageX className="size-3" />
-                            )}
-                            {e.type === 'restock' ? 'Added' : e.type === 'usage' ? 'Used' : 'Wasted'}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {e.type === 'restock' ? '+' : '−'}
-                          {Number(e.quantity)} {e.unit}
-                        </TableCell>
-                        <TableCell>{e.userName}</TableCell>
-                        <TableCell className="max-w-[220px] truncate text-muted-foreground">
-                          {e.note || '—'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+              <DataTable<StockEntry>
+                columns={historyColumns}
+                data={entries}
+                keyField="id"
+                searchPlaceholder="Search history..."
+                pageSize={15}
+                showSearch={true}
+                showPagination={true}
+                showColumnVisibility={true}
+                showRowSelection={false}
+                loading={false}
+                emptyMessage="Nothing here yet."
+                additionalFilters={historyAdditionalFilters}
+                dateRangeFilter={historyDateRange}
+                onDateRangeChange={handleHistoryDateRangeChange}
+              />
             </CardContent>
-</Card>
-          </TabsContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="report" className="mt-4 space-y-4">
           <Card>
@@ -886,119 +1186,30 @@ export default function StockView({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <Popover open={reportDateRangeOpen} onOpenChange={setReportDateRangeOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="h-9 w-[280px] justify-start gap-2 text-left">
-                      <CalendarIcon className="size-4" />
-                      <span>
-                        {reportFrom && reportTo
-                          ? `${reportFrom} → ${reportTo}`
-                          : reportFrom
-                          ? `From ${reportFrom}`
-                          : reportTo
-                          ? `To ${reportTo}`
-                          : 'Select date range'}
-                      </span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start" forceMount={reportDateRangeOpen}>
-                    {reportDateRangeOpen && (
-                      <div className="p-3">
-                        <CalendarPicker
-                          mode="range"
-                          selected={{ start: reportFrom ? new Date(reportFrom) : undefined, end: reportTo ? new Date(reportTo) : undefined }}
-                          onSelect={(range) => {
-                            setReportFrom(range.start ? range.start.toISOString().slice(0, 10) : '');
-                            setReportTo(range.end ? range.end.toISOString().slice(0, 10) : '');
-                            setReportDateRangeOpen(false);
-                          }}
-                          initialFocus
-                          numberOfMonths={2}
-                        />
-                        <div className="mt-2 flex justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => { setReportFrom(''); setReportTo(''); setReportDateRangeOpen(false); }}>
-                            Clear
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </PopoverContent>
-                </Popover>
-                <Button onClick={loadReport} disabled={reportLoading}>
-                  {reportLoading ? 'Loading…' : 'Apply'}
-                </Button>
-                {reportData.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button variant="outline" size="icon" onClick={exportReport} disabled={reportLoading}>
-                          <Download className="size-4" />
-                        </Button>
-                      }
-                    />
-                    <TooltipContent>Export CSV</TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-
               {reportError && (
                 <div className="flex items-center gap-2 rounded-md border bg-destructive/10 px-4 py-3 text-sm text-destructive">
                   <AlertCircle className="size-4 shrink-0" />
                   {reportError}
                 </div>
               )}
-
-              {reportLoading ? (
-                <div className="py-6 text-center text-sm text-muted-foreground">Loading report…</div>
-              ) : reportData.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">No stock movements in this range.</p>
-              ) : (
-                <div className="overflow-x-auto rounded-md border">
-                  <Table>
-                  <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead className="text-right">Received</TableHead>
-                        <TableHead className="text-right">Sold</TableHead>
-                        <TableHead className="text-right">Wasted</TableHead>
-                        <TableHead className="text-right">Adjusted</TableHead>
-                        <TableHead className="text-right">Should Be Left</TableHead>
-                        <TableHead className="text-right">Actually Left</TableHead>
-                        <TableHead className="text-right">Difference</TableHead>
-                        <TableHead className="text-right">% Sold</TableHead>
-                        <TableHead className="text-right">Days Left</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reportData.map((row, idx) => (
-                        <TableRow key={idx} className={row.variance !== 0 ? 'bg-destructive/5' : undefined}>
-                          <TableCell className="font-medium">{row.productName}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.restocks} {row.unit}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.sales} {row.unit}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.wastage} {row.unit}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.adjustments} {row.unit}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.theoretical} {row.unit}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.actual} {row.unit}</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">
-                            <span className={row.variance < 0 ? 'text-destructive' : row.variance > 0 ? 'text-emerald-600' : ''}>
-                              {row.variance >= 0 ? '+' : ''}{row.variance} {row.unit}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{row.sellThrough}%</TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">
-                            {row.daysOfStock === Infinity || row.daysOfStock > 999 ? '∞' : row.daysOfStock}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+              <DataTable<typeof reportData[0]>
+                columns={reportColumns}
+                data={reportData}
+                keyField={(row) => row.productName}
+                searchPlaceholder="Search products..."
+                pageSize={15}
+                showSearch={true}
+                showPagination={true}
+                showColumnVisibility={true}
+                showRowSelection={false}
+                loading={reportLoading}
+                emptyMessage="No stock movements in this range."
+                additionalFilters={reportAdditionalFilters}
+              />
             </CardContent>
           </Card>
         </TabsContent>
-        </Tabs>
+      </Tabs>
 
       <AlertDialog
         open={!!deductTarget}
