@@ -466,7 +466,7 @@ export default function StockView({
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                 <PackagePlus className="size-4 text-primary" />
               </span>
-              <p className="text-sm text-semibold text-muted-foreground">Stock Items</p>
+              <p className="text-sm text-semibold text-muted-foreground">Items in stock</p>
             </div>
             <p className="text-3xl font-bold leading-none tabular-nums text-center">{summary?.items ?? list.length}</p>
           </CardContent>
@@ -490,7 +490,7 @@ export default function StockView({
                   className={`size-4 ${(summary?.outOfStock ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
                 />
               </span>
-              <p className="text-sm text-semibold text-muted-foreground">Out of Stock</p>
+              <p className="text-sm text-semibold text-muted-foreground">Nothing left</p>
             </div>
             <p className="text-3xl font-bold leading-none tabular-nums text-center">
               {summary?.outOfStock ?? 0}
@@ -504,9 +504,9 @@ export default function StockView({
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-100">
                 <Utensils className="size-4 text-blue-700" />
               </span>
-              <span className="text-sm text-semibold text-muted-foreground">Changes Today</span>
+              <span className="text-sm text-semibold text-muted-foreground">Value on hand</span>
             </div>
-            <p className="text-3xl font-bold leading-none tabular-nums text-center">{summary?.changesToday ?? 0}</p>
+            <p className="text-3xl font-bold leading-none tabular-nums text-center">{symbol}{(summary?.stockWorth ?? list.reduce((total, item) => total + Number(item.value || 0), 0)).toFixed(2)}</p>
           </CardContent>
         </Card>
       </div>
@@ -517,7 +517,7 @@ export default function StockView({
             Add Stock
           </TabsTrigger>
           <TabsTrigger value="manage" className="flex-none px-1 pb-2.5 pt-2 data-active:after:bg-primary">
-            Items & History
+            Stock list
           </TabsTrigger>
           <TabsTrigger value="report" className="flex-none px-1 pb-2.5 pt-2 data-active:after:bg-primary">
             Report
@@ -954,9 +954,9 @@ export default function StockView({
               ) : reportData.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">No stock movements in this range.</p>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-md border">
                   <Table>
-                    <TableHeader>
+                  <TableHeader>
                       <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead className="text-right">Received</TableHead>

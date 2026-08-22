@@ -187,7 +187,7 @@ export default function ReportsView({ symbol }: Props) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Trophy className="size-4 text-primary" />
-                  Best Sellers
+                  Top items
                 </CardTitle>
                 <CardDescription>Most sold items in the range.</CardDescription>
               </CardHeader>
@@ -237,7 +237,7 @@ export default function ReportsView({ symbol }: Props) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Method</TableHead>
-                        <TableHead className="text-right">Payments</TableHead>
+                        <TableHead className="text-right">Orders</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                       </TableRow>
                     </TableHeader>

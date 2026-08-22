@@ -181,7 +181,6 @@ export default function DashboardView({
     error: null,
   });
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
-  const [viewMode, setViewMode] = useState<'line' | 'heatmap'>('line');
   const symbol = settings?.symbol || 'Rs';
   const fmt = (n: number) => `${symbol}${Number(n).toFixed(2)}`;
   const greeting = useMemo(() => getGreeting(), []);
@@ -240,9 +239,7 @@ export default function DashboardView({
         api
           .getByDate({ start: activeRange.start, end: activeRange.end, user: 0, till: 0, status: 2 })
           .catch(() => [] as Transaction[]),
-        isManagerOrAdmin
-          ? api.getStockSummary({ start: activeRange.start, end: activeRange.end }).catch(() => null)
-          : Promise.resolve(null),
+        Promise.resolve(null),
         api.getProducts().catch(() => [] as Product[]),
         // Drawer summary for Manager/Admin only
         isManagerOrAdmin
@@ -444,51 +441,6 @@ export default function DashboardView({
               ];
             })()
           : []),
-        ...(state.stock
-          ? [
-              {
-                title: 'Out of Stock',
-                value: String(state.stock.outOfStock),
-                hint: state.stock.outOfStock > 0 ? 'Needs restocking' : 'All items available',
-                icon: <AlertTriangle className="size-4 text-red-600" />,
-                iconBg: state.stock.outOfStock > 0 ? 'bg-red-100' : 'bg-green-100',
-                spark: state.trend.map(() => 0),
-                sparkColor: 'var(--chart-2)',
-                onClick: () => onStockClick?.('out'),
-              },
-{
-                title: 'Stock Worth',
-                value: fmt(state.stock.stockWorth),
-                hint: `What your ${state.stock.items} stock items are worth`,
-                icon: <Warehouse className="size-4 text-teal-600" />,
-                iconBg: 'bg-teal-100',
-                spark: state.trend.map(() => 0),
-                sparkColor: 'var(--chart-4)',
-              },
-              {
-                title: 'Money Spent on Stock',
-                value: fmt(state.stock.spentTotal),
-                hint: 'Bought in this period',
-                icon: <Package className="size-4 text-orange-600" />,
-                iconBg: 'bg-orange-100',
-                spark: state.trend.map(() => 0),
-                sparkColor: 'var(--chart-5)',
-              },
-            ]
-          : []),
-        {
-          title: 'Low Stock Products',
-          value: String(state.lowStockProducts.length),
-          hint:
-            state.lowStockProducts.length > 0
-              ? `${state.lowStockProducts.length} product(s) need attention`
-              : 'All products well stocked',
-          icon: <AlertTriangle className="size-4 text-amber-600" />,
-          iconBg: state.lowStockProducts.length > 0 ? 'bg-amber-100' : 'bg-green-100',
-          spark: state.trend.map(() => 0),
-          sparkColor: 'var(--chart-3)',
-          onClick: () => onStockClick?.('low'),
-        },
       ]
     : [];
 
@@ -585,24 +537,10 @@ export default function DashboardView({
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div>
-                <CardTitle>Daily Selling Activity</CardTitle>
+                <CardTitle>Sales by hour</CardTitle>
                 <p className="text-xs text-muted-foreground">{rangeLabel} vs previous period</p>
               </div>
-              {(range?.preset === 'today' || (range?.preset === 'custom' && 
-                (new Date(range.end).getTime() - new Date(range.start).getTime()) / 86_400_000 <= 1)) && (
-                <Tabs value={viewMode} onValueChange={setViewMode} className="w-auto">
-                  <TabsList className="h-7 bg-transparent">
-                    <TabsTrigger value="line" className="h-6 px-2 text-xs gap-1">
-                      <BarChart3 className="size-3.5" aria-hidden="true" />
-                      Line
-                    </TabsTrigger>
-                    <TabsTrigger value="heatmap" className="h-6 px-2 text-xs gap-1">
-                      <Package className="size-3.5" aria-hidden="true" />
-                      Heatmap
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              )}
+              <Badge variant="secondary">Sales and orders</Badge>
             </CardHeader>
             <CardContent>
               {state.loading ? (
@@ -620,7 +558,7 @@ export default function DashboardView({
                 </div>
               ) : (
                 <ChartContainer config={trendConfig} className="h-[280px] w-full">
-                  <AreaChart data={activity} margin={{ left: 4, right: 8, top: 8 }}>
+                  <BarChart data={activity} margin={{ left: 4, right: 8, top: 8 }}>
                     <defs>
                       <linearGradient id="fillActivity" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="var(--color-total)" stopOpacity={0.9} />
@@ -670,8 +608,8 @@ export default function DashboardView({
                       isAnimationActive={false}
                     />
                     <ChartLegend content={<ChartLegendContent />} />
-                  </AreaChart>
-                </ChartContainer>
+                    </BarChart>
+                  </ChartContainer>
               )}
             </CardContent>
           </Card>
