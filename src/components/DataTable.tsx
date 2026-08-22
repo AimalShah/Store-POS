@@ -320,7 +320,7 @@ export function DataTable<TData extends Record<string, unknown>>({
                       style={{ width: header.getSize() }}
                     >
                       <div className="flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {flexRender(header.column.columnDef.header, headerGroup.getContext(), header.column)}
                         {header.column.getCanSort() && renderSortIcon(header.column.id)}
                       </div>
                     </TableHead>
@@ -361,7 +361,7 @@ export function DataTable<TData extends Record<string, unknown>>({
                           col.columnDef.meta?.align === "right" && "text-right"
                         )}
                       >
-                        {flexRender(col.columnDef.cell, col.getContext(row))}
+                        {flexRender(col.columnDef.cell, row.getContext(), col)}
                       </TableCell>
                     ))}
                   </TableRow>
