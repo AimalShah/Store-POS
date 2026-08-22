@@ -35,3 +35,36 @@ export function previousRange(range: DateRange): DateRange {
     end: prevEnd.toISOString(),
   };
 }
+
+export type RangeDraft = { from: Date; to?: Date };
+
+export type RangeClickResult =
+  | { kind: 'draft'; draft: RangeDraft | undefined }
+  | { kind: 'apply'; start: Date; end: Date };
+
+/**
+ * One step of two-click range building for the date pickers.
+ *
+ * react-day-picker v10 emits a complete range ({from:D, to:D}) on the very
+ * first day click of an empty selection, so an onSelect handler cannot tell
+ * "user picked the start" from "range finished". This drives the interaction
+ * instead: first click drafts a start and keeps the picker open, second click
+ * applies the range (same-day double-click = single-day range), any click
+ * while a complete range is drafted starts over.
+ */
+export function nextRangeDraft(
+  draft: RangeDraft | undefined,
+  clicked: Date | undefined
+): RangeClickResult {
+  if (!clicked) return { kind: 'draft', draft: undefined };
+  if (!draft?.from || draft.to !== undefined) {
+    return { kind: 'draft', draft: { from: clicked } };
+  }
+  const from = draft.from;
+  if (clicked.getTime() === from.getTime()) {
+    return { kind: 'apply', start: from, end: from };
+  }
+  return clicked < from
+    ? { kind: 'apply', start: clicked, end: from }
+    : { kind: 'apply', start: from, end: clicked };
+}

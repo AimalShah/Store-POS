@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type DateRange as RdpRange } from 'react-day-picker';
 import { CalendarRange, ChevronDown } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { buildDateRange, type DateRange, type RangePreset } from '@/lib/dateRange';
+import {
+  buildDateRange,
+  nextRangeDraft,
+  type DateRange,
+  type RangeDraft,
+  type RangePreset,
+} from '@/lib/dateRange';
 
 export type PickerValue = { preset: RangePreset | 'custom'; range: DateRange };
 
@@ -35,9 +41,16 @@ export function DateRangePicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<RangeDraft | undefined>(undefined);
+
+  useEffect(() => {
+    if (!open) setDraft(undefined);
+  }, [open]);
+
   const rdp: RdpRange | undefined = value.preset === 'custom'
     ? { from: new Date(value.range.start), to: new Date(value.range.end) }
     : undefined;
+  const selected: RdpRange | undefined = draft ?? rdp;
 
   const label =
     value.preset === 'custom' ? formatCustom(value.range) : PRESETS.find((p) => p.value === value.preset)?.label;
@@ -78,23 +91,26 @@ export function DateRangePicker({
           <Calendar
             mode="range"
             numberOfMonths={2}
-            selected={rdp}
-            onSelect={(range) => {
-              if (range?.from && range?.to) {
-                const start = new Date(range.from);
-                start.setUTCHours(0, 0, 0, 0);
-                const end = new Date(range.to);
-                end.setUTCHours(23, 59, 59, 999);
-                onChange({
-                  preset: 'custom',
-                  range: {
-                    preset: 'custom',
-                    start: start.toISOString(),
-                    end: end.toISOString(),
-                  },
-                });
-                setOpen(false);
+            selected={selected}
+            onSelect={(_range, triggerDate) => {
+              const result = nextRangeDraft(draft, triggerDate ?? undefined);
+              if (result.kind === 'draft') {
+                setDraft(result.draft);
+                return;
               }
+              const start = new Date(result.start);
+              start.setUTCHours(0, 0, 0, 0);
+              const end = new Date(result.end);
+              end.setUTCHours(23, 59, 59, 999);
+              onChange({
+                preset: 'custom',
+                range: {
+                  preset: 'custom',
+                  start: start.toISOString(),
+                  end: end.toISOString(),
+                },
+              });
+              setOpen(false);
             }}
           />
         </div>

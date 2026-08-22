@@ -46,7 +46,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../components/ui/popover';
-import { Calendar as CalendarPicker } from '../components/ui/calendar';
 import { localInputToIso, monthRange } from '../lib/dates';
 import { downloadCsv } from '../lib/export';
 import { DataTable, ColumnDef } from '../components/DataTable';
