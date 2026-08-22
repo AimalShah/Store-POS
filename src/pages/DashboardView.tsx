@@ -551,14 +551,9 @@ export default function DashboardView({
                   title="No sales in this period"
                   description="Completed sales will appear here as a trend against the previous period."
                 />
-              ) : viewMode === 'heatmap' && (range?.preset === 'today' || (range?.preset === 'custom' && 
-                (new Date(range.end).getTime() - new Date(range.start).getTime()) / 86_400_000 <= 1)) ? (
-                <div className="h-[280px] w-full">
-                  <HourlyHeatmap trend={state.trend} symbol={symbol} />
-                </div>
               ) : (
                 <ChartContainer config={trendConfig} className="h-[280px] w-full">
-                  <BarChart data={activity} margin={{ left: 4, right: 8, top: 8 }}>
+                  <AreaChart data={activity} margin={{ left: 4, right: 8, top: 8 }}>
                     <defs>
                       <linearGradient id="fillActivity" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="var(--color-total)" stopOpacity={0.9} />
@@ -608,7 +603,7 @@ export default function DashboardView({
                       isAnimationActive={false}
                     />
                     <ChartLegend content={<ChartLegendContent />} />
-                    </BarChart>
+                    </AreaChart>
                   </ChartContainer>
               )}
             </CardContent>
