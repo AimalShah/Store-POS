@@ -572,7 +572,7 @@ export default function StockView({
                     onChange={(e) => setRestockPaid(e.target.value)}
                     placeholder="Total price"
                   />
-                  {restockQtyNum > 0 && restockPriceNum > 0 && (
+                  {restockQtyNum > 0 && paidTotal > 0 && (
                     <p className="text-xs text-muted-foreground">
                       Per unit: {symbol}{(paidTotal / restockQtyNum).toFixed(2)}
                     </p>
