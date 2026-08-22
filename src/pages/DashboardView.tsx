@@ -74,6 +74,7 @@ import {
   type Kpis,
   buildTrendSeries,
   type TrendPoint,
+  mergeVoidedIntoTrend,
   buildCategoryBreakdown,
   type CategorySlice,
   buildTopProducts,
