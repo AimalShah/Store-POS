@@ -13,15 +13,15 @@ describe('Role-based navigation (ADR-0006 matrix)', () => {
     ]);
   });
 
-  test('cashiers see Shift Summary, Sales, Customers — not Dashboard', () => {
+  test('cashiers see Shift Summary, Sales, Customers, Drawer — not Dashboard', () => {
     const cashierIds = ids('Cashier');
     expect(cashierIds).toContain('shift-summary');
     expect(cashierIds).toContain('sales');
     expect(cashierIds).toContain('customers');
+    expect(cashierIds).toContain('drawer');
     expect(cashierIds).not.toContain('dashboard');
     expect(cashierIds).not.toContain('menu');
     expect(cashierIds).not.toContain('reports');
-    expect(cashierIds).not.toContain('drawer');
     expect(cashierIds).not.toContain('team');
     expect(cashierIds).not.toContain('settings');
   });

@@ -13,7 +13,7 @@ function assertJwtSecret() {
 }
 
 const loginAttempts = new Map();
-const MAX_ATTEMPTS = 5000;
+const MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS) || 50;
 const WINDOW_MS = 15 * 60 * 1000;
 
 function getClientIp(req) {
