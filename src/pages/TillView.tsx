@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Banknote,
@@ -38,6 +38,7 @@ import {
   SelectedModifier,
   Settings,
   Shift,
+  DrawerSession,
   Transaction,
   getUploadsBase,
   PrinterSettings,
@@ -73,17 +74,21 @@ import {
 } from '../components/ui/tabs';
 import { toast } from 'sonner';
 
-const CATEGORY_CARD: Record<string, string> = {
-  Pizzas: 'shadow-[6px_6px_0_0] shadow-purple-400/30 hover:border-purple-400 hover:shadow-purple-400/60',
-  Burgers: 'shadow-[6px_6px_0_0] shadow-green-400/30 hover:border-green-400 hover:shadow-green-400/60',
-  Chinese: 'shadow-[6px_6px_0_0] shadow-pink-400/30 hover:border-pink-400 hover:shadow-pink-400/60',
-  Soup: 'shadow-[6px_6px_0_0] shadow-teal-400/30 hover:border-teal-400 hover:shadow-teal-400/60',
-  Snacks: 'shadow-[6px_6px_0_0] shadow-amber-400/30 hover:border-amber-400 hover:shadow-amber-400/60',
-  Drinks: 'shadow-[6px_6px_0_0] shadow-blue-400/30 hover:border-blue-400 hover:shadow-blue-400/60',
-  Deals: 'shadow-[6px_6px_0_0] shadow-indigo-400/30 hover:border-indigo-400 hover:shadow-indigo-400/60',
+const iconLibrary = icons as Record<string, LucideIcon>;
+
+// Whole-tile fill colors for the category cards in the till menu.
+const CATEGORY_TILE_BG: Record<string, string> = {
+  Pizzas: 'bg-purple-200 text-purple-950',
+  Burgers: 'bg-green-200 text-green-950',
+  Chinese: 'bg-pink-200 text-pink-950',
+  Soup: 'bg-teal-200 text-teal-950',
+  Snacks: 'bg-amber-200 text-amber-950',
+  Drinks: 'bg-blue-200 text-blue-950',
+  Deals: 'bg-indigo-200 text-indigo-950',
 };
 
-const iconLibrary = icons as Record<string, LucideIcon>;
+const TILE_BG_DEFAULT = 'bg-zinc-200 text-zinc-900';
+const TILE_BG_SEARCH = 'bg-amber-200 text-amber-950';
 
 const STICKY_NOTE_ICON_STYLES = [
   'bg-amber-200 text-amber-950',
@@ -93,8 +98,6 @@ const STICKY_NOTE_ICON_STYLES = [
   'bg-sky-200 text-sky-950',
   'bg-purple-200 text-purple-950',
 ];
-
-const CARD_DEFAULT = 'shadow-[6px_6px_0_0] shadow-black/20 hover:border-foreground/40 hover:shadow-black/40';
 
 const CATEGORY_ACCENT: Record<string, string> = {
   Pizzas: 'border-l-purple-400',
@@ -187,6 +190,11 @@ export default function TillView({
   const [printerSettings, setPrinterSettings] = useState<PrinterSettings | null>(null);
   const [printerLoading, setPrinterLoading] = useState(true);
 
+  // Cash drawer state for the till banner
+  const [drawerSession, setDrawerSession] = useState<DrawerSession | null>(null);
+  const [closeDrawerOpen, setCloseDrawerOpen] = useState(false);
+  const [countedCash, setCountedCash] = useState('');
+
   const loadPrinterSettings = async () => {
     try {
       const res = await api.getPrinterSettings();
@@ -229,6 +237,43 @@ export default function TillView({
   useEffect(() => {
     loadPrinterSettings();
   }, []);
+
+  const till = settings?.till || 1;
+
+  const loadDrawerSession = useCallback(async () => {
+    try {
+      const sessions = await api.getDrawerSessions({ status: 'open', till });
+      const open = sessions[0] ?? null;
+      setDrawerSession(open);
+    } catch {
+      /* ignore */
+    }
+  }, [till]);
+
+  useEffect(() => {
+    void loadDrawerSession();
+    const id = setInterval(() => void loadDrawerSession(), 60_000);
+    return () => clearInterval(id);
+  }, [loadDrawerSession]);
+
+  const confirmCloseDrawer = async () => {
+    if (!drawerSession) return;
+    const cash = parseFloat(countedCash);
+    if (isNaN(cash) || cash < 0) {
+      toast.error('Enter the total cash counted in the drawer.');
+      return;
+    }
+    try {
+      await api.closeDrawerSession(drawerSession.id, { countedCash: cash });
+      setDrawerSession(null);
+      setCloseDrawerOpen(false);
+      setCountedCash('');
+      setDrawerWarningDismissed(false);
+      toast.success('Drawer closed for the day.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not close the drawer.');
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -708,7 +753,7 @@ export default function TillView({
   };
 
   return (
-    <div className="flex h-full flex-col lg:flex-row gap-3 p-3 overflow-hidden bg-muted/20">
+    <div className="flex h-full flex-col gap-3 p-3 overflow-hidden bg-muted/20">
       {error && (
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-md bg-destructive px-4 py-3 text-destructive-foreground shadow-md">
           <AlertCircle className="size-5 shrink-0" />
@@ -724,6 +769,8 @@ export default function TillView({
         </div>
       )}
 
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row gap-3 overflow-hidden">
+
       {/* Menu surface: search + tabs + grid in one panel */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
         <div className="flex flex-col gap-2 border-b p-3">
@@ -734,13 +781,13 @@ export default function TillView({
                 data-testid="cat-tab-search"
                 onClick={() => setCategoryFilter('search')}
                 aria-pressed={categoryFilter === 'search'}
-                className={`group relative flex h-32 w-40 flex-col items-start justify-between rounded-xl border-2 bg-card p-4 text-left shadow-md shadow-zinc-900/15 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                className={`group relative flex h-32 w-40 flex-col items-start justify-between rounded-xl border-2 p-4 text-left transition-colors ${TILE_BG_SEARCH} ${
                   categoryFilter === 'search'
                     ? 'border-primary ring-2 ring-primary/25'
-                    : 'border-border hover:border-amber-300'
+                    : 'border-border hover:border-foreground'
                 }`}
               >
-                <span className="flex size-10 items-center justify-center rounded-lg bg-amber-200 text-amber-950">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-white/60">
                   <Search className="size-5" />
                 </span>
                 <span className="text-base font-bold leading-tight">Search</span>
@@ -753,6 +800,7 @@ export default function TillView({
               {categories.map((c) => {
                 const Icon = iconLibrary[c.icon] || Utensils;
                 const active = categoryFilter === c.name;
+                const tone = CATEGORY_TILE_BG[c.name] || TILE_BG_DEFAULT;
                 return (
                   <button
                     key={c.id}
@@ -760,13 +808,13 @@ export default function TillView({
                     data-testid={`cat-tab-${c.name}`}
                     aria-pressed={active}
                     onClick={() => setCategoryFilter(c.name)}
-                    className={`group relative flex h-32 w-40 flex-col items-start justify-between rounded-xl border-2 bg-card p-4 text-left shadow-md shadow-zinc-900/15 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                    className={`group relative flex h-32 w-40 flex-col items-start justify-between rounded-xl border-2 p-4 text-left transition-colors ${tone} ${
                       active
                         ? 'border-primary ring-2 ring-primary/25'
-                        : 'border-border hover:border-primary/50'
+                        : 'border-border hover:border-foreground'
                     }`}
                   >
-                    <span className="flex size-10 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                    <span className="flex size-10 items-center justify-center rounded-lg bg-white/60">
                       <Icon className="size-5" />
                     </span>
                     <span className="text-base font-bold leading-tight">{c.name}</span>
@@ -813,14 +861,13 @@ export default function TillView({
               filteredProducts.map((p) => {
               const hasVariants = (p.sizes?.length || 0) > 0;
               const hasModifiers = (p.modifiers?.length || 0) > 0;
-              const cardColor = CATEGORY_CARD[p.category] || CARD_DEFAULT;
               return (
                 <button
                   key={p.id}
                   type="button"
                   data-testid={`product-${p.id}`}
                   onClick={() => addToCart(p)}
-                  className={`group relative flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary ${cardColor}`}
+                  className="group relative flex flex-col justify-between gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-colors hover:border-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-xl font-bold leading-tight capitalize md:text-xl">{p.name}</h3>
@@ -1095,6 +1142,40 @@ export default function TillView({
           </div>
         </CardFooter>
       </Card>
+      </div>
+
+      {/* Close Drawer Dialog */}
+      <Dialog open={closeDrawerOpen} onOpenChange={setCloseDrawerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End of Day — Close Drawer</DialogTitle>
+            <DialogDescription>
+              Count all the cash in the drawer and enter the total below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="till-counted-cash">Total cash counted ({symbol})</Label>
+            <Input
+              id="till-counted-cash"
+              type="number"
+              step="0.01"
+              min={0}
+              value={countedCash}
+              onChange={(e) => setCountedCash(e.target.value)}
+              placeholder="0.00"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseDrawerOpen(false)}>
+              Not now
+            </Button>
+            <Button onClick={confirmCloseDrawer} disabled={!countedCash.trim()}>
+              Close Drawer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Held Orders Dialog */}
       <Dialog open={showHolds} onOpenChange={setShowHolds}>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api, DrawerSession, Settings, Transaction } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
@@ -40,7 +40,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
   const [floatAmount, setFloatAmount] = useState('');
   const [countedCash, setCountedCash] = useState('');
   const [selectedSession, setSelectedSession] = useState<DrawerSession | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
+  const [reportSession, setReportSession] = useState<DrawerSession | null>(null);
   const symbol = settings?.symbol || 'Rs';
   const till = settings?.till || 1;
 
@@ -120,6 +120,14 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
     return new Date(iso).toLocaleString();
   };
 
+  const varianceText = (v: number | null) => {
+    if (v == null) return 'Not counted yet';
+    if (v === 0) return 'Exact';
+    return v > 0
+      ? `${symbol}${Number(v).toFixed(2)} missing`
+      : `${symbol}${Math.abs(Number(v)).toFixed(2)} extra`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -127,7 +135,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
           <h1 className="text-2xl font-bold">Drawer Reconciliation</h1>
           <p className="text-muted-foreground">Count the money in the drawer at the start and end of the day.</p>
         </div>
-        {hasRole('Admin', 'Manager') && (
+        {hasRole('Admin', 'Manager', 'Cashier') && (
           <Button onClick={() => setOpenDrawerDialog(true)}>
             Start Day — Open Drawer
           </Button>
@@ -179,18 +187,14 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
                 sessions.map((session) => (
                   <TableRow key={session.id}>
                     <TableCell className="font-mono text-sm">{session.id}</TableCell>
-                    <TableCell>{session.status === 'open' ? 'Cashier' : 'Unknown'}</TableCell>
+                    <TableCell>{session.userName || 'Unknown'}</TableCell>
                     <TableCell>{getStatusBadge(session.status)}</TableCell>
                     <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{Number(session.floatAmount ?? 0).toFixed(2)}</span></TableCell>
                     <TableCell className="font-medium"><span className={highlight.blue}>{session.countedCash != null ? `${symbol}${Number(session.countedCash).toFixed(2)}` : '—'}</span></TableCell>
                     <TableCell className="font-medium">
                       {session.variance != null ? (
                         <span className={session.variance >= 0 ? highlight.red : highlight.green}>
-                          {session.variance === 0
-                            ? 'Exact'
-                            : session.variance > 0
-                              ? `${symbol}${Number(session.variance).toFixed(2)} missing`
-                              : `${symbol}${Math.abs(Number(session.variance)).toFixed(2)} extra`}
+                          {varianceText(session.variance)}
                         </span>
                       ) : (
                         'Not counted yet'
@@ -207,7 +211,7 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
                           </>
                         )}
                         {session.status === 'closed' && (
-                          <Button variant="outline" size="sm" onClick={() => handleCloseDrawer(session)}>
+                          <Button variant="outline" size="sm" onClick={() => setReportSession(session)}>
                             <ReceiptText className="size-3.5 mr-1.5" />
                             View Report
                           </Button>
@@ -289,6 +293,70 @@ export default function DrawerView({ settings, onDrawerChange }: Props) {
             <Button onClick={confirmCloseDrawer} disabled={loading || !countedCash.trim()}>
               {loading ? 'Closing...' : 'Close Drawer'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Session Report Dialog */}
+      <Dialog open={!!reportSession} onOpenChange={(open) => !open && setReportSession(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Drawer Report — Session #{reportSession?.id}</DialogTitle>
+            <DialogDescription>
+              Reconciliation summary for this drawer session.
+            </DialogDescription>
+          </DialogHeader>
+          {reportSession && (
+            <div className="text-sm">
+              <div className="space-y-0.5">
+                {(
+                  [
+                    ['Till', `#${reportSession.till}`],
+                    ['Status', getStatusBadge(reportSession.status)],
+                    ['Opened By', reportSession.userName || 'Unknown'],
+                    ['Opened', formatDateTime(reportSession.openedAt)],
+                    ['Closed', reportSession.closedAt ? formatDateTime(reportSession.closedAt) : '—'],
+                  ] as [string, ReactNode][]
+                ).map(([label, value]) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <Separator className="my-3" />
+              <div className="space-y-0.5">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cash at Start</span>
+                  <span>{symbol}{Number(reportSession.floatAmount ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cash Counted</span>
+                  <span>
+                    {reportSession.countedCash != null
+                      ? `${symbol}${Number(reportSession.countedCash).toFixed(2)}`
+                      : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span className="text-muted-foreground">Difference</span>
+                  <span
+                    className={
+                      reportSession.variance != null
+                        ? reportSession.variance >= 0
+                          ? highlight.red
+                          : highlight.green
+                        : undefined
+                    }
+                  >
+                    {varianceText(reportSession.variance)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setReportSession(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

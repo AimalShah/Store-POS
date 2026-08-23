@@ -50,6 +50,17 @@ function money(n, symbol) {
   return `${symbol}${Number(n || 0).toFixed(2)}`;
 }
 
+function cap(value) {
+  const s = String(value || '');
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// Bill header shows only the sequence tail of INV-YYYYMMDD-NNN refs (e.g. 013).
+function orderNumber(tx) {
+  const m = String(tx.ref_number ?? '').match(/(\d+)\s*$/);
+  return m ? m[1].slice(-3).padStart(3, '0') : String(tx.id ?? '');
+}
+
 function centered(printer, text) {
   printer.alignCenter();
   printer.println(text);
@@ -73,12 +84,18 @@ export function writeReceipt(printer, tx, settings) {
   printer.drawLine();
   printer.bold(true);
   printer.alignCenter();
-  printer.println(`INVOICE ${(tx.ref_number || '').trim()}`);
+  printer.println(`ORDER #${orderNumber(tx)}`);
   printer.bold(false);
   printer.alignLeft();
   centered(printer, new Date(tx.date).toLocaleString());
-  centered(printer, `Cashier: ${tx.user || '-'}   Till: ${tx.till || 1}`);
+  centered(printer, `Cashier: ${tx.user || '-'}`);
   centered(printer, `Customer: ${tx.customer_name || 'Walk-in'}`);
+  if (tx.fulfillment) centered(printer, `Fulfillment: ${cap(tx.fulfillment)}`);
+  if (tx.fulfillment === 'delivery') {
+    if (tx.delivery_name) centered(printer, `Name: ${tx.delivery_name}`);
+    if (tx.delivery_contact) centered(printer, `Contact: ${tx.delivery_contact}`);
+    if (tx.delivery_address) centered(printer, `Address: ${tx.delivery_address}`);
+  }
   printer.newLine();
 
   printer.drawLine();

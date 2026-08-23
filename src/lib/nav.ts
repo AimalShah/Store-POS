@@ -23,7 +23,7 @@ const ROLE_AREAS: Record<NavItemId, Role[]> = {
   customers: ['Admin', 'Manager', 'Cashier'],
   menu: ['Admin', 'Manager'],
   stock: ['Admin', 'Manager'],
-  drawer: ['Admin', 'Manager'],
+  drawer: ['Admin', 'Manager', 'Cashier'],
   reports: ['Admin', 'Manager'],
   team: ['Admin'],
   settings: ['Admin'],

@@ -7,6 +7,12 @@ type Props = {
   symbol: string;
 };
 
+// Bill header shows only the sequence tail of INV-YYYYMMDD-NNN refs (e.g. 013).
+function orderNumber(tx: Transaction): string {
+  const m = String(tx.ref_number ?? '').match(/(\d+)\s*$/);
+  return m ? m[1].slice(-3).padStart(3, '0') : String(tx.id ?? '');
+}
+
 export default function Invoice({ tx, settings, symbol }: Props) {
   const items = Array.isArray(tx.items) ? tx.items : [];
   const subtotal = Number(tx.subtotal ?? 0);
@@ -19,10 +25,8 @@ export default function Invoice({ tx, settings, symbol }: Props) {
   const isVoided = tx.status === 2;
 
   const meta: [string, string | number][] = [
-    ['Invoice', tx.ref_number || '-'],
     ['Date', new Date(tx.date).toLocaleString()],
     ['Cashier', tx.user || '-'],
-    ['Till', tx.till || 1],
     ['Customer', tx.customer_name || 'Walk-in'],
   ];
 
@@ -58,7 +62,7 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         <div className="text-center text-xs text-muted-foreground">{settings.contact}</div>
       ) : null}
 
-      <div className="mt-2 text-center font-semibold tracking-widest">{isVoided ? 'VOIDED INVOICE' : 'INVOICE'}</div>
+      <div className="mt-2 text-center font-semibold tracking-widest">{`ORDER #${orderNumber(tx)}`}</div>
 
       <div className="mt-2 space-y-0.5">
         {meta.map(([label, value]) => (

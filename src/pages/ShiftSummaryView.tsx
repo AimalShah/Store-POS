@@ -27,7 +27,7 @@ export default function ShiftSummaryView({
   onHeldOrders?: () => void;
   onEndShift?: () => void;
 }) {
-  const { hasRole } = useAuth();
+  const { user, hasRole } = useAuth();
   const isCashier = hasRole('Cashier');
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
   const [drawerSession, setDrawerSession] = useState<DrawerSession | null>(null);
@@ -41,8 +41,7 @@ export default function ShiftSummaryView({
     setError(null);
     try {
       const activeRange = range ?? buildDateRange('today');
-      const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
-      const cashierId = user.id || 0;
+      const cashierId = user?.id || user?._id || 0;
 
       const [transactions, heldOrders, allHeldOrders, session] = await Promise.all([
         api.getByDate({ start: activeRange.start, end: activeRange.end, user: cashierId, till: 0, status: 1 }).catch(() => [] as Transaction[]),
@@ -62,7 +61,7 @@ export default function ShiftSummaryView({
       setError(err instanceof Error ? err.message : 'Failed to load shift summary');
       setLoading(false);
     }
-  }, [range?.start, range?.end, range?.preset, settings?.till]);
+  }, [range?.start, range?.end, range?.preset, settings?.till, user?.id, user?._id]);
 
   useEffect(() => {
     void loadData();
@@ -99,8 +98,23 @@ export default function ShiftSummaryView({
     );
   }
 
-  const s = summary!;
+  const s = summary ?? null;
   const rangeLabel = range?.preset === 'today' ? 'Today' : 'Shift';
+
+  if (!s) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4">
+        <Card>
+          <CardContent className="py-8">
+            <div className="flex items-center justify-center gap-2">
+              <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm text-muted-foreground">No shift data available</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">

@@ -92,7 +92,7 @@ test('a till sale prints a real ESC/POS receipt to a network thermal printer', a
     expect(buf[0]).toBe(0x1b); // ESC/POS command byte
     const text = buf.toString('latin1');
     expect(text).toContain('Test Store');
-    expect(text).toContain('INVOICE');
+    expect(text).toContain('ORDER #');
     expect(text).toContain('QA Cola');
     expect(text).toContain('TOTAL');
     expect(buf.subarray(-5, -2).equals(FULL_CUT)).toBe(true);
@@ -142,7 +142,7 @@ test('a takeaway sale auto-prints the kitchen ticket (KOT) to its own printer', 
     await page.getByRole('dialog').getByRole('button', { name: 'Print', exact: true }).click();
     const receiptBuf = await receiptPrinter.waitForBytes();
     expect(receiptBuf.length).toBeGreaterThan(0);
-    expect(receiptBuf.toString('latin1')).toContain('INVOICE');
+    expect(receiptBuf.toString('latin1')).toContain('ORDER #');
 
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).last().click();
   } finally {

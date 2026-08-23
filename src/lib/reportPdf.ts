@@ -22,6 +22,12 @@ function cap(value: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// Bill header shows only the sequence tail of INV-YYYYMMDD-NNN refs (e.g. 013).
+function orderNumber(tx: Transaction): string {
+  const m = String(tx.ref_number ?? '').match(/(\d+)\s*$/);
+  return m ? m[1].slice(-3).padStart(3, '0') : String(tx.id ?? '');
+}
+
 function fmtDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -318,18 +324,24 @@ export function buildInvoicePdf(args: { settings: Settings | null; tx: Transacti
   const symbol = settings?.symbol || '';
   const doc = newDoc();
 
-  let y = drawHeader(doc, settings, 'Invoice', `Invoice #${tx.ref_number || tx.id}`);
+  let y = drawHeader(doc, settings, 'Order', `Order #${orderNumber(tx)}`);
+
+  const infoRows: string[][] = [
+    ['Date', fmtDate(tx.date)],
+    ['Customer', tx.customer_name || 'Walk-in Customer'],
+    ['Cashier', tx.user || '-'],
+    ['Fulfillment', cap(tx.fulfillment || 'takeaway')],
+  ];
+  if (tx.fulfillment === 'delivery') {
+    if (tx.delivery_name) infoRows.push(['Delivery Name', tx.delivery_name]);
+    if (tx.delivery_contact) infoRows.push(['Contact', tx.delivery_contact]);
+    if (tx.delivery_address) infoRows.push(['Address', tx.delivery_address]);
+  }
 
   y = drawSection(doc, {
-    title: 'Invoice',
+    title: 'Order Details',
     head: [['Field', 'Value']],
-    body: [
-      ['Invoice No.', String(tx.ref_number || tx.id)],
-      ['Date', fmtDate(tx.date)],
-      ['Customer', tx.customer_name || 'Walk-in Customer'],
-      ['Cashier', tx.user || '-'],
-      ['Fulfillment', cap(tx.fulfillment || 'takeaway')],
-    ],
+    body: infoRows,
     startY: y,
     align: { 1: 'right' },
   });

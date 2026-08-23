@@ -601,6 +601,7 @@ export const api = {
         till: number;
         openSession: DrawerSession | null;
         closedSessions: DrawerSession[];
+        live: { cashSales: number; expectedCash: number } | null;
         summary: {
           totalSessions: number;
           totalFloat: number;

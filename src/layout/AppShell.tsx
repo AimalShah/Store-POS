@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   Bell,
   ChevronDown,
+  Calculator,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
@@ -56,6 +57,14 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -70,6 +79,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { useAuth } from '../context/AuthContext';
 import { useStoreData } from '../hooks/useStoreData';
 import { getPosBridge } from '../bridge';
@@ -77,7 +88,7 @@ import { getUploadsBase } from '../api/client';
 import { buildLogoUrl } from '../lib/branding';
 import { buildNavGroups, canAccess, resolveInitialView, type NavItemId } from '../lib/nav';
 import { buildDateRange, type DateRange } from '../lib/dateRange';
-import { api, type Transaction } from '../api/client';
+import { api, type Transaction, DrawerSession, type Settings } from '../api/client';
 import { isLowStock } from '../lib/stock';
 import { DateRangePicker, type PickerValue } from '../components/DateRangePicker';
 import { CommandPalette, type PaletteCommand } from '../components/CommandPalette';
@@ -246,6 +257,9 @@ export default function AppShell() {
   const [salesInitialUserId, setSalesInitialUserId] = useState<number>(0);
   const [salesInitialVoidFilter, setSalesInitialVoidFilter] = useState<boolean>(false);
   const [stockFilter, setStockFilter] = useState<'low' | 'out' | null>(null);
+  const [drawerSession, setDrawerSession] = useState<DrawerSession | null>(null);
+  const [closeDrawerOpen, setCloseDrawerOpen] = useState(false);
+  const [countedCash, setCountedCash] = useState('');
 
   // Confirmation gate for leaving the current mode/screen.
   const pendingAction = useRef<(() => void) | null>(null);
@@ -320,11 +334,41 @@ export default function AppShell() {
     }
   }, []);
 
+  const loadDrawerSession = useCallback(async () => {
+    try {
+      const sessions = await api.getDrawerSessions({ status: 'open', till: settings?.till || 1 });
+      const open = sessions[0] ?? null;
+      setDrawerSession(open);
+    } catch {
+      /* ignore */
+    }
+  }, [settings?.till]);
+
+  const handleCloseDrawer = async () => {
+    if (!drawerSession) return;
+    const cash = parseFloat(countedCash);
+    if (isNaN(cash) || cash < 0) {
+      return;
+    }
+    try {
+      await api.closeDrawerSession(drawerSession.id, { countedCash: cash });
+      setDrawerSession(null);
+      setCloseDrawerOpen(false);
+      setCountedCash('');
+    } catch {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     void loadHeld();
-    const id = setInterval(() => void loadHeld(), 30_000);
+    void loadDrawerSession();
+    const id = setInterval(() => {
+      void loadHeld();
+      void loadDrawerSession();
+    }, 30_000);
     return () => clearInterval(id);
-  }, [loadHeld]);
+  }, [loadHeld, loadDrawerSession]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -537,46 +581,86 @@ export default function AppShell() {
   }
 
   function UserMenu() {
+    const [profileOpen, setProfileOpen] = useState(false);
+
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-full border px-1 pr-2 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
-          <Avatar size="sm">
-            <AvatarFallback className="bg-primary/10 text-primary">
-              {user ? initials(user.fullname) : 'U'}
-            </AvatarFallback>
-          </Avatar>
-          <span className="hidden text-sm font-medium sm:inline">{user?.fullname}</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <div className="flex flex-col px-2 py-1.5 text-xs font-medium">
-            <span>{user?.fullname}</span>
-            <span className="font-normal text-muted-foreground">@{user?.username}</span>
-          </div>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => goTo('settings')}>
-            <User className="size-4" /> Profile
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => goTo('settings')}>
-            <SettingsIcon className="size-4" /> Settings
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => {
-              void logout();
-            }}
-          >
-            <LogOut className="size-4" /> Sign out
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => getPosBridge().quit()}
-          >
-            <Home className="size-4" /> Quit
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-full border px-1 pr-2 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
+            <Avatar size="sm">
+              <AvatarFallback className="bg-primary/10 text-primary">
+                {user ? initials(user.fullname) : 'U'}
+              </AvatarFallback>
+            </Avatar>
+            <span className="hidden text-sm font-medium sm:inline">{user?.fullname}</span>
+            <ChevronDown className="size-4 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="flex flex-col px-2 py-1.5 text-xs font-medium">
+              <span>{user?.fullname}</span>
+              <span className="font-normal text-muted-foreground">@{user?.username}</span>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+              <User className="size-4" /> Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => goTo('settings')}>
+              <SettingsIcon className="size-4" /> Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => {
+                void logout();
+              }}
+            >
+              <LogOut className="size-4" /> Sign out
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => getPosBridge().quit()}
+            >
+              <Home className="size-4" /> Quit
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Your Profile</DialogTitle>
+              <DialogDescription>
+                View your account information and manage preferences.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Avatar size="lg">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                    {user ? initials(user.fullname) : 'U'}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-semibold">{user?.fullname}</p>
+                  <p className="text-sm text-muted-foreground">@{user?.username}</p>
+                  <p className="text-sm text-muted-foreground capitalize">{user?.role}</p>
+                </div>
+              </div>
+              <Separator />
+              <div className="grid gap-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Role</span>
+                  <span>{user?.role}</span>
+                </div>
+
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setProfileOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
@@ -651,6 +735,50 @@ export default function AppShell() {
           </Button>
 
           <HeldBell />
+
+          {/* Drawer Status Indicator */}
+          {drawerSession && canAccess(role, 'drawer') && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-emerald-600 border-emerald-200 bg-emerald-50"
+                >
+                  <AlertTriangle className="size-4" />
+                  <span className="hidden md:inline">Drawer Open</span>
+                  <ChevronDown className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => goTo('drawer')}>
+                  <ReceiptText className="size-4 mr-2" />
+                  View Drawer
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => {
+                    setCountedCash(String(drawerSession.floatAmount + (drawerSession.variance || 0)));
+                    setCloseDrawerOpen(true);
+                  }}
+                >
+                  <Calculator className="size-4 mr-2" />
+                  Close Drawer
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {!drawerSession && canAccess(role, 'drawer') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-amber-600 border-amber-200 bg-amber-50"
+              onClick={() => goTo('drawer')}
+            >
+              <AlertTriangle className="size-4" />
+              <span className="hidden md:inline">Open Drawer</span>
+            </Button>
+          )}
 
           {products.some(isLowStock) && (
             <Button
@@ -803,6 +931,35 @@ export default function AppShell() {
 
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
       <Toaster />
+
+      {/* Close Drawer Dialog */}
+      <AlertDialog open={closeDrawerOpen} onOpenChange={setCloseDrawerOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>End of Day — Close Drawer</AlertDialogTitle>
+            <AlertDialogDescription>
+              Count all the cash in the drawer and type the total below.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="counted-cash-topbar">Total cash counted ({symbol})</Label>
+            <Input
+              id="counted-cash-topbar"
+              type="number"
+              step="0.01"
+              min={0}
+              value={countedCash}
+              onChange={(e) => setCountedCash(e.target.value)}
+              placeholder="0.00"
+              autoFocus
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setCloseDrawerOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCloseDrawer}>Close Drawer</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmOpen(false)}>
         <AlertDialogContent>

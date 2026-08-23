@@ -3,6 +3,7 @@ import { getDb } from '../db.js';
 import {
   asyncHandler,
   requireManager,
+  requireStaff,
 } from '../auth.js';
 
 const router = Router();
@@ -35,8 +36,8 @@ router.get('/open', asyncHandler(async (req, res) => {
   res.json({ session });
 }));
 
-// Get all drawer sessions with filters
-router.get('/', requireManager, asyncHandler(async (req, res) => {
+// Get all drawer sessions with filters (Staff+)
+router.get('/', requireStaff, asyncHandler(async (req, res) => {
   const db = getDb();
   const status = req.query.status;
   const till = parseInt(req.query.till, 10) || 0;
@@ -55,20 +56,11 @@ router.get('/', requireManager, asyncHandler(async (req, res) => {
 
   sql += ' ORDER BY opened_at DESC';
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map((row) => ({
-    id: row.id,
-    till: row.till,
-    floatAmount: row.float_amount,
-    countedCash: row.counted_cash,
-    variance: row.variance,
-    status: row.status,
-    openedAt: row.opened_at,
-    closedAt: row.closed_at,
-  })));
+  res.json(rows.map(mapSession));
 }));
 
-// Open a new drawer session
-router.post('/open', asyncHandler(async (req, res) => {
+// Open a new drawer session (Staff+)
+router.post('/open', requireStaff, asyncHandler(async (req, res) => {
   const body = req.body || {};
   const floatAmount = parseFloat(body.floatAmount) || 0;
   const till = parseInt(body.till, 10) || 1;
@@ -94,8 +86,8 @@ router.post('/open', asyncHandler(async (req, res) => {
   res.json({ session });
 }));
 
-// Close a drawer session
-router.post('/:sessionId/close', asyncHandler(async (req, res) => {
+// Close a drawer session (Staff+)
+router.post('/:sessionId/close', requireStaff, asyncHandler(async (req, res) => {
   const sessionId = parseInt(req.params.sessionId, 10);
   const body = req.body || {};
   const countedCash = parseFloat(body.countedCash) || 0;
@@ -121,28 +113,68 @@ router.post('/:sessionId/close', asyncHandler(async (req, res) => {
   res.json({ session: updatedSession });
 }));
 
+function mapSession(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    till: row.till,
+    floatAmount: row.float_amount,
+    countedCash: row.counted_cash,
+    variance: row.variance,
+    status: row.status,
+    openedAt: row.opened_at,
+    closedAt: row.closed_at,
+    userId: row.user_id,
+    userName: row.user_name,
+  };
+}
+
 // Get reconciliation summary for a till
 router.get('/summary', requireManager, asyncHandler(async (req, res) => {
   const till = parseInt(req.query.till, 10) || 1;
   const db = getDb();
-  
+
   const openSession = db.prepare(`SELECT * FROM drawer_sessions WHERE till = ? AND status = 'open'`).get(till);
   const closedSessions = db.prepare(`SELECT * FROM drawer_sessions WHERE till = ? AND status = 'closed'`).all(till);
-  
+
   let totalFloat = 0;
   let totalClose = 0;
   let totalVar = 0;
-  
+
   for (const session of closedSessions) {
     totalFloat += session.float_amount;
     totalClose += session.counted_cash || 0;
     totalVar += session.variance || 0;
   }
-  
+
+  // Live view of the open drawer: cash collected since it opened, on top of
+  // the opening float, is what should be in the drawer right now.
+  let live = null;
+  if (openSession) {
+    const rows = db
+      .prepare(
+        `SELECT payment_breakdown_json FROM transactions WHERE till = ? AND status = 1 AND date >= ?`
+      )
+      .all(till, openSession.opened_at);
+    let cashSales = 0;
+    for (const row of rows) {
+      try {
+        const breakdown = JSON.parse(row.payment_breakdown_json || '[]');
+        for (const p of Array.isArray(breakdown) ? breakdown : []) {
+          if (String(p.method || '').toLowerCase() === 'cash') cashSales += Number(p.amount) || 0;
+        }
+      } catch {
+        // ignore malformed payment JSON
+      }
+    }
+    live = { cashSales, expectedCash: (openSession.float_amount || 0) + cashSales };
+  }
+
   res.json({
     till,
-    openSession,
-    closedSessions,
+    openSession: mapSession(openSession),
+    closedSessions: closedSessions.map(mapSession),
+    live,
     summary: {
       totalSessions: closedSessions.length,
       totalFloat,

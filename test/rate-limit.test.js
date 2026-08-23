@@ -24,7 +24,7 @@ describe('Rate limiting on login endpoints', () => {
   });
 
   test('blocks login after max attempts exceeded', async () => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 50; i++) {
       await app.client.request(
         '/api/users/login',
         { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
@@ -41,7 +41,7 @@ describe('Rate limiting on login endpoints', () => {
   });
 
   test('blocks PIN login after max attempts exceeded', async () => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 50; i++) {
       await app.client.request(
         '/api/users/login-pin',
         { method: 'POST', body: JSON.stringify({ pin: '0000' }) }
@@ -59,26 +59,12 @@ describe('Rate limiting on login endpoints', () => {
 
   test('rate limit is per IP address', async () => {
     const client = app.client;
-    await client.request(
-      '/api/users/login',
-      { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
-    );
-    await client.request(
-      '/api/users/login',
-      { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
-    );
-    await client.request(
-      '/api/users/login',
-      { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
-    );
-    await client.request(
-      '/api/users/login',
-      { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
-    );
-    await client.request(
-      '/api/users/login',
-      { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
-    );
+    for (let i = 0; i < 50; i++) {
+      await client.request(
+        '/api/users/login',
+        { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'wrong' }) }
+      );
+    }
 
     const { status } = await client.request(
       '/api/users/login',

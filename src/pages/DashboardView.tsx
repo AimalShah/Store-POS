@@ -97,6 +97,7 @@ type DrawerSummary = {
   till: number;
   openSession: DrawerSession | null;
   closedSessions: DrawerSession[];
+  live: { cashSales: number; expectedCash: number } | null;
   summary: {
     totalSessions: number;
     totalFloat: number;
@@ -419,21 +420,19 @@ export default function DashboardView({
           ? (() => {
               const ds = state.drawerSummary!;
               const open = ds.openSession;
-              const variance = open?.variance ?? 0;
-              const variancePct = open?.floatAmount ? (variance / open.floatAmount) * 100 : 0;
-              const lastReconciled = ds.closedSessions.length > 0
-                ? new Date(ds.closedSessions[0].closedAt!).toLocaleString()
-                : 'Never';
+              const expectedCash = ds.live?.expectedCash ?? open?.floatAmount ?? 0;
               return [
                 {
                   title: 'Cash Drawer',
-                  value: fmt(open?.countedCash ?? open?.floatAmount ?? 0),
-                  hint: `Float: ${fmt(open?.floatAmount ?? 0)} · Variance: ${fmt(variance)} (${variancePct >= 0 ? '+' : ''}${variancePct.toFixed(1)}%)`,
+                  value: fmt(expectedCash),
+                  hint: open
+                    ? `Float ${fmt(open.floatAmount ?? 0)} · Cash sales ${fmt(ds.live?.cashSales ?? 0)} · Opened ${new Date(open.openedAt).toLocaleTimeString()}`
+                    : 'Drawer closed — start the day to open it',
                   icon: <Wallet className="size-4 text-emerald-600" />,
-                  iconBg: variance >= 0 ? 'bg-emerald-100' : 'bg-red-100',
+                  iconBg: 'bg-emerald-100',
                   badge: {
-                    label: variance >= 0 ? 'Balanced' : 'Variance',
-                    variant: variance >= 0 ? 'default' : 'destructive',
+                    label: open ? 'Live' : 'Closed',
+                    variant: open ? 'default' : 'outline',
                   },
                   spark: state.trend.map(() => 0),
                   sparkColor: 'var(--chart-3)',

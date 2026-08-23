@@ -167,8 +167,8 @@ describe('report PDF generation', () => {
     const buf = buildInvoicePdf({ settings, tx });
     assertValidPdf(buf, [
       'Bright Bites Cafe',
-      'Invoice',
-      'INV-99',
+      'Order',
+      'Order #099',
       'Cola',
       'Rs5.50',
       'Jane Doe',

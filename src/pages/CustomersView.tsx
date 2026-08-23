@@ -180,7 +180,7 @@ export default function CustomersView({ customers, onChanged, canManage = true }
                     <TableCell>{c.email || '—'}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{c.address || '—'}</TableCell>
                     <TableCell>
-                      canManage && (
+                      {canManage && (
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" aria-label={`Edit ${c.name}`} onClick={() => startEdit(c)}>
                           <Pencil className="size-4" />
@@ -195,7 +195,7 @@ export default function CustomersView({ customers, onChanged, canManage = true }
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
-                      )
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -105,7 +105,7 @@ describe('Thermal: printer selection + fallback', () => {
 });
 
 describe('Thermal: receipt and KOT formatting', () => {
-  test('writeReceipt prints the invoice number and totals', () => {
+  test('writeReceipt prints the short order number and totals', () => {
     const p = fakePrinter();
     writeReceipt(
       p,
@@ -126,7 +126,7 @@ describe('Thermal: receipt and KOT formatting', () => {
       { store: 'Burger Bar', symbol: '$' }
     );
     const printed = p.calls.map((c) => c[1]).join(' ');
-    expect(printed).toContain('INV-20240101-001');
+    expect(printed).toContain('ORDER #001');
     expect(printed).toContain('Burger Bar');
     expect(printed).toContain('TOTAL');
     expect(printed).toContain('cash');
@@ -213,7 +213,7 @@ describe('Thermal: real ESC/POS stream over TCP', () => {
     expect(buf[0]).toBe(ESC_POS_ESC);
     const text = buf.toString('latin1');
     expect(text).toContain('Burger Bar');
-    expect(text).toContain('INVOICE INV-THERMAL-1');
+    expect(text).toContain('ORDER #001');
     expect(text).toContain('Burger');
     expect(text).toContain('TOTAL');
     expect(buf.subarray(-5, -2).equals(ESC_POS_FULL_CUT)).toBe(true);
@@ -258,7 +258,7 @@ describe('Thermal: real ESC/POS stream over TCP', () => {
     expect(res.printed).toBe(true);
     expect(res.kotPrinted).toBe(true);
 
-    expect((await receipt.waitForBytes()).toString('latin1')).toContain('INVOICE INV-THERMAL-1');
+    expect((await receipt.waitForBytes()).toString('latin1')).toContain('ORDER #001');
     expect((await kot.waitForBytes()).toString('latin1')).toContain('KITCHEN ORDER');
     await receipt.close();
     await kot.close();
@@ -300,7 +300,7 @@ describe('Thermal: saved settings drive real printing end-to-end', () => {
 
     const buf = await mock.waitForBytes();
     expect(buf[0]).toBe(ESC_POS_ESC);
-    expect(buf.toString('latin1')).toContain('INVOICE INV-THERMAL-1');
+    expect(buf.toString('latin1')).toContain('ORDER #001');
     expect(buf.subarray(-5, -2).equals(ESC_POS_FULL_CUT)).toBe(true);
     await mock.close();
   });
