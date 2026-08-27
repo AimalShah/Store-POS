@@ -10,7 +10,10 @@ import { dirname, resolve } from 'path';
 
 describe('printer interface URI — Windows device naming', () => {
   test('USB maps to the Windows device path (e.g. USB001)', () => {
-    expect(interfaceUri({ interface: 'usb', usbDevice: 'USB001' })).toBe('USB001');
+    const isWin = process.platform === 'win32';
+    expect(interfaceUri({ interface: 'usb', usbDevice: 'USB001' })).toBe(
+      isWin ? 'printer:USB001' : 'USB001'
+    );
   });
 
   test('network maps to a tcp:// uri with host and port', () => {

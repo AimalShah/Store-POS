@@ -71,7 +71,10 @@ describe('Thermal: interface URI mapping', () => {
   });
 
   test('usb returns the device path; empty interface yields no uri', () => {
-    expect(interfaceUri({ interface: 'usb', usbDevice: '/dev/usb/lp0' })).toBe('/dev/usb/lp0');
+    const isWin = process.platform === 'win32';
+    expect(interfaceUri({ interface: 'usb', usbDevice: '/dev/usb/lp0' })).toBe(
+      isWin ? 'printer:/dev/usb/lp0' : '/dev/usb/lp0'
+    );
     expect(interfaceUri({ interface: '', networkHost: '', usbDevice: '' })).toBe('');
   });
 });
