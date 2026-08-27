@@ -12,7 +12,7 @@ function getWinSpooler() {
   try {
     winSpooler = require('@thiagoelg/node-printer');
   } catch (err) {
-    console.error('Windows printer driver module unavailable:', err);
+    console.warn('Windows printer driver module unavailable — USB printing on Windows will not work. Install build tools and run: npm rebuild @thiagoelg/node-printer');
     winSpooler = null;
   }
   return winSpooler;
