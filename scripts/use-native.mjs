@@ -100,7 +100,7 @@ function rebuildModule(name, { optional = false, binSubpath = null, smokeTest = 
     }
   }
 
-  if (smokeTest) {
+  if (smokeTest && runtime === 'node') {
     const check = spawnSync(process.execPath, ['-e', smokeTest], { cwd: root, stdio: 'pipe' });
     if (check.status !== 0) {
       const msg = `[native] ${name} binary failed to load under Node:\n${check.stderr.toString()}`;
