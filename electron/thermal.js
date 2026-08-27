@@ -19,6 +19,7 @@ function getWinSpooler() {
   if (winSpooler) return winSpooler;
   try {
     winSpooler = require('@thiagoelg/node-printer');
+    console.log('Successfully loaded node-printer');
   } catch (err) {
     console.error('Windows printer driver module unavailable:', err);
     winSpooler = null;
@@ -47,9 +48,13 @@ export function isLikelyThermalPrinterName(name) {
 // list is effectively "what's plugged in and usable" on Windows.
 export function listSystemPrinters() {
   const spooler = getWinSpooler();
-  if (!spooler) return [];
+  if (!spooler) {
+    console.log('listSystemPrinters: No spooler available');
+    return [];
+  }
   try {
     const printers = spooler.getPrinters() || [];
+    console.log('listSystemPrinters found:', printers.map(p => p.name));
     return printers.map((p) => ({
       name: p.name,
       status: p.status || '',
@@ -106,16 +111,17 @@ export function autoAssignReceiptPrinterIfEmpty(name) {
 }
 
 export function interfaceUri(conf) {
+  // Manual override: if a manual printer name is provided in usbDevice
+  // and we are on Windows, we force the printer: prefix.
+  if (conf.interface === 'usb' && conf.usbDevice && process.platform === 'win32') {
+    return `printer:${conf.usbDevice}`;
+  }
+
   if (conf.interface === 'network') {
     return conf.networkHost ? `tcp://${conf.networkHost}:${conf.networkPort || 9100}` : '';
   }
   if (conf.interface === 'usb') {
     if (!conf.usbDevice) return '';
-    // On Windows, "usbDevice" holds the name of a Windows print-spooler
-    // queue (e.g. "POS-80 Series Printer"), not a raw device file — there
-    // is no /dev/usb/lp0 equivalent. node-thermal-printer's `printer:`
-    // interface routes through the OS driver for that queue.
-    if (process.platform === 'win32') return `printer:${conf.usbDevice}`;
     return conf.usbDevice;
   }
   return '';
