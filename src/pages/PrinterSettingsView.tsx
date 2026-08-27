@@ -1,19 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
   Network,
   Printer,
+  RefreshCw,
   Smartphone,
   Usb,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api, PrinterSettings } from '../api/client';
+import type { DetectedPrinter } from '../vite-env';
+import { getPosBridge } from '../bridge';
 import { Checkbox } from '../components/ui/checkbox';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Separator } from '../components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
 
 const INTERFACES = [
   { id: '', label: 'Off', description: 'Fall back to PDF/browser' },
@@ -36,6 +48,8 @@ export default function PrinterSettingsView() {
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [detected, setDetected] = useState<DetectedPrinter[]>([]);
+  const [detecting, setDetecting] = useState(false);
 
   const load = async () => {
     setError(null);
@@ -47,9 +61,38 @@ export default function PrinterSettingsView() {
     }
   };
 
+  const detectPrinters = useCallback(async (silent = false) => {
+    if (!silent) setDetecting(true);
+    try {
+      const list = await getPosBridge().listUsbPrinters();
+      setDetected(list);
+    } catch {
+      /* USB detection only works inside the desktop app on Windows */
+    } finally {
+      if (!silent) setDetecting(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, []);
+    detectPrinters();
+    // A newly plugged-in printer is picked up by the main process's
+    // hotplug watcher; re-run detection and, if it auto-claimed the
+    // receipt slot, reload settings so the form reflects it.
+    getPosBridge().onUsbPrinterDetected(({ name, autoAssigned }) => {
+      detectPrinters(true);
+      if (autoAssigned) {
+        toast.success(`Printer detected: ${name}`, {
+          description: 'Set as the receipt printer automatically.',
+        });
+        load();
+      } else {
+        toast.info(`Printer detected: ${name}`, {
+          description: 'Select it below to use it.',
+        });
+      }
+    });
+  }, [detectPrinters]);
 
   const set = <K extends keyof PrinterSettings>(key: K, value: PrinterSettings[K]) => {
     setPrinter((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -122,21 +165,58 @@ export default function PrinterSettingsView() {
     const { base, usb, host, port } = interfaceFields(kind, printer!);
     const isUsb = base === 'usb';
     const isNet = base === 'network';
+    const setUsb = (value: string | null) =>
+      kind === 'receipt' ? set('usbDevice', value || '') : set('kotUsbDevice', value || '');
     return (
       <>
         {isUsb && (
           <div className="space-y-2">
-            <Label className="text-xs">USB device</Label>
-            <Input
-              value={usb}
-              onChange={(e) =>
-                kind === 'receipt' ? set('usbDevice', e.target.value) : set('kotUsbDevice', e.target.value)
-              }
-              placeholder="/dev/usb/lp0"
-              className="h-9 font-mono text-xs"
-            />
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">USB printer</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => detectPrinters()}
+                disabled={detecting}
+                className="h-7 gap-1.5 text-xs"
+              >
+                <RefreshCw className={`size-3.5 ${detecting ? 'animate-spin' : ''}`} />
+                {detecting ? 'Detecting…' : 'Detect printers'}
+              </Button>
+            </div>
+            {detected.length > 0 ? (
+              <Select value={usb || undefined} onValueChange={setUsb}>
+                <SelectTrigger className="h-9 w-full text-xs">
+                  <SelectValue placeholder="Select the plugged-in printer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {detected.map((p) => (
+                    <SelectItem key={p.name} value={p.name} className="text-xs">
+                      <span className="flex items-center gap-2">
+                        {p.name}
+                        {p.likelyThermal && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Receipt printer
+                          </Badge>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={usb}
+                onChange={(e) => setUsb(e.target.value)}
+                placeholder="/dev/usb/lp0"
+                className="h-9 font-mono text-xs"
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              Device path exposed by the OS (Linux usblp: <code>/dev/usb/lp0</code>).
+              {detected.length > 0
+                ? 'Plug the printer in via USB and it appears here automatically — pick it and save.'
+                : 'No plugged-in printers detected yet. On Windows, plug in the printer and click Detect (or wait — it\'s picked up automatically). On Linux, enter the usblp device path directly.'}
             </p>
           </div>
         )}

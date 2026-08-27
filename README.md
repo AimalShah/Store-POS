@@ -153,7 +153,8 @@ Authenticated routes expect `Authorization: Bearer <token>`.
 | Blank window / `window.pos` missing | Use Electron via `npm run dev`, not a plain browser tab |
 | Sales history empty | Date filters use local time; default range is month start → end of today |
 | Media library 404 after code changes | Restart Electron so the API process reloads new routes |
-| Native module build errors | Run `npm run rebuild` or `npx electron-rebuild -f -w better-sqlite3` |
+| Native module build errors | Run `npm run rebuild` or `npx electron-rebuild -f -w better-sqlite3` (also rebuild `@thiagoelg/node-printer` on Windows: `npx electron-rebuild -f -w @thiagoelg/node-printer`) |
+| USB printer not appearing in Settings | Confirm Windows shows it under Settings → Printers & scanners first — it needs a driver-backed queue (vendor driver or the generic/text-only class driver) before Store POS can see it. Click "Detect printers", or unplug/replug — the app polls every ~2.5s. |
 | PIN login not working | Ensure user has a PIN set in Team settings; fallback to username/password |
 | Cashier sees only Till | This is by design — cashiers have the focused Cashier Portal |
 | Manager missing Catalog/Sales/etc. | Ensure user has the relevant permission flags in Team settings |

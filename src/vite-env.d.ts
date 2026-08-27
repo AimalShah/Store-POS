@@ -51,6 +51,18 @@ export type ReceiptPrintPayload = {
   printKot?: boolean;
 };
 
+export type DetectedPrinter = {
+  name: string;
+  status: string;
+  isDefault: boolean;
+  likelyThermal: boolean;
+};
+
+export type UsbPrinterDetectedEvent = {
+  name: string;
+  autoAssigned: boolean;
+};
+
 export type UpdaterState = {
   status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
   version: string | null;
@@ -66,6 +78,8 @@ export type PosBridge = {
   printReceipt: (payload: ReceiptPrintPayload) => Promise<PrintResult>;
   printKot: (payload: { tx: ReceiptPrintPayload['tx'] }) => Promise<PrintResult>;
   printPdf: (payload: { data: ArrayBuffer }) => Promise<{ printed: boolean }>;
+  listUsbPrinters: () => Promise<DetectedPrinter[]>;
+  onUsbPrinterDetected: (cb: (info: UsbPrinterDetectedEvent) => void) => void;
   updater: {
     getState: () => Promise<UpdaterState>;
     checkNow: () => Promise<UpdaterState>;

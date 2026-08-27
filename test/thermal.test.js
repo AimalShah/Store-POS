@@ -132,6 +132,79 @@ describe('Thermal: receipt and KOT formatting', () => {
     expect(printed).toContain('cash');
   });
 
+  test('writeReceipt prints selected variants and modifiers on each line (matches the on-screen invoice)', () => {
+    const p = fakePrinter();
+    writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-002',
+        date: '2024-01-01T12:00:00Z',
+        items: [
+          {
+            quantity: 1,
+            name: 'Pizza',
+            price: 12,
+            selectedVariants: [{ group: 'Size', name: 'Large', priceDelta: 3 }],
+            selectedModifiers: [{ name: 'Extra cheese', priceDelta: 1.5 }],
+          },
+        ],
+        subtotal: 12,
+        discount: 0,
+        tax: 0,
+        total: 12,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 12 }],
+      },
+      { store: 'Pizza Bar', symbol: '$' }
+    );
+    const printed = p.calls.map((c) => c[1]).join(' ');
+    expect(printed).toContain('Large');
+    expect(printed).toContain('Extra cheese');
+  });
+
+  test('writeReceipt falls back to a Paid line when there is no payment breakdown', () => {
+    const p = fakePrinter();
+    writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-003',
+        date: '2024-01-01T12:00:00Z',
+        items: [{ quantity: 1, name: 'Burger', price: 5 }],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        paid: 5,
+        change: 0,
+      },
+      { store: 'Burger Bar', symbol: '$' }
+    );
+    const printed = p.calls.map((c) => c[1]).join(' ');
+    expect(printed).toContain('Paid');
+  });
+
+  test('writeReceipt marks a voided sale so it cannot be mistaken for a valid one', () => {
+    const p = fakePrinter();
+    writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-004',
+        date: '2024-01-01T12:00:00Z',
+        status: 2,
+        items: [{ quantity: 1, name: 'Burger', price: 5 }],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 5 }],
+      },
+      { store: 'Burger Bar', symbol: '$' }
+    );
+    const printed = p.calls.map((c) => c[1]).join(' ');
+    expect(printed).toContain('VOIDED');
+  });
+
   test('writeKot prints a kitchen ticket with item lines and notes, no prices', () => {
     const p = fakePrinter();
     writeKot(p, {

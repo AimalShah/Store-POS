@@ -501,18 +501,17 @@ export default function AppShell() {
 
   function renderView() {
     switch (activeView) {
+      case 'shift-summary':
+        return (
+          <ShiftSummaryView
+            settings={settings}
+            range={date.range}
+            onNewSale={() => setMode('till')}
+            onHeldOrders={() => goTo('sales')}
+            onEndShift={() => goTo('drawer')}
+          />
+        );
       case 'dashboard':
-        if (role === 'Cashier') {
-          return (
-            <ShiftSummaryView
-              settings={settings}
-              range={date.range}
-              onNewSale={() => setMode('till')}
-              onHeldOrders={() => goTo('sales')}
-              onEndShift={() => goTo('drawer')}
-            />
-          );
-        }
         return (
           <DashboardView
             settings={settings}

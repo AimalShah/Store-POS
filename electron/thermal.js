@@ -1,9 +1,66 @@
+import { createRequire } from 'module';
 import { printer as ThermalPrinter, types } from 'node-thermal-printer';
 import { getDb } from '../server/db.js';
+
+const require = createRequire(import.meta.url);
 
 // Thermal printing runs in the Electron main process (Node), where it can
 // talk to USB device files and the network. The renderer never prints
 // directly; it asks via IPC and falls back to PDF/browser when unconfigured.
+
+// Windows has no raw "/dev/usb/lp0"-style device file for USB printers —
+// a plugged-in receipt printer shows up as a print-spooler queue instead.
+// We lazily require the native `printer` module (winspool bindings) only
+// when we're actually on win32, so Linux/macOS dev machines never need to
+// build it.
+let winSpooler = null;
+function getWinSpooler() {
+  if (process.platform !== 'win32') return null;
+  if (winSpooler) return winSpooler;
+  try {
+    winSpooler = require('@thiagoelg/node-printer');
+  } catch (err) {
+    console.error('Windows printer driver module unavailable:', err);
+    winSpooler = null;
+  }
+  return winSpooler;
+}
+
+// Heuristic used to pick out likely receipt/thermal printers from the full
+// list of Windows-installed print queues (which also includes "Microsoft
+// Print to PDF", scanners, regular office printers, etc.).
+const THERMAL_NAME_HINTS = [
+  'pos', 'thermal', 'receipt', 'tm-', 'tm ', 'epson tm', 'star', 'xprinter',
+  'xp-', 'zjiang', 'gprinter', 'rongta', 'citizen', 'bixolon', 'sewoo',
+  '58mm', '80mm', 'ticket', 'kot',
+];
+
+export function isLikelyThermalPrinterName(name) {
+  const n = String(name || '').toLowerCase();
+  return THERMAL_NAME_HINTS.some((hint) => n.includes(hint));
+}
+
+// List the printers Windows currently knows about (installed queues).
+// Plugging in most USB receipt printers causes Windows to auto-create a
+// queue for them within a second or two once a driver is available —
+// either a vendor driver or the generic/text-only class driver — so this
+// list is effectively "what's plugged in and usable" on Windows.
+export function listSystemPrinters() {
+  const spooler = getWinSpooler();
+  if (!spooler) return [];
+  try {
+    const printers = spooler.getPrinters() || [];
+    return printers.map((p) => ({
+      name: p.name,
+      status: p.status || '',
+      isDefault: !!p.isDefault,
+      likelyThermal: isLikelyThermalPrinterName(p.name),
+    }));
+  } catch (err) {
+    console.error('Failed to list system printers:', err);
+    return [];
+  }
+}
 
 export function readPrinterConfig() {
   const row = getDb().prepare('SELECT * FROM printer_settings WHERE id = 1').get();
@@ -27,23 +84,58 @@ export function readPrinterConfig() {
   };
 }
 
+// Called by the hotplug watcher when a new likely-thermal printer queue
+// shows up in Windows. Only claims it as the receipt printer if nothing is
+// configured yet — never silently overrides a printer the user already set
+// up on purpose.
+export function autoAssignReceiptPrinterIfEmpty(name) {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM printer_settings WHERE id = 1').get();
+  const alreadyConfigured = row && row.interface && (row.interface !== 'usb' || row.usb_device);
+  if (alreadyConfigured) return false;
+  if (row) {
+    db.prepare(
+      `UPDATE printer_settings SET interface = 'usb', usb_device = ? WHERE id = 1`
+    ).run(name);
+  } else {
+    db.prepare(
+      `INSERT INTO printer_settings (id, interface, usb_device) VALUES (1, 'usb', ?)`
+    ).run(name);
+  }
+  return true;
+}
+
 export function interfaceUri(conf) {
   if (conf.interface === 'network') {
     return conf.networkHost ? `tcp://${conf.networkHost}:${conf.networkPort || 9100}` : '';
   }
-  if (conf.interface === 'usb') return conf.usbDevice || '';
+  if (conf.interface === 'usb') {
+    if (!conf.usbDevice) return '';
+    // On Windows, "usbDevice" holds the name of a Windows print-spooler
+    // queue (e.g. "POS-80 Series Printer"), not a raw device file — there
+    // is no /dev/usb/lp0 equivalent. node-thermal-printer's `printer:`
+    // interface routes through the OS driver for that queue.
+    if (process.platform === 'win32') return `printer:${conf.usbDevice}`;
+    return conf.usbDevice;
+  }
   return '';
 }
 
 export function makePrinter(conf) {
   const uri = interfaceUri(conf);
   if (!uri) return null;
-  return new ThermalPrinter({
+  const options = {
     type: types.EPSON,
     interface: uri,
     width: conf.width === 80 ? 48 : 32,
     lineCharacter: '=',
-  });
+  };
+  if (conf.interface === 'usb' && process.platform === 'win32') {
+    const spooler = getWinSpooler();
+    if (!spooler) return null; // driver module missing/failed to build
+    options.driver = spooler;
+  }
+  return new ThermalPrinter(options);
 }
 
 function money(n, symbol) {
@@ -69,6 +161,7 @@ function centered(printer, text) {
 
 export function writeReceipt(printer, tx, settings) {
   const symbol = settings?.symbol || 'Rs';
+  const isVoided = Number(tx.status) === 2;
 
   printer.bold(true);
   printer.alignCenter();
@@ -87,6 +180,13 @@ export function writeReceipt(printer, tx, settings) {
   printer.println(`ORDER #${orderNumber(tx)}`);
   printer.bold(false);
   printer.alignLeft();
+  if (isVoided) {
+    printer.bold(true);
+    printer.alignCenter();
+    printer.println('*** VOIDED ***');
+    printer.bold(false);
+    printer.alignLeft();
+  }
   centered(printer, new Date(tx.date).toLocaleString());
   centered(printer, `Cashier: ${tx.user || '-'}`);
   centered(printer, `Customer: ${tx.customer_name || 'Walk-in'}`);
@@ -102,6 +202,16 @@ export function writeReceipt(printer, tx, settings) {
   for (const item of tx.items || []) {
     printer.println(`${item.quantity}x ${item.name}`);
     if (item.note) printer.println(`   ${item.note}`);
+    for (const v of item.selectedVariants || []) {
+      printer.println(
+        `   ${v.name}${v.priceDelta ? ` (+${money(v.priceDelta, symbol)})` : ''}`
+      );
+    }
+    for (const m of item.selectedModifiers || []) {
+      printer.println(
+        `   + ${m.name}${m.priceDelta ? ` (+${money(m.priceDelta, symbol)})` : ''}`
+      );
+    }
     printer.leftRight('', money(Number(item.price) * Number(item.quantity), symbol));
   }
   printer.newLine();
@@ -113,8 +223,13 @@ export function writeReceipt(printer, tx, settings) {
   printer.bold(true);
   printer.leftRight('TOTAL', money(tx.total, symbol));
   printer.bold(false);
-  for (const pb of tx.payment_breakdown || []) {
-    printer.leftRight(pb.method, money(pb.amount, symbol));
+  if (tx.payment_breakdown && tx.payment_breakdown.length > 0) {
+    for (const pb of tx.payment_breakdown) {
+      printer.leftRight(pb.method, money(pb.amount, symbol));
+    }
+  } else {
+    const paid = tx.paid != null ? Number(tx.paid) : Number(tx.total) + Number(tx.change || 0);
+    printer.leftRight('Paid', money(paid, symbol));
   }
   printer.leftRight('Change', money(tx.change, symbol));
   printer.newLine();

@@ -194,6 +194,9 @@ export default function TillView({
   const [drawerSession, setDrawerSession] = useState<DrawerSession | null>(null);
   const [closeDrawerOpen, setCloseDrawerOpen] = useState(false);
   const [countedCash, setCountedCash] = useState('');
+  const [drawerWarningDismissed, setDrawerWarningDismissed] = useState(false);
+  const [openDrawerDialog, setOpenDrawerDialog] = useState(false);
+  const [floatAmount, setFloatAmount] = useState('');
 
   const loadPrinterSettings = async () => {
     try {
@@ -272,6 +275,20 @@ export default function TillView({
       toast.success('Drawer closed for the day.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not close the drawer.');
+    }
+  };
+
+  const handleOpenDrawer = async () => {
+    const float = parseFloat(floatAmount) || 0;
+    if (float < 0) return;
+    try {
+      await api.openDrawerSession({ floatAmount: float, till });
+      setOpenDrawerDialog(false);
+      setFloatAmount('');
+      await loadDrawerSession();
+      toast.success('Drawer opened for the day.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not open the drawer.');
     }
   };
 
@@ -769,6 +786,31 @@ export default function TillView({
         </div>
       )}
 
+      {!drawerSession && !drawerWarningDismissed && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertCircle className="size-5 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">Cash drawer is not open</p>
+            <p className="text-xs text-amber-600">Open the drawer before taking payments.</p>
+          </div>
+          <Button
+            size="sm"
+            className="bg-amber-600 text-white hover:bg-amber-700"
+            onClick={() => setOpenDrawerDialog(true)}
+          >
+            Open Drawer
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-amber-600 hover:text-amber-800"
+            onClick={() => setDrawerWarningDismissed(true)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row gap-3 overflow-hidden">
 
       {/* Menu surface: search + tabs + grid in one panel */}
@@ -1177,6 +1219,44 @@ export default function TillView({
         </DialogContent>
       </Dialog>
 
+      {/* Open Drawer Dialog */}
+      <Dialog open={openDrawerDialog} onOpenChange={setOpenDrawerDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start Day — Open Drawer</DialogTitle>
+            <DialogDescription>
+              How much cash are you putting in the drawer to start? You cannot take payments until the drawer is open.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="till-float-amount">Cash to start with ({symbol})</Label>
+              <Input
+                id="till-float-amount"
+                type="number"
+                step="0.01"
+                min={0}
+                value={floatAmount}
+                onChange={(e) => setFloatAmount(e.target.value)}
+                placeholder="0.00"
+                autoFocus
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This is the money in the drawer before any sales.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenDrawerDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleOpenDrawer} disabled={!floatAmount.trim()}>
+              Open Drawer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Held Orders Dialog */}
       <Dialog open={showHolds} onOpenChange={setShowHolds}>
         <DialogContent className="max-w-2xl">
@@ -1514,7 +1594,7 @@ export default function TillView({
           <DialogHeader>
             <DialogTitle>Sale Complete &amp; Receipt</DialogTitle>
           </DialogHeader>
-          <div className="border p-4 rounded-md bg-white text-black">
+          <div id="printable-receipt" className="border p-4 rounded-md bg-white text-black">
             {invoice && (
               <ErrorBoundary fallbackTitle="The receipt failed to render">
                 <Invoice tx={invoice} settings={settings} symbol={symbol} />

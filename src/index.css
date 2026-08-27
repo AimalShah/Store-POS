@@ -164,3 +164,28 @@
     @apply font-sans;
   }
 }
+
+/*
+ * Browser print fallback (window.print() in src/lib/printing.ts, used when
+ * no thermal printer is configured or reachable). Without this, printing
+ * captures whatever the OS print dialog sees on the physical page — the
+ * full Till screen behind the receipt dialog, cart and all — instead of
+ * the receipt. This hides everything except the element marked
+ * #printable-receipt, which TillView renders inside the "Sale Complete &
+ * Receipt" dialog around the on-screen <Invoice /> the cashier already
+ * reviewed, so paper output matches what was on screen.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
+}

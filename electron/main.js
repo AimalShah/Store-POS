@@ -5,7 +5,13 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { printKotJob, printReceiptJob, readPrinterConfig } from './thermal.js';
+import {
+  printKotJob,
+  printReceiptJob,
+  readPrinterConfig,
+  listSystemPrinters,
+  autoAssignReceiptPrinterIfEmpty,
+} from './thermal.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -109,6 +115,34 @@ ipcMain.handle('print-kot', async (_event, payload) => {
   if (!config || !config.kot.interface) return { printed: false, fallback: true };
   return printKotJob(payload.tx, config);
 });
+
+// Manual "Detect printers" button in Settings — lists whatever Windows
+// currently has installed as print queues, flagging likely thermal ones.
+ipcMain.handle('list-usb-printers', async () => {
+  return listSystemPrinters();
+});
+
+// USB hotplug watcher: Windows auto-creates a spooler queue for most
+// plug-and-play receipt printers within a second or two of being plugged
+// in, so we poll the queue list and react to new arrivals rather than
+// relying on a native USB-attach event. If no receipt printer is
+// configured yet, the first newly-seen likely-thermal queue is claimed
+// automatically and the renderer is notified so it can toast + refresh.
+let knownPrinterNames = new Set(listSystemPrinters().map((p) => p.name));
+setInterval(() => {
+  if (process.platform !== 'win32') return;
+  const current = listSystemPrinters();
+  const currentNames = new Set(current.map((p) => p.name));
+  for (const p of current) {
+    if (!knownPrinterNames.has(p.name) && p.likelyThermal) {
+      const autoAssigned = autoAssignReceiptPrinterIfEmpty(p.name);
+      if (mainWindow) {
+        mainWindow.webContents.send('usb-printer-detected', { name: p.name, autoAssigned });
+      }
+    }
+  }
+  knownPrinterNames = currentNames;
+}, 2500);
 
 // Hand a generated PDF report (sales report, X/Z shift report, invoice) to the
 // system's default PDF viewer. Electron's native `webContents.print` reliably

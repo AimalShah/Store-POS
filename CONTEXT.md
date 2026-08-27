@@ -126,6 +126,26 @@ _Avoid_: earnings, income
 Profit expressed as a percentage of a Sale's revenue. Derived from Profit and total.
 _Avoid_: markup, margin percent
 
-**Cash drawer reconciliation**:
-A lightweight open/close count of the till — an opening float, a counted closing cash figure, and the variance versus system-expected cash. Replaces the former Shift / X-report / Z-report model: there are no formal shift periods, just a daily drawer count to catch till shortages.
-_Avoid_: Shift, X report, Z report, Day report
+### Cash drawer
+
+**Drawer session**:
+A record of an open-then-close period on the single active till — an opening float, a running cash balance, a counted closing cash figure, and the variance versus system-expected cash. One session can be open at a time; opening a new session while one is already open is blocked. Replaces the former Shift / X-report / Z-report model: there are no formal shift periods, just a daily drawer count to catch till shortages.
+_Avoid_: shift, drawer record
+
+**Drawer guard**:
+The rule that blocks the Till from completing sales when no drawer session is open. All roles (Admin, Manager, Cashier) are subject to the guard. In-progress orders complete normally if the drawer closes mid-order; only subsequent new sales are blocked until a new session is opened.
+_Avoid_: drawer lock, till gate
+
+**Drawer balance**:
+The real-time cash expected in the drawer — opening float plus the sum of all cash payments recorded during the session. Stored on the drawer session record in the database and updated when each cash sale completes. Card and digital payments are excluded as they don't pass through the physical drawer.
+_Avoid_: running total, cash tally
+
+### Language & Locale
+
+**Locale**:
+The per-user language preference — one of `en` (English) or `ur` (Urdu) — saved to the user record in the database. Determines all UI text and layout direction. Product names and catalog content are not translated.
+_Avoid_: language, lang
+
+**RTL layout**:
+The right-to-left UI mirroring applied when the active locale is Urdu. Sidebar moves right, text aligns right, navigation and content direction flip. English uses standard left-to-right layout.
+_Avoid_: right-to-left, bidi layout

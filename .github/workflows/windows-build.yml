@@ -54,6 +54,12 @@ jobs:
         # Electron (e.g. electron-v148 for Electron 43) — no compiler needed.
         run: npm run native:electron
 
+      - name: Rebuild @thiagoelg/node-printer for Electron
+        # node-printer wraps Windows winspool APIs and compiles fine during
+        # npm ci, but electron-builder's npmRebuild is disabled so we rebuild
+        # it once here against the Electron ABI to be safe.
+        run: npx --yes @electron/rebuild -f -w @thiagoelg/node-printer
+
       - name: Build NSIS installer
         # electron-builder's automatic rebuild (npmRebuild) is disabled because
         # it recompiles from source and hits node-gyp 9 toolchain limits on the

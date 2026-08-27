@@ -1,4 +1,11 @@
-import type { ApiInfo, PosBridge, PrintResult, SaveFileOptions, SaveFileResult } from './vite-env';
+import type {
+  ApiInfo,
+  DetectedPrinter,
+  PosBridge,
+  PrintResult,
+  SaveFileOptions,
+  SaveFileResult,
+} from './vite-env';
 
 const FALLBACK_PORT = 8001;
 
@@ -45,6 +52,8 @@ function browserFallback(): PosBridge {
     printReceipt: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
     printKot: async (): Promise<PrintResult> => ({ printed: false, fallback: true }),
     printPdf: async (): Promise<{ printed: boolean }> => ({ printed: false }),
+    listUsbPrinters: async (): Promise<DetectedPrinter[]> => [],
+    onUsbPrinterDetected: () => {},
     updater: {
       getState: async () => ({ status: 'idle', version: null, error: null, dev: true }),
       checkNow: async () => ({ status: 'idle', version: null, error: null, dev: true }),
