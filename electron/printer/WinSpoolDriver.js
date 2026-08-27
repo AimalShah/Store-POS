@@ -47,8 +47,8 @@ function readUtf16Str(buf, offset) {
 function getPrinters() {
   if (!isWin) return [];
 
-  const bytesNeeded = Uint32Array(1);
-  const returned = Uint32Array(1);
+  const bytesNeeded = new Uint32Array(1);
+  const returned = new Uint32Array(1);
 
   EnumPrintersW(PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS, null, 2, null, 0, bytesNeeded, returned);
   if (bytesNeeded[0] === 0) return [];
