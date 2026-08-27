@@ -47,7 +47,9 @@
     ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**",
-      "**/node_modules/@thiagoelg/node-printer/**"
+      "**/node_modules/@thiagoelg/node-printer/**",
+      "**/node_modules/@thiagoelg/node-printer/lib/**",
+      "**/node_modules/@thiagoelg/node-printer/build/**"
     ],
     "win": {
       "target": [
