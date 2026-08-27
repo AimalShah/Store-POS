@@ -205,18 +205,11 @@ export default function PrinterSettingsView() {
                   ))}
                 </SelectContent>
               </Select>
-            ) : (
-              <Input
-                value={usb}
-                onChange={(e) => setUsb(e.target.value)}
-                placeholder="/dev/usb/lp0"
-                className="h-9 font-mono text-xs"
-              />
-            )}
+            ) : null}
             <p className="text-xs text-muted-foreground">
               {detected.length > 0
                 ? 'Plug the printer in via USB and it appears here automatically — pick it and save.'
-                : 'No plugged-in printers detected yet. On Windows, plug in the printer and click Detect (or wait — it\'s picked up automatically). On Linux, enter the usblp device path directly.'}
+                : 'No installed Windows printer queues were found. Check that the printer is connected, powered on, and has its Windows driver installed, then detect again.'}
             </p>
           </div>
         )}

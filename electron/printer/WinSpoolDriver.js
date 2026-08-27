@@ -44,6 +44,28 @@ function readUtf16Str(buf, offset) {
   return chars.join('');
 }
 
+// PRINTER_INFO_2W stores pointers to strings, not offsets within the output
+// buffer. EnumPrintersW writes those pointers relative to the address of the
+// buffer that we supplied. Convert them before reading so 64-bit Windows
+// printer queues are not silently dropped.
+export function decodePrinterInfo2(buffer, count, bufferAddress) {
+  const printers = [];
+  for (let i = 0; i < count; i++) {
+    const base = i * PRINTER_INFO_2_SIZE;
+    const namePointer = buffer.readBigUInt64LE(base + 8);
+    const nameOffset = Number(namePointer - bufferAddress);
+    const name = readUtf16Str(buffer, nameOffset);
+    if (!name) continue;
+    printers.push({
+      name,
+      // On 64-bit Windows, Status follows the security descriptor at byte 120.
+      status: buffer.readUInt32LE(base + 120),
+      isDefault: false,
+    });
+  }
+  return printers;
+}
+
 function getPrinters() {
   if (!isWin) return [];
 
@@ -60,21 +82,17 @@ function getPrinters() {
   );
   if (!ok) return [];
 
-  const printers = [];
-  for (let i = 0; i < returned[0]; i++) {
-    const base = i * PRINTER_INFO_2_SIZE;
-    const nameOff = Number(buf.readBigUInt64LE(base + 8));
-    const status = buf.readUInt32LE(base + 124);
-    printers.push({ name: readUtf16Str(buf, nameOff), status, isDefault: false });
-  }
-
-  return printers;
+  const defaultName = getDefaultPrinterName();
+  return decodePrinterInfo2(buf, returned[0], koffi.address(buf)).map((printer) => ({
+    ...printer,
+    isDefault: printer.name === defaultName,
+  }));
 }
 
 function getDefaultPrinterName() {
   if (!isWin) return '';
 
-  let size = Uint32Array(1);
+  let size = new Uint32Array(1);
   GetDefaultPrinterW(null, size);
   if (size[0] === 0) return '';
   const buf = Buffer.alloc(size[0] * 2);
@@ -83,7 +101,7 @@ function getDefaultPrinterName() {
   return buf.toString('utf16le').replace(/\0$/, '');
 }
 
-function buildDocInfo1W(printerName, typeName) {
+export function buildDocInfo1W(printerName, typeName) {
   const docNameBuf = Buffer.from((printerName || 'Print Job') + '\0', 'utf16le');
   const typeBuf = Buffer.from((typeName || 'RAW') + '\0', 'utf16le');
 
@@ -96,8 +114,9 @@ function buildDocInfo1W(printerName, typeName) {
   docNameBuf.copy(buf, docNameOffset);
   typeBuf.copy(buf, typeOffset);
 
-  const docNamePtr = BigInt(docNameBuf.buffer.byteOffset + docNameBuf.byteOffset + docNameOffset);
-  const typePtr = BigInt(typeBuf.buffer.byteOffset + typeBuf.byteOffset + typeOffset);
+  const bufferAddress = koffi.address(buf);
+  const docNamePtr = bufferAddress + BigInt(docNameOffset);
+  const typePtr = bufferAddress + BigInt(typeOffset);
 
   buf.writeBigUInt64LE(docNamePtr, 0);
   buf.writeBigUInt64LE(0n, 8);
@@ -130,7 +149,7 @@ function printDirect({ data, printer: printerName, type, success, error }) {
 
     StartPagePrinter(handle);
     const dataBuf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    const written = Uint32Array(1);
+    const written = new Uint32Array(1);
     WritePrinter(handle, dataBuf, dataBuf.length, written);
     EndPagePrinter(handle);
     EndDocPrinter(handle);
