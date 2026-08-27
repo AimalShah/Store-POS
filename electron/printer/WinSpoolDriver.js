@@ -1,59 +1,37 @@
 import koffi from 'koffi';
 
-const winspool = koffi.load('winspool.drv');
+const isWin = process.platform === 'win32';
 
 const PRINTER_ENUM_LOCAL = 0x00000080;
 const PRINTER_ENUM_CONNECTIONS = 0x00000004;
+const PRINTER_INFO_2_SIZE = 136;
 
-const PRINTER_INFO_2W = koffi.struct('PRINTER_INFO_2W', {
-  pServerName: 'char16*',
-  pPrinterName: 'char16*',
-  pShareName: 'char16*',
-  pPortName: 'char16*',
-  pDriverName: 'char16*',
-  pComment: 'char16*',
-  pLocation: 'char16*',
-  pSepFile: 'char16*',
-  pPrintProcessor: 'char16*',
-  pDatatype: 'char16*',
-  pParameters: 'char16*',
-  pDevMode: 'void*',
-  pSecurityDescriptor: 'void*',
-  Attributes: 'uint32',
-  Priority: 'uint32',
-  DefaultPriority: 'uint32',
-  StartTime: 'uint32',
-  UntilTime: 'uint32',
-  Status: 'uint32',
-  cJobs: 'uint32',
-  AveragePPM: 'uint32',
-});
+let EnumPrintersW, GetDefaultPrinterW, OpenPrinterW, ClosePrinter;
+let StartDocPrinterW, StartPagePrinter, WritePrinter, EndPagePrinter, EndDocPrinter;
 
-const DOC_INFO_1W = koffi.struct('DOC_INFO_1W', {
-  pDocName: 'char16*',
-  pOutputFile: 'char16*',
-  pDatatype: 'char16*',
-});
+if (isWin) {
+  const winspool = koffi.load('winspool.drv');
 
-const EnumPrintersW = winspool.func(
-  'uint32 EnumPrintersW(uint32 Flags, void* Name, uint32 Level, uint8* pPrinterEnum, uint32 cbBuf, uint32* pcbNeeded, uint32* pcReturned)'
-);
-const GetDefaultPrinterW = winspool.func(
-  'int32 GetDefaultPrinterW(char16* pszBuffer, uint32* pcchBuffer)'
-);
-const OpenPrinterW = winspool.func(
-  'int32 OpenPrinterW(char16* pPrinterName, out void** phPrinter, void* pDefault)'
-);
-const ClosePrinter = winspool.func('int32 ClosePrinter(void* hPrinter)');
-const StartDocPrinterW = winspool.func(
-  'uint32 StartDocPrinterW(void* hPrinter, uint32 Level, DOC_INFO_1W* pDocInfo)'
-);
-const StartPagePrinter = winspool.func('int32 StartPagePrinter(void* hPrinter)');
-const WritePrinter = winspool.func(
-  'int32 WritePrinter(void* hPrinter, void* pBuf, uint32 cbBuf, uint32* pcWritten)'
-);
-const EndPagePrinter = winspool.func('int32 EndPagePrinter(void* hPrinter)');
-const EndDocPrinter = winspool.func('int32 EndDocPrinter(void* hPrinter)');
+  EnumPrintersW = winspool.func(
+    'uint32 EnumPrintersW(uint32 Flags, void* Name, uint32 Level, uint8* pPrinterEnum, uint32 cbBuf, uint32* pcbNeeded, uint32* pcReturned)'
+  );
+  GetDefaultPrinterW = winspool.func(
+    'int32 GetDefaultPrinterW(char16* pszBuffer, uint32* pcchBuffer)'
+  );
+  OpenPrinterW = winspool.func(
+    'int32 OpenPrinterW(char16* pPrinterName, void** phPrinter, void* pDefault)'
+  );
+  ClosePrinter = winspool.func('int32 ClosePrinter(void* hPrinter)');
+  StartDocPrinterW = winspool.func(
+    'uint32 StartDocPrinterW(void* hPrinter, uint32 Level, void* pDocInfo)'
+  );
+  StartPagePrinter = winspool.func('int32 StartPagePrinter(void* hPrinter)');
+  WritePrinter = winspool.func(
+    'int32 WritePrinter(void* hPrinter, void* pBuf, uint32 cbBuf, uint32* pcWritten)'
+  );
+  EndPagePrinter = winspool.func('int32 EndPagePrinter(void* hPrinter)');
+  EndDocPrinter = winspool.func('int32 EndDocPrinter(void* hPrinter)');
+}
 
 function readUtf16Str(buf, offset) {
   if (offset <= 0 || offset >= buf.length) return '';
@@ -67,6 +45,8 @@ function readUtf16Str(buf, offset) {
 }
 
 function getPrinters() {
+  if (!isWin) return [];
+
   const bytesNeeded = Uint32Array(1);
   const returned = Uint32Array(1);
 
@@ -80,11 +60,9 @@ function getPrinters() {
   );
   if (!ok) return [];
 
-  const structSize = koffi.sizeof(PRINTER_INFO_2W);
   const printers = [];
-
   for (let i = 0; i < returned[0]; i++) {
-    const base = i * structSize;
+    const base = i * PRINTER_INFO_2_SIZE;
     const nameOff = Number(buf.readBigUInt64LE(base + 8));
     const status = buf.readUInt32LE(base + 124);
     printers.push({ name: readUtf16Str(buf, nameOff), status, isDefault: false });
@@ -94,6 +72,8 @@ function getPrinters() {
 }
 
 function getDefaultPrinterName() {
+  if (!isWin) return '';
+
   let size = Uint32Array(1);
   GetDefaultPrinterW(null, size);
   if (size[0] === 0) return '';
@@ -103,18 +83,46 @@ function getDefaultPrinterName() {
   return buf.toString('utf16le').replace(/\0$/, '');
 }
 
+function buildDocInfo1W(printerName, typeName) {
+  const docNameBuf = Buffer.from((printerName || 'Print Job') + '\0', 'utf16le');
+  const typeBuf = Buffer.from((typeName || 'RAW') + '\0', 'utf16le');
+
+  const structSize = 24;
+  const docNameOffset = structSize;
+  const typeOffset = structSize + docNameBuf.length;
+  const totalSize = typeOffset + typeBuf.length;
+
+  const buf = Buffer.alloc(totalSize);
+  docNameBuf.copy(buf, docNameOffset);
+  typeBuf.copy(buf, typeOffset);
+
+  const docNamePtr = BigInt(docNameBuf.buffer.byteOffset + docNameBuf.byteOffset + docNameOffset);
+  const typePtr = BigInt(typeBuf.buffer.byteOffset + typeBuf.byteOffset + typeOffset);
+
+  buf.writeBigUInt64LE(docNamePtr, 0);
+  buf.writeBigUInt64LE(0n, 8);
+  buf.writeBigUInt64LE(typePtr, 16);
+
+  return buf;
+}
+
 function printDirect({ data, printer: printerName, type, success, error }) {
-  const handleRef = koffi.alloc('void*');
-  const opened = OpenPrinterW(printerName, handleRef, null);
+  if (!isWin) {
+    error(new Error('PrintDirect is only supported on Windows'));
+    return;
+  }
+
+  const handleBuf = Buffer.alloc(8);
+  const opened = OpenPrinterW(printerName, handleBuf, null);
   if (!opened) {
     error(new Error(`Failed to open printer: ${printerName}`));
     return;
   }
-  const handle = koffi.decode(handleRef, 'void*');
+  const handle = handleBuf.readBigUInt64LE(0);
 
   try {
-    const docInfo = { pDocName: printerName || 'Print Job', pOutputFile: null, pDatatype: type || 'RAW' };
-    const jobID = StartDocPrinterW(handle, 1, docInfo);
+    const docInfoBuf = buildDocInfo1W(printerName, type);
+    const jobID = StartDocPrinterW(handle, 1, docInfoBuf);
     if (!jobID) {
       error(new Error('StartDocPrinter failed'));
       return;
