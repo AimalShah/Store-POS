@@ -122,7 +122,3 @@ rebuildModule('better-sqlite3', {
   smokeTest:
     "const D=require('better-sqlite3');const db=new D(':memory:');db.exec('create table t(x);insert into t values(1)');const r=db.prepare('select x from t').get();if(r.x!==1)process.exit(1);db.close();",
 });
-
-rebuildModule('@thiagoelg/node-printer', {
-  optional: true,
-});

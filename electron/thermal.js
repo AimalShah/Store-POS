@@ -1,24 +1,9 @@
-import { createRequire } from 'module';
 import { printer as ThermalPrinter, types } from 'node-thermal-printer';
 import { getDb } from '../server/db.js';
 import { PrinterManager } from './printer/PrinterManager.js';
+import { winSpoolDriver } from './printer/WinSpoolDriver.js';
 
-const require = createRequire(import.meta.url);
-
-let winSpooler = null;
-function getWinSpooler() {
-  if (process.platform !== 'win32') return null;
-  if (winSpooler) return winSpooler;
-  try {
-    winSpooler = require('@thiagoelg/node-printer');
-  } catch (err) {
-    console.warn('Windows printer driver module unavailable — USB printing on Windows will not work. Install build tools and run: npm rebuild @thiagoelg/node-printer');
-    winSpooler = null;
-  }
-  return winSpooler;
-}
-
-const printerManager = new PrinterManager(getWinSpooler());
+const printerManager = new PrinterManager(process.platform === 'win32' ? winSpoolDriver : null);
 
 const THERMAL_NAME_HINTS = [
   'pos', 'thermal', 'receipt', 'tm-', 'tm ', 'epson tm', 'star', 'xprinter',
@@ -99,9 +84,7 @@ export function makePrinter(conf) {
     lineCharacter: '=',
   };
   if (conf.interface === 'usb' && process.platform === 'win32') {
-    const spooler = getWinSpooler();
-    if (!spooler) return null;
-    options.driver = spooler;
+    options.driver = winSpoolDriver;
   }
   return new ThermalPrinter(options);
 }
