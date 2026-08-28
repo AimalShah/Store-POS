@@ -106,19 +106,35 @@ ipcMain.on('app-quit', () => {
 
 ipcMain.handle('print-receipt', async (_event, payload) => {
   const config = readPrinterConfig();
-  if (!config || !config.receipt.interface) return { printed: false, fallback: true };
+  if (!config || !config.receipt.interface) {
+    console.warn('[PRINTER-DEBUG-7f3c] Receipt print IPC skipped: receipt printer is not configured');
+    return { printed: false, fallback: true };
+  }
+  console.log('[PRINTER-DEBUG-7f3c] Receipt print IPC received', {
+    order: payload.tx?.ref_number || payload.tx?.id,
+    receipt: config.receipt,
+    printKot: !!payload.printKot,
+  });
   return printReceiptJob(payload.tx, payload.settings, config, { printKot: !!payload.printKot });
 });
 
 ipcMain.handle('print-kot', async (_event, payload) => {
   const config = readPrinterConfig();
-  if (!config || !config.kot.interface) return { printed: false, fallback: true };
+  if (!config || !config.kot.interface) {
+    console.warn('[PRINTER-DEBUG-7f3c] Kitchen ticket IPC skipped: kitchen printer is not configured');
+    return { printed: false, fallback: true };
+  }
+  console.log('[PRINTER-DEBUG-7f3c] Kitchen ticket print IPC received', {
+    order: payload.tx?.ref_number || payload.tx?.id,
+    kot: config.kot,
+  });
   return printKotJob(payload.tx, config);
 });
 
 // Manual "Detect printers" button in Settings — lists whatever Windows
 // currently has installed as print queues, flagging likely thermal ones.
 ipcMain.handle('list-usb-printers', async () => {
+  console.log('[PRINTER-DEBUG-7f3c] Printer discovery IPC received');
   return listSystemPrinters();
 });
 

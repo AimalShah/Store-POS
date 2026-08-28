@@ -2,15 +2,20 @@ import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Packaged Electron apps do not set NODE_ENV by default. Detect Electron's
+// resources directory as well, otherwise production diagnostics only go to the
+// hidden console instead of a file the operator can retrieve.
+const isDev = process.env.NODE_ENV !== 'production' && !process.resourcesPath;
 const logLevel = process.env.LOG_LEVEL || (isDev ? 'debug' : 'info');
 
-const logsDir = path.join(process.cwd(), 'logs');
+const logsDir = isDev
+  ? path.join(process.cwd(), 'logs')
+  : path.join(process.env.APPDATA || process.env.LOCALAPPDATA || process.cwd(), 'POS', 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-const logFile = path.join(logsDir, `app-${new Date().toISOString().split('T')[0]}.log`);
+export const logFile = path.join(logsDir, `app-${new Date().toISOString().split('T')[0]}.log`);
 
 const logger = pino({
   level: logLevel,

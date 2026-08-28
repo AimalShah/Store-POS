@@ -2,8 +2,10 @@ import { printer as ThermalPrinter, types } from 'node-thermal-printer';
 import { getDb } from '../server/db.js';
 import { PrinterManager } from './printer/PrinterManager.js';
 import { winSpoolDriver } from './printer/WinSpoolDriver.js';
+import logger from '../server/logger.js';
 
 const printerManager = new PrinterManager(process.platform === 'win32' ? winSpoolDriver : null);
+const DEBUG_TAG = '[PRINTER-DEBUG-7f3c]';
 
 const THERMAL_NAME_HINTS = [
   'pos', 'thermal', 'receipt', 'tm-', 'tm ', 'epson tm', 'star', 'xprinter',
@@ -17,10 +19,12 @@ export function isLikelyThermalPrinterName(name) {
 }
 
 export function listSystemPrinters() {
-  return printerManager.getPrinters().map(p => ({
+  const printers = printerManager.getPrinters().map(p => ({
       ...p,
       likelyThermal: isLikelyThermalPrinterName(p.name),
   }));
+  logger.info({ count: printers.length, printers }, `${DEBUG_TAG} System printers listed`);
+  return printers;
 }
 
 export function readPrinterConfig() {
@@ -76,7 +80,11 @@ export function interfaceUri(conf) {
 
 export function makePrinter(conf) {
   const uri = interfaceUri(conf);
-  if (!uri) return null;
+  if (!uri) {
+    logger.warn({ interface: conf?.interface || '', hasUsbDevice: !!conf?.usbDevice, hasNetworkHost: !!conf?.networkHost },
+      `${DEBUG_TAG} Printer configuration has no usable interface URI`);
+    return null;
+  }
   const options = {
     type: types.EPSON,
     interface: uri,
@@ -86,6 +94,8 @@ export function makePrinter(conf) {
   if (conf.interface === 'usb' && process.platform === 'win32') {
     options.driver = winSpoolDriver;
   }
+  logger.info({ interface: conf.interface, uri, width: options.width, usesWindowsSpooler: !!options.driver },
+    `${DEBUG_TAG} Thermal printer client created`);
   return new ThermalPrinter(options);
 }
 
@@ -215,25 +225,37 @@ export function writeKot(printer, tx) {
 }
 
 export async function printReceiptJob(tx, settings, config, { printKot = false } = {}) {
+  const startedAt = Date.now();
+  logger.info({ order: tx.ref_number || tx.id, itemCount: tx.items?.length || 0, receipt: config.receipt, printKot },
+    `${DEBUG_TAG} Receipt print requested`);
   const printer = makePrinter(config.receipt);
-  if (!printer) return { printed: false, fallback: true, kotPrinted: false };
-  try {
-    writeReceipt(printer, tx, settings);
-    await printer.execute();
-  } catch (err) {
-    console.error('Thermal receipt print failed:', err);
+  if (!printer) {
+    logger.warn({ order: tx.ref_number || tx.id }, `${DEBUG_TAG} Receipt falling back because no printer was created`);
     return { printed: false, fallback: true, kotPrinted: false };
   }
+  try {
+    writeReceipt(printer, tx, settings);
+    logger.debug({ order: tx.ref_number || tx.id }, `${DEBUG_TAG} Receipt ESC/POS content generated`);
+    await printer.execute();
+  } catch (err) {
+    logger.error({ order: tx.ref_number || tx.id, err: { message: err.message, stack: err.stack } },
+      `${DEBUG_TAG} Thermal receipt print failed`);
+    return { printed: false, fallback: true, kotPrinted: false };
+  }
+  logger.info({ order: tx.ref_number || tx.id, durationMs: Date.now() - startedAt },
+    `${DEBUG_TAG} Receipt print completed`);
   let kotPrinted = false;
   if (printKot && config.autoPrintKot && config.kot.interface) {
     const kotPrinter = makePrinter(config.kot);
     if (kotPrinter) {
       try {
         writeKot(kotPrinter, tx);
+        logger.debug({ order: tx.ref_number || tx.id }, `${DEBUG_TAG} Kitchen ticket ESC/POS content generated`);
         await kotPrinter.execute();
         kotPrinted = true;
       } catch (err) {
-        console.error('KOT print failed:', err);
+        logger.error({ order: tx.ref_number || tx.id, err: { message: err.message, stack: err.stack } },
+          `${DEBUG_TAG} Kitchen ticket print failed`);
       }
     }
   }
@@ -241,14 +263,24 @@ export async function printReceiptJob(tx, settings, config, { printKot = false }
 }
 
 export async function printKotJob(tx, config) {
+  const startedAt = Date.now();
+  logger.info({ order: tx.ref_number || tx.id, itemCount: tx.items?.length || 0, kot: config.kot },
+    `${DEBUG_TAG} Kitchen ticket print requested`);
   const printer = makePrinter(config.kot);
-  if (!printer) return { printed: false, fallback: true };
+  if (!printer) {
+    logger.warn({ order: tx.ref_number || tx.id }, `${DEBUG_TAG} Kitchen ticket falling back because no printer was created`);
+    return { printed: false, fallback: true };
+  }
   try {
     writeKot(printer, tx);
+    logger.debug({ order: tx.ref_number || tx.id }, `${DEBUG_TAG} Kitchen ticket ESC/POS content generated`);
     await printer.execute();
+    logger.info({ order: tx.ref_number || tx.id, durationMs: Date.now() - startedAt },
+      `${DEBUG_TAG} Kitchen ticket print completed`);
     return { printed: true, fallback: false };
   } catch (err) {
-    console.error('KOT print failed:', err);
+    logger.error({ order: tx.ref_number || tx.id, err: { message: err.message, stack: err.stack } },
+      `${DEBUG_TAG} Kitchen ticket print failed`);
     return { printed: false, fallback: true };
   }
 }
