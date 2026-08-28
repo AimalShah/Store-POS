@@ -43,6 +43,9 @@ jobs:
           # node-gyp 9 a supported Python version if a compile is needed.
           NODE_GYP_FORCE_PYTHON: ${{ env.pythonLocation }}\python.exe
 
+      - name: Debug Koffi install
+        run: dir node_modules\@koromix
+
       - name: Run unit tests
         # better-sqlite3 ships a Node-ABI prebuild after `npm ci`, which is what
         # Vitest needs. `pretest` re-fetches it via scripts/use-native.mjs.
