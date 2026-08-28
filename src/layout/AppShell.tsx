@@ -25,7 +25,9 @@ import {
   Bell,
   ChevronDown,
   Calculator,
+  Globe,
 } from 'lucide-react';
+import { useLocale } from '../i18n/LocaleContext';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { UpdateIndicator } from '../components/UpdateIndicator';
@@ -142,10 +144,11 @@ function ModeSwitcher({
   mode: Mode;
   onSelect: (m: Mode) => void;
 }) {
+  const { t } = useLocale();
   const current =
     mode === 'till'
-      ? { label: 'Till', icon: <ShoppingCart className="size-4" /> }
-      : { label: 'Dashboard', icon: <LayoutDashboard className="size-4" /> };
+      ? { label: t('mode.till'), icon: <ShoppingCart className="size-4" /> }
+      : { label: t('mode.dashboard'), icon: <LayoutDashboard className="size-4" /> };
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-md border bg-background px-2.5 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
@@ -156,12 +159,12 @@ function ModeSwitcher({
       <DropdownMenuContent align="start" className="w-48">
         <DropdownMenuItem onClick={() => onSelect('till')}>
           <ShoppingCart className="size-4" />
-          <span>Till</span>
+          <span>{t('mode.till')}</span>
           {mode === 'till' && <Check className="ml-auto size-4 text-primary" />}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onSelect('dashboard')}>
           <LayoutDashboard className="size-4" />
-          <span>Dashboard</span>
+          <span>{t('mode.dashboard')}</span>
           {mode === 'dashboard' && <Check className="ml-auto size-4 text-primary" />}
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -178,6 +181,7 @@ function Landing({
   logoUrl?: string;
   onChoose: (m: Mode) => void;
 }) {
+  const { t } = useLocale();
   const options: {
     mode: Mode;
     title: string;
@@ -186,14 +190,14 @@ function Landing({
   }[] = [
     {
       mode: 'dashboard',
-      title: 'Dashboard',
-      description: 'Reports, inventory, customers, and settings.',
+      title: t('mode.dashboard'),
+      description: t('shell.dashboard.desc'),
       icon: <LayoutDashboard className="size-6" />,
     },
     {
       mode: 'till',
-      title: 'Till / Billing',
-      description: 'Start a sale and take payments at the counter.',
+      title: t('shell.till.title'),
+      description: t('shell.till.desc'),
       icon: <ShoppingCart className="size-6" />,
     },
   ];
@@ -210,7 +214,7 @@ function Landing({
         )}
         <h1 className="font-heading text-2xl font-semibold">{storeName}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Where would you like to go?
+          {t('shell.whereToGo')}
         </p>
       </div>
       <div className="grid w-full max-w-2xl gap-4 sm:grid-cols-2">
@@ -235,6 +239,7 @@ function Landing({
 
 export default function AppShell() {
   const { user, hasRole, logout } = useAuth();
+  const { t } = useLocale();
   const { products, categories, customers, settings, error, loading, reload } = useStoreData();
   const [mode, setMode] = useState<Mode>('till');
   const [landed, setLanded] = useState(false);
@@ -319,9 +324,8 @@ export default function AppShell() {
   const storeName = settings?.store || 'Store POS';
 
   const labelFor = useCallback(
-    (id: NavItemId) =>
-      groups.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? String(id),
-    [groups]
+    (id: NavItemId) => t(`nav.${id}`),
+    [t]
   );
 
   const loadHeld = useCallback(async () => {
@@ -385,14 +389,16 @@ export default function AppShell() {
     (target: Mode) => {
       if (target === mode) return;
       requestConfirm(
-        target === 'till' ? 'Switch to the Till?' : 'Switch to the Dashboard?',
         target === 'till'
-          ? 'This leaves the management dashboard. The till will open for a new sale.'
-          : 'The current till view will be hidden. Any in-progress order will be parked.',
+          ? t('shell.switchToTill')
+          : t('shell.switchToDashboard'),
+        target === 'till'
+          ? t('shell.switchToTillDesc')
+          : t('shell.switchToDashboardDesc'),
         () => setMode(target)
       );
     },
-    [mode, requestConfirm]
+    [mode, requestConfirm, t]
   );
 
   const goTo = useCallback(
@@ -403,15 +409,15 @@ export default function AppShell() {
         return;
       }
       requestConfirm(
-        'Leave the till?',
-        `You'll switch to the management dashboard and open ${labelFor(v)}. Any in-progress order will be parked.`,
+        t('shell.leaveTill'),
+        t('shell.leaveTillDesc', { view: labelFor(v) }),
         () => {
           setMode('dashboard');
           setView(v);
         }
       );
     },
-    [mode, requestConfirm, labelFor, role]
+    [mode, requestConfirm, labelFor, role, t]
   );
 
   const goToSalesWithUserId = useCallback(
@@ -422,15 +428,15 @@ export default function AppShell() {
         return;
       }
       requestConfirm(
-        'Leave the till?',
-        `You'll switch to the management dashboard and open Sales${userId ? ' filtered by cashier' : ''}. Any in-progress order will be parked.`,
+        t('shell.leaveTill'),
+        t('shell.leaveTillDesc', { view: t('nav.sales') }),
         () => {
           setMode('dashboard');
           setView('sales');
         }
       );
     },
-    [mode, requestConfirm]
+    [mode, requestConfirm, t]
   );
 
   const goToSalesWithVoidFilter = useCallback(
@@ -442,15 +448,15 @@ export default function AppShell() {
         return;
       }
       requestConfirm(
-        'Leave the till?',
-        'You\'ll switch to the management dashboard and open Sales filtered by voided transactions. Any in-progress order will be parked.',
+        t('shell.leaveTill'),
+        t('shell.leaveTillDesc', { view: t('nav.sales') }),
         () => {
           setMode('dashboard');
           setView('sales');
         }
       );
     },
-    [mode, requestConfirm]
+    [mode, requestConfirm, t]
   );
 
   const outlets: Outlet[] = useMemo(
@@ -462,8 +468,8 @@ export default function AppShell() {
     const nav: PaletteCommand[] = groups.flatMap((g) =>
       g.items.map((item) => ({
         id: `nav-${item.id}`,
-        label: item.label,
-        group: g.label,
+        label: t(`nav.${item.id}`),
+        group: t(`nav.group.${g.id}`),
         icon: (() => {
           const Icon = ICONS[item.icon] ?? Package;
           return <Icon className="size-4 text-muted-foreground" />;
@@ -474,16 +480,16 @@ export default function AppShell() {
     const actions: PaletteCommand[] = [
       {
         id: 'new-sale',
-        label: 'New Sale',
-        group: 'Actions',
+        label: t('cmd.newSale'),
+        group: t('cmd.actions'),
         icon: <PlusCircle className="size-4 text-muted-foreground" />,
         shortcut: 'N',
         onSelect: () => setMode('till'),
       },
       {
         id: 'refresh',
-        label: 'Refresh data',
-        group: 'Actions',
+        label: t('cmd.refreshData'),
+        group: t('cmd.actions'),
         icon: <BarChart3 className="size-4 text-muted-foreground" />,
         onSelect: () => reload(),
       },
@@ -491,13 +497,13 @@ export default function AppShell() {
     const productCmds: PaletteCommand[] = products.slice(0, 40).map((p) => ({
       id: `product-${p._id}`,
       label: p.name,
-      group: 'Products',
+      group: t('catalog.products'),
       keywords: `product sku ${p.category}`,
       icon: <Package className="size-4 text-muted-foreground" />,
       onSelect: () => goTo('menu'),
     }));
     return [...nav, ...actions, ...productCmds];
-  }, [groups, products, reload, goTo]);
+  }, [groups, products, reload, goTo, t]);
 
   function renderView() {
     switch (activeView) {
@@ -581,6 +587,7 @@ export default function AppShell() {
 
   function UserMenu() {
     const [profileOpen, setProfileOpen] = useState(false);
+    const { t, locale, setLocale } = useLocale();
 
     return (
       <>
@@ -600,11 +607,14 @@ export default function AppShell() {
               <span className="font-normal text-muted-foreground">@{user?.username}</span>
             </div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setLocale(locale === 'en' ? 'ur' : 'en')}>
+              <Globe className="size-4" /> {locale === 'en' ? t('profile.urdu') : t('profile.english')}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-              <User className="size-4" /> Profile
+              <User className="size-4" /> {t('profile.profile')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => goTo('settings')}>
-              <SettingsIcon className="size-4" /> Settings
+              <SettingsIcon className="size-4" /> {t('profile.settings')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -613,13 +623,13 @@ export default function AppShell() {
                 void logout();
               }}
             >
-              <LogOut className="size-4" /> Sign out
+              <LogOut className="size-4" /> {t('profile.signout')}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onClick={() => getPosBridge().quit()}
             >
-              <Home className="size-4" /> Quit
+              <Home className="size-4" /> {t('profile.quit')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -627,9 +637,9 @@ export default function AppShell() {
         <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Your Profile</DialogTitle>
+              <DialogTitle>{t('profile.title')}</DialogTitle>
               <DialogDescription>
-                View your account information and manage preferences.
+                {t('profile.desc')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -647,15 +657,20 @@ export default function AppShell() {
               </div>
               <Separator />
               <div className="grid gap-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Role</span>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-muted-foreground">{t('profile.role')}</span>
                   <span>{user?.role}</span>
                 </div>
-
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-muted-foreground">{t('profile.language')}</span>
+                  <Button variant="outline" size="sm" onClick={() => setLocale(locale === 'en' ? 'ur' : 'en')}>
+                    {locale === 'en' ? t('profile.urdu') : t('profile.english')}
+                  </Button>
+                </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setProfileOpen(false)}>Close</Button>
+              <Button variant="outline" onClick={() => setProfileOpen(false)}>{t('profile.close')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -664,6 +679,7 @@ export default function AppShell() {
   }
 
   function HeldBell() {
+    const { t } = useLocale();
     return (
       <Popover>
         <PopoverTrigger className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
@@ -676,14 +692,14 @@ export default function AppShell() {
         </PopoverTrigger>
         <PopoverContent align="end" className="w-72">
           <div className="flex items-center justify-between">
-            <p className="font-medium">Held orders</p>
+            <p className="font-medium">{t('shell.heldOrders')}</p>
             <Badge variant="secondary">{heldOrders.length}</Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Orders parked at the till, waiting to resume.
+            {t('shell.heldOrdersDesc')}
           </p>
           {heldOrders.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">No held orders.</p>
+            <p className="mt-3 text-sm text-muted-foreground">{t('shell.noHeldOrders')}</p>
           ) : (
             <ul className="mt-3 flex max-h-64 flex-col gap-1.5 overflow-auto">
               {heldOrders.map((o) => (
@@ -693,7 +709,7 @@ export default function AppShell() {
                     onClick={() => setMode('till')}
                     className="flex w-full items-center justify-between rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent"
                   >
-                    <span className="truncate">{o.customer_name || 'Walk-in'}</span>
+                    <span className="truncate">{o.customer_name || t('common.walkin')}</span>
                     <span className="font-medium">{symbol}{Number(o.total || 0).toFixed(2)}</span>
                   </button>
                 </li>
@@ -706,6 +722,7 @@ export default function AppShell() {
   }
 
   function TopBar() {
+    const { t } = useLocale();
     return (
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
         {mode === 'dashboard' && <SidebarTrigger />}
@@ -727,7 +744,7 @@ export default function AppShell() {
             onClick={() => setCommandOpen(true)}
           >
             <Search className="size-4" />
-            <span className="hidden md:inline">Search</span>
+            <span className="hidden md:inline">{t('shell.search')}</span>
             <kbd className="ml-1 hidden rounded border bg-muted px-1 text-[10px] font-medium text-muted-foreground md:inline">
               ⌘K
             </kbd>
@@ -745,14 +762,14 @@ export default function AppShell() {
                   className="h-8 gap-1.5 text-emerald-600 border-emerald-200 bg-emerald-50"
                 >
                   <AlertTriangle className="size-4" />
-                  <span className="hidden md:inline">Drawer Open</span>
+                  <span className="hidden md:inline">{t('shell.drawerOpen')}</span>
                   <ChevronDown className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => goTo('drawer')}>
                   <ReceiptText className="size-4 mr-2" />
-                  View Drawer
+                  {t('shell.viewDrawer')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -762,7 +779,7 @@ export default function AppShell() {
                   }}
                 >
                   <Calculator className="size-4 mr-2" />
-                  Close Drawer
+                  {t('shell.closeDrawer')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -775,7 +792,7 @@ export default function AppShell() {
               onClick={() => goTo('drawer')}
             >
               <AlertTriangle className="size-4" />
-              <span className="hidden md:inline">Open Drawer</span>
+              <span className="hidden md:inline">{t('shell.openDrawer')}</span>
             </Button>
           )}
 
@@ -788,7 +805,7 @@ export default function AppShell() {
             >
               <AlertTriangle className="size-4" />
               <span className="hidden md:inline">
-                {products.filter(isLowStock).length} Low Stock
+                {products.filter(isLowStock).length} {t('shell.lowStock')}
               </span>
             </Button>
           )}
@@ -797,7 +814,7 @@ export default function AppShell() {
 
           <Button size="sm" onClick={() => setMode('till')}>
             <PlusCircle className="size-4" />
-            <span className="hidden sm:inline">New Sale</span>
+            <span className="hidden sm:inline">{t('shell.newSale')}</span>
           </Button>
 
           <UserMenu />
@@ -826,7 +843,7 @@ export default function AppShell() {
           </div>
         )}
         <main className="min-h-0 flex-1 overflow-hidden">
-          <ErrorBoundary fallbackTitle="The till hit an unexpected error">
+          <ErrorBoundary fallbackTitle={t('errorBoundary.title')}>
             <TillView
               products={products}
               categories={categories}
@@ -851,9 +868,9 @@ export default function AppShell() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setConfirmOpen(false)}>
-                Cancel
+                {t('common.cancel')}
               </AlertDialogCancel>
-              <AlertDialogAction onClick={runConfirmed}>Switch</AlertDialogAction>
+              <AlertDialogAction onClick={runConfirmed}>{t('shell.switch')}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -871,20 +888,20 @@ export default function AppShell() {
           <SidebarMenu className="px-2 pt-2">
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Quick New Order"
+                tooltip={t('shell.quickOrder')}
                 onClick={() => setMode('till')}
                 className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                 size="lg"
               >
                 <UtensilsCrossed />
-                <span>Quick New Order</span>
+                <span>{t('shell.quickOrder')}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
           {groups.map((group) => (
             <SidebarGroup key={group.id}>
               <SidebarGroupLabel className="px-2 uppercase tracking-wider text-[11px] font-semibold text-muted-foreground">
-                {group.label}
+                {t(`nav.group.${group.id}`)}
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -895,11 +912,11 @@ export default function AppShell() {
                         <SidebarMenuButton
                           isActive={activeView === item.id}
                           onClick={() => goTo(item.id)}
-                          tooltip={item.label}
+                          tooltip={t(`nav.${item.id}`)}
                           className="data-[active=true]:shadow-[inset_2px_0_0_0_var(--primary)] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium"
                         >
                           <Icon />
-                          <span>{item.label}</span>
+                          <span>{t(`nav.${item.id}`)}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     );
@@ -921,7 +938,7 @@ export default function AppShell() {
         )}
         <main className="min-h-0 flex-1 overflow-hidden">
           <div className="h-full overflow-auto p-6">
-            <ErrorBoundary fallbackTitle="This page hit an unexpected error">
+            <ErrorBoundary fallbackTitle={t('errorBoundary.title')}>
               {renderView()}
             </ErrorBoundary>
           </div>
@@ -935,13 +952,13 @@ export default function AppShell() {
       <AlertDialog open={closeDrawerOpen} onOpenChange={setCloseDrawerOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>End of Day — Close Drawer</AlertDialogTitle>
+            <AlertDialogTitle>{t('drawer.endDay')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Count all the cash in the drawer and type the total below.
+              {t('drawer.endDayDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="counted-cash-topbar">Total cash counted ({symbol})</Label>
+            <Label htmlFor="counted-cash-topbar">{t('drawer.counted', { symbol })}</Label>
             <Input
               id="counted-cash-topbar"
               type="number"
@@ -954,8 +971,8 @@ export default function AppShell() {
             />
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCloseDrawerOpen(false)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCloseDrawer}>Close Drawer</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setCloseDrawerOpen(false)}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCloseDrawer}>{t('shell.closeDrawer')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -968,9 +985,9 @@ export default function AppShell() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </AlertDialogCancel>
-            <AlertDialogAction onClick={runConfirmed}>Switch</AlertDialogAction>
+            <AlertDialogAction onClick={runConfirmed}>{t('shell.switch')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

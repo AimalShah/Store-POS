@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronDown, Pencil, Search, Trash2, Utensils, icons, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api, Category, Product, ProductComponent, getUploadsBase } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 import PhotoPicker from '../components/PhotoPicker';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -80,6 +81,7 @@ export default function CatalogView({
   onChanged,
   loading = false,
 }: Props) {
+  const { t, locale } = useLocale();
   const [tab, setTab] = useState<'products' | 'categories'>(
     canProducts ? 'products' : 'categories'
   );
@@ -106,7 +108,7 @@ export default function CatalogView({
 
   const saveProduct = async () => {
     if (!form.name.trim()) {
-      setError('Name is required');
+      setError(t('common.nameRequired'));
       return;
     }
     setError(null);
@@ -326,7 +328,7 @@ export default function CatalogView({
       setPending(null);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      setError(err instanceof Error ? err.message : t('common.deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -341,7 +343,7 @@ export default function CatalogView({
               variant={tab === 'products' ? 'default' : 'outline'}
               onClick={() => setTab('products')}
             >
-              Products
+              {t('catalog.products')}
             </Button>
           )}
           {canCategories && (
@@ -349,14 +351,14 @@ export default function CatalogView({
               variant={tab === 'categories' ? 'default' : 'outline'}
               onClick={() => setTab('categories')}
             >
-              Categories
+              {t('catalog.categories')}
             </Button>
           )}
         </div>
         {canProducts && (
           <div className="flex items-center gap-2 ml-auto">
             <Button variant="destructive" disabled={busy || !selected.length} onClick={bulkDelete}>
-              Delete selected ({selected.length})
+              {t('catalog.deleteSelected', { count: selected.length })}
             </Button>
           </div>
         )}
@@ -372,28 +374,28 @@ export default function CatalogView({
         <div className="grid gap-6 md:grid-cols-[1fr_2fr]">
           <Card>
             <CardHeader>
-              <CardTitle>{form.id ? 'Edit product' : 'New product'}</CardTitle>
+              <CardTitle>{t(form.id ? 'catalog.editProduct' : 'catalog.newProduct')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <section className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-semibold">Essentials</h3>
-                  <p className="text-xs text-muted-foreground">Shown to all staff at the register.</p>
+                  <h3 className="text-sm font-semibold">{t('catalog.essentials')}</h3>
+                  <p className="text-xs text-muted-foreground">{t('catalog.essentialsHint')}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="product-name">Name</Label>
+                  <Label htmlFor="product-name">{t('common.name')}</Label>
                   <Input
                     id="product-name"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Product name"
+                    placeholder={t('catalog.productName')}
                   />
                 </div>
 
                 {form.sizes.length === 0 ? (
                   <div className="space-y-2">
-                    <Label htmlFor="product-price">Price</Label>
+                    <Label htmlFor="product-price">{t('common.price')}</Label>
                     <Input
                       id="product-price"
                       type="number"
@@ -406,24 +408,24 @@ export default function CatalogView({
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Priced by size below — base price comes from the cheapest size.
+                    {t('catalog.pricedBySize')}
                   </p>
                 )}
 
                 <PhotoPicker
                   value={form.img}
                   onChange={(img) => setForm({ ...form, img })}
-                  label="Photo (optional)"
+                  label={t('catalog.photoLabel')}
                 />
 
                 <div className="space-y-2">
-                  <Label htmlFor="product-category">Section</Label>
+                  <Label htmlFor="product-category">{t('common.section')}</Label>
                   <Select value={form.category_id} onValueChange={(value) => setForm({ ...form, category_id: value || '' })}>
                     <SelectTrigger id="product-category">
-                      <SelectValue placeholder="Select section" />
+                      <SelectValue placeholder={t('catalog.selectSection')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="">{t('catalog.none')}</SelectItem>
                       {cats.map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>
                           {c.name}
@@ -439,7 +441,7 @@ export default function CatalogView({
                     checked={form.featureAsDailySpecial}
                     onCheckedChange={(checked) => setForm({ ...form, featureAsDailySpecial: !!checked })}
                   />
-                  <Label htmlFor="product-hot">Feature as daily special</Label>
+                  <Label htmlFor="product-hot">{t('catalog.dailySpecial')}</Label>
                 </div>
               </section>
 
@@ -451,8 +453,8 @@ export default function CatalogView({
                   aria-expanded={showAdvanced}
                 >
                   <div>
-                    <h3 className="text-sm font-semibold">Advanced</h3>
-                    <p className="text-xs text-muted-foreground">Managers only — cost, modifiers, combos.</p>
+                    <h3 className="text-sm font-semibold">{t('catalog.advanced')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('catalog.advancedHint')}</p>
                   </div>
                   <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', showAdvanced && 'rotate-180')} />
                 </button>
@@ -460,7 +462,7 @@ export default function CatalogView({
                   <div className="space-y-4 border-t p-4">
                     {form.sizes.length === 0 && (
                       <div className="space-y-2">
-                        <Label htmlFor="product-cost">Cost per item</Label>
+                        <Label htmlFor="product-cost">{t('catalog.costPerItem')}</Label>
                         <Input
                           id="product-cost"
                           type="number"
@@ -477,15 +479,14 @@ export default function CatalogView({
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label>Combo Components</Label>
+                        <Label>{t('catalog.comboComponents')}</Label>
                         <Button variant="outline" size="sm" onClick={addComponent}>
-                          + Add Component
+                          {t('catalog.addComponent')}
                         </Button>
                       </div>
                       {form.components.length === 0 && (
                         <p className="text-sm text-muted-foreground">
-                          No components. Add products to create a combo (e.g., Meal = Burger + Fries + Drink).
-                          Components are printed on receipts.
+                          {t('catalog.noComponents')}
                         </p>
                       )}
                       {form.components.map((comp, idx) => (
@@ -495,7 +496,7 @@ export default function CatalogView({
                             onValueChange={(value) => updateComponent(idx, 'id', value || '')}
                           >
                             <SelectTrigger className="w-48">
-                              <SelectValue placeholder="Select product" />
+                              <SelectValue placeholder={t('catalog.selectProduct')} />
                             </SelectTrigger>
                             <SelectContent>
                               {list.filter((p) => p.id !== Number(form.id) || !form.id).map((p) => (
@@ -510,7 +511,7 @@ export default function CatalogView({
                             min={1}
                             value={comp.quantity}
                             onChange={(e) => updateComponent(idx, 'quantity', e.target.value)}
-                            placeholder="Qty"
+                            placeholder={t('common.qty')}
                             className="w-20"
                           />
                           {comp.id && list.find((p) => p.id === Number(comp.id)) && (
@@ -518,7 +519,7 @@ export default function CatalogView({
                               {list.find((p) => p.id === Number(comp.id))!.name}
                             </Badge>
                           )}
-                          <Button variant="ghost" size="icon" onClick={() => removeComponent(idx)} aria-label="Remove component">
+                          <Button variant="ghost" size="icon" onClick={() => removeComponent(idx)} aria-label={t('catalog.removeComponent')}>
                             ✕
                           </Button>
                         </div>
@@ -530,11 +531,9 @@ export default function CatalogView({
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>
-                          {form.sizes.length > 0 ? 'Sells by size' : 'Sizes'}
+                          {t(form.sizes.length > 0 ? 'catalog.sellsBySize' : 'catalog.sizes')}
                           <span className="ml-1 text-xs font-normal text-muted-foreground">
-                            {form.sizes.length > 0
-                              ? 'each size carries its own price and cost'
-                              : 'add one to replace the base price'}
+                            {t(form.sizes.length > 0 ? 'catalog.sizesHintLike' : 'catalog.sizesHintEmpty')}
                           </span>
                         </Label>
                         <Button
@@ -542,12 +541,12 @@ export default function CatalogView({
                           size="sm"
                           onClick={() => setForm((prev) => ({ ...prev, sizes: [...prev.sizes, { name: '', price: '', cost: '' }] }))}
                         >
-                          + Add Size
+                          {t('catalog.addSize')}
                         </Button>
                       </div>
                       {form.sizes.length === 0 && (
                         <p className="text-sm text-muted-foreground">
-                          No sizes. The product sells at its base price only.
+                          {t('catalog.noSizes')}
                         </p>
                       )}
                       {form.sizes.map((s, si) => (
@@ -560,7 +559,7 @@ export default function CatalogView({
                                 sizes: prev.sizes.map((x, i) => (i === si ? { ...x, name: e.target.value } : x)),
                               }))
                             }
-                            placeholder="e.g. Large"
+                            placeholder={t('catalog.sizeExample')}
                             className="h-9 flex-1"
                           />
                           <div className="flex items-center gap-1">
@@ -575,7 +574,7 @@ export default function CatalogView({
                                   sizes: prev.sizes.map((x, i) => (i === si ? { ...x, price: e.target.value } : x)),
                                 }))
                               }
-                              placeholder="Price"
+                              placeholder={t('common.price')}
                               className="h-9 w-20"
                             />
                           </div>
@@ -591,7 +590,7 @@ export default function CatalogView({
                                   sizes: prev.sizes.map((x, i) => (i === si ? { ...x, cost: e.target.value } : x)),
                                 }))
                               }
-                              placeholder="Cost"
+                              placeholder={t('common.cost')}
                               className="h-9 w-20"
                             />
                           </div>
@@ -599,7 +598,7 @@ export default function CatalogView({
                             variant="ghost"
                             size="icon"
                             onClick={() => setForm((prev) => ({ ...prev, sizes: prev.sizes.filter((_, i) => i !== si) }))}
-                            aria-label="Remove size"
+                            aria-label={t('catalog.removeSize')}
                           >
                             ✕
                           </Button>
@@ -613,18 +612,18 @@ export default function CatalogView({
                       <div key={kind} className="space-y-2">
                         <div className="flex items-center justify-between">
                           <Label>
-                            Modifiers (toppings)
+                            {t('catalog.modifiers')}
                             <span className="ml-1 text-xs font-normal text-muted-foreground">
-                              multiple choice, optional
+                              {t('catalog.modifiersHint')}
                             </span>
                           </Label>
                           <Button variant="outline" size="sm" onClick={() => addGroup(kind)}>
-                            + Add Modifier Group
+                            {t('catalog.addModifierGroup')}
                           </Button>
                         </div>
                         {form[kind].length === 0 && (
                           <p className="text-sm text-muted-foreground">
-                            No modifiers. Products without these add to an order instantly.
+                            {t('catalog.noModifiers')}
                           </p>
                         )}
                         {form[kind].map((group, gi) => (
@@ -633,10 +632,10 @@ export default function CatalogView({
                               <Input
                                 value={group.name}
                                 onChange={(e) => updateGroup(kind, gi, 'name', e.target.value)}
-                                placeholder="e.g. Toppings"
+                                placeholder={t('catalog.groupExample')}
                                 className="h-9 flex-1"
                               />
-                              <Button variant="ghost" size="icon" onClick={() => removeGroup(kind, gi)} aria-label="Remove group">
+                              <Button variant="ghost" size="icon" onClick={() => removeGroup(kind, gi)} aria-label={t('catalog.removeGroup')}>
                                 ✕
                               </Button>
                             </div>
@@ -645,7 +644,7 @@ export default function CatalogView({
                                 <Input
                                   value={opt.name}
                                   onChange={(e) => updateOption(kind, gi, oi, 'name', e.target.value)}
-                                  placeholder="Option name"
+                                  placeholder={t('catalog.optionName')}
                                   className="h-9 flex-1"
                                 />
                                 <div className="flex items-center gap-1">
@@ -659,13 +658,13 @@ export default function CatalogView({
                                     className="h-9 w-24"
                                   />
                                 </div>
-                                <Button variant="ghost" size="icon" onClick={() => removeOption(kind, gi, oi)} aria-label="Remove option">
+                                <Button variant="ghost" size="icon" onClick={() => removeOption(kind, gi, oi)} aria-label={t('catalog.removeOption')}>
                                   ✕
                                 </Button>
                               </div>
                             ))}
                             <Button variant="outline" size="sm" onClick={() => addOption(kind, gi)}>
-                              + Add Option
+                              {t('catalog.addOption')}
                             </Button>
                           </div>
                         ))}
@@ -679,11 +678,11 @@ export default function CatalogView({
 
               <div className="flex gap-2">
                 <Button onClick={saveProduct} className="flex-1">
-                  {form.id ? 'Update' : 'Add'} product
+                  {t(form.id ? 'catalog.updateProduct' : 'catalog.addProduct')}
                 </Button>
                 {form.id && (
                   <Button variant="outline" onClick={() => setForm(emptyProduct)} className="flex-1">
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                 )}
               </div>
@@ -692,10 +691,10 @@ export default function CatalogView({
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Product List</CardTitle>
+              <CardTitle>{t('catalog.productList')}</CardTitle>
               <div className="w-64">
                 <Input
-                  placeholder="Search name, category, or ID"
+                  placeholder={t('catalog.searchPlaceholder')}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 />
@@ -710,14 +709,14 @@ export default function CatalogView({
                       <Checkbox
                         checked={allVisibleSelected}
                         onCheckedChange={toggleSelectAllVisible}
-                        aria-label="Select all visible"
+                        aria-label={t('catalog.selectVisible')}
                       />
                     </TableHead>
-                    <TableHead className="w-16">Image</TableHead>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead className="w-64 text-right">Actions</TableHead>
+                    <TableHead className="w-16">{t('common.image')}</TableHead>
+                    <TableHead>{t('common.id')}</TableHead>
+                    <TableHead>{t('common.name')}</TableHead>
+                    <TableHead>{t('common.price')}</TableHead>
+                    <TableHead className="w-64 text-right">{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -747,7 +746,7 @@ export default function CatalogView({
                         <Checkbox
                           checked={selected.includes(p.id)}
                           onCheckedChange={() => toggleSelect(p.id)}
-                          aria-label={`Select ${p.name}`}
+                          aria-label={t('common.selectItem', { name: p.name })}
                         />
                       </TableCell>
                       <TableCell>
@@ -767,28 +766,28 @@ export default function CatalogView({
                           <span className="font-medium">{p.name}</span>
                           {isLowStock(p) && (
                             <Badge variant="destructive" className="text-xs">
-                              Low stock
+                              {t('common.lowStock')}
                             </Badge>
                           )}
                         </div>
-                        <div className="text-xs text-muted-foreground">{p.category || 'Uncategorized'}</div>
+                        <div className="text-xs text-muted-foreground">{p.category || t('common.uncategorized')}</div>
                         {isLowStock(p) && (
                           <p className="text-xs text-destructive mt-1">
-                            Only {getStockQuantity(p)} left (threshold: {getLowStockThreshold(p)})
+                            {t('catalog.onlyLeft', { left: getStockQuantity(p), threshold: getLowStockThreshold(p) })}
                           </p>
                         )}
                       </TableCell>
                         <TableCell className="font-medium"><span className={highlight.blue}>{symbol}{Number(p.price).toFixed(2)}</span></TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="icon" aria-label={`Edit ${p.name}`} onClick={() => editProduct(p)}>
+                          <Button variant="ghost" size="icon" aria-label={t('common.editItem', { name: p.name })} onClick={() => editProduct(p)}>
                             <Pencil className="size-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
                             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            aria-label={`Delete ${p.name}`}
+                            aria-label={t('common.deleteItem', { name: p.name })}
                             onClick={() => removeProduct(p.id)}
                           >
                             <Trash2 className="size-4" />
@@ -800,7 +799,7 @@ export default function CatalogView({
                   {!visible.length && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                        No products yet
+                        {t('catalog.noProducts')}
                       </TableCell>
                     </TableRow>
                   )}
@@ -818,11 +817,11 @@ export default function CatalogView({
         <div className="grid gap-6 md:grid-cols-[1fr_2fr]">
           <Card>
             <CardHeader>
-              <CardTitle>{editCatId ? 'Edit category' : 'New category'}</CardTitle>
+              <CardTitle>{t(editCatId ? 'catalog.editCategory' : 'catalog.newCategory')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="cat-name">Name</Label>
+                <Label htmlFor="cat-name">{t('common.name')}</Label>
                 <Input
                   id="cat-name"
                   value={catName}
@@ -830,14 +829,14 @@ export default function CatalogView({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') void saveCategory();
                   }}
-                  placeholder="e.g. Beverages"
+                  placeholder={t('catalog.categoryExample')}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Icon</Label>
+                <Label>{t('common.icon')}</Label>
                 <Popover>
                   <PopoverTrigger
-                    aria-label="Choose section icon"
+                    aria-label={t('catalog.chooseIcon')}
                     className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="flex items-center gap-2">
@@ -853,10 +852,10 @@ export default function CatalogView({
                     <div className="relative mb-2">
                       <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
-                        aria-label="Search icons"
+                        aria-label={t('catalog.searchIcons')}
                         value={iconQuery}
                         onChange={(event) => setIconQuery(event.target.value)}
-                        placeholder="Search all installed icons"
+                        placeholder={t('catalog.searchIconsPlaceholder')}
                         className="pl-9"
                       />
                     </div>
@@ -871,7 +870,7 @@ export default function CatalogView({
                               variant={catIcon === name ? 'secondary' : 'ghost'}
                               size="icon"
                               className="relative"
-                              aria-label={`Use ${name} icon`}
+                              aria-label={t('catalog.useIcon', { name })}
                               title={name}
                               onClick={() => {
                                 setCatIcon(name);
@@ -886,11 +885,11 @@ export default function CatalogView({
                     </ScrollArea>
                   </PopoverContent>
                 </Popover>
-                <p className="text-xs text-muted-foreground">Search the complete offline Lucide icon library.</p>
+                <p className="text-xs text-muted-foreground">{t('catalog.iconsHint')}</p>
               </div>
               <div className="flex gap-2">
                 <Button onClick={() => void saveCategory()} disabled={!catName.trim()} className="flex-1">
-                  {editCatId ? 'Update' : 'Add category'}
+                  {t(editCatId ? 'catalog.updateCategory' : 'catalog.addCategory')}
                 </Button>
                 {editCatId && (
                   <Button
@@ -902,7 +901,7 @@ export default function CatalogView({
                       setIconQuery('');
                     }}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                 )}
               </div>
@@ -911,20 +910,20 @@ export default function CatalogView({
 
           <Card>
             <CardHeader>
-              <CardTitle>Categories</CardTitle>
+              <CardTitle>{t('catalog.categories')}</CardTitle>
             </CardHeader>
             <CardContent>
               {cats.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
-                  No categories yet. Add one above.
+                  {t('catalog.noCategories')}
                 </p>
               ) : (
                 <div className="max-h-[80vh] overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Section</TableHead>
-                      <TableHead className="w-24 text-right">Actions</TableHead>
+                      <TableHead>{t('common.section')}</TableHead>
+                      <TableHead className="w-24 text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -944,7 +943,7 @@ export default function CatalogView({
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label={`Edit ${c.name}`}
+                              aria-label={t('common.editItem', { name: c.name })}
                               onClick={() => {
                                 setCatName(c.name);
                                 setCatIcon(c.icon || 'Utensils');
@@ -958,7 +957,7 @@ export default function CatalogView({
                               variant="ghost"
                               size="icon"
                               className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              aria-label={`Delete ${c.name}`}
+                              aria-label={t('common.deleteItem', { name: c.name })}
                               onClick={() => removeCategory(c.id)}
                             >
                               <Trash2 className="size-4" />
@@ -983,22 +982,22 @@ export default function CatalogView({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pending?.kind === 'bulk'
-                ? `Delete ${selected.length} selected product(s)?`
+                ? t('catalog.deleteSelectedTitle', { count: selected.length })
                 : pending?.kind === 'category'
-                ? 'Delete this category?'
-                : 'Delete this product?'}
+                ? t('catalog.deleteThisCategory')
+                : t('catalog.deleteThisProduct')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone.
+              {t('common.cannotUndo')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button';
+import { LocaleContext, type LocaleContextType } from '../i18n/LocaleContext';
 
 type Props = {
   children: ReactNode;
@@ -13,6 +14,9 @@ type State = {
 };
 
 export class ErrorBoundary extends Component<Props, State> {
+  static contextType = LocaleContext;
+  declare context: LocaleContextType | undefined;
+
   state: State = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): State {
@@ -32,6 +36,11 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   render() {
+    const t = (key: string, vars?: Record<string, string | number>): string => {
+      const ctx = this.context;
+      return ctx ? ctx.t(key, vars) : key;
+    };
+
     if (this.state.hasError) {
       return (
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-8 text-center">
@@ -39,9 +48,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <AlertTriangle className="size-7 text-destructive" />
           </div>
           <div className="space-y-1">
-            <h2 className="text-lg font-semibold">{this.props.fallbackTitle || 'Something went wrong'}</h2>
+            <h2 className="text-lg font-semibold">{this.props.fallbackTitle || t('errorBoundary.title')}</h2>
             <p className="max-w-md text-sm text-muted-foreground">
-              This screen hit an unexpected error. Reload to try again. If the problem persists, contact support.
+              {t('errorBoundary.desc')}
             </p>
           </div>
           {this.state.error?.message && (
@@ -51,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
           )}
           <Button onClick={this.handleReload} className="gap-2">
             <RotateCcw className="size-4" />
-            Reload
+            {t('errorBoundary.reload')}
           </Button>
         </div>
       );

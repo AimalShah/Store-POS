@@ -15,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
+import { useLocale } from '../i18n/LocaleContext';
 
 type Props = {
   value: string;
@@ -27,6 +28,7 @@ export default function PhotoPicker({
   onChange,
   label = 'Photo',
 }: Props) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [library, setLibrary] = useState<MediaItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -55,7 +57,7 @@ export default function PhotoPicker({
       await loadLibrary();
       onChange(item.path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(err instanceof Error ? err.message : t('photo.uploadFailed'));
     } finally {
       setBusy(false);
     }
@@ -73,15 +75,15 @@ export default function PhotoPicker({
       <Label>{label}</Label>
       <div className="flex items-center gap-4">
         <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-md border bg-muted text-xs text-muted-foreground">
-          {value ? <img src={previewSrc} alt="" className="h-full w-full object-cover" /> : 'No photo'}
+          {value ? <img src={previewSrc} alt="" className="h-full w-full object-cover" /> : t('photo.noPhoto')}
         </div>
         <div className="flex flex-col gap-2">
           <Button type="button" onClick={() => setOpen(true)}>
-            Choose {label.toLowerCase()}
+            {t('photo.choose', { label: label.toLowerCase() })}
           </Button>
           {value && (
             <Button type="button" variant="outline" onClick={() => onChange('')}>
-              Clear
+              {t('photo.clear')}
             </Button>
           )}
         </div>
@@ -90,7 +92,7 @@ export default function PhotoPicker({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Photo library</DialogTitle>
+            <DialogTitle>{t('photo.library')}</DialogTitle>
           </DialogHeader>
           {error && (
             <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -99,13 +101,13 @@ export default function PhotoPicker({
           )}
           <Tabs defaultValue="library">
             <TabsList>
-              <TabsTrigger value="library">Library</TabsTrigger>
-              <TabsTrigger value="upload">Upload</TabsTrigger>
+              <TabsTrigger value="library">{t('photo.libraryTab')}</TabsTrigger>
+              <TabsTrigger value="upload">{t('photo.upload')}</TabsTrigger>
             </TabsList>
             <TabsContent value="library" className="space-y-3">
               {library.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Library is empty — upload a file
+                  {t('photo.emptyLibrary')}
                 </p>
               ) : (
                 <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
@@ -146,7 +148,7 @@ export default function PhotoPicker({
               )}
             </TabsContent>
             <TabsContent value="upload" className="space-y-2">
-              <Label htmlFor="photo-upload">Upload image to library</Label>
+              <Label htmlFor="photo-upload">{t('photo.uploadLabel')}</Label>
               <Input
                 id="photo-upload"
                 type="file"
@@ -161,7 +163,7 @@ export default function PhotoPicker({
           </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              Done
+              {t('photo.done')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -170,18 +172,18 @@ export default function PhotoPicker({
       <AlertDialog open={!!pendingDel} onOpenChange={(o) => !o && setPendingDel(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove image?</AlertDialogTitle>
+            <AlertDialogTitle>{t('photo.removeTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This deletes the image from the library. This action cannot be undone.
+              {t('photo.removeDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={removeFromLibrary}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Remove
+              {t('photo.remove')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, Customer } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
 type Props = {
   customers: Customer[];
@@ -24,6 +25,7 @@ export default function CustomerSelect({
   onChange,
   onCustomersChanged,
 }: Props) {
+  const { t } = useLocale();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -91,7 +93,7 @@ export default function CustomerSelect({
 
   const quickAdd = async () => {
     if (!newName.trim()) {
-      setError('Name is required');
+      setError(t('common.nameRequired'));
       return;
     }
     setBusy(true);
@@ -117,7 +119,7 @@ export default function CustomerSelect({
         setOpen(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add customer');
+      setError(err instanceof Error ? err.message : t('till.couldNotSaveCustomer'));
     } finally {
       setBusy(false);
     }
@@ -148,7 +150,7 @@ export default function CustomerSelect({
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name or phone…"
+              placeholder={t('till.searchNamePhone')}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setOpen(false);
@@ -180,13 +182,13 @@ export default function CustomerSelect({
                 <span className={meta}>
                   <strong className={metaName}>{c.name}</strong>
                   <span className={metaSub}>
-                    {c.phone || (String(c.id) === '0' ? 'Default guest' : 'No phone')}
+                    {c.phone || (String(c.id) === '0' ? t('till.defaultGuest') : t('till.noPhone'))}
                   </span>
                 </span>
               </button>
             ))}
             {!filtered.length && (
-              <div className="px-2 py-3 text-center text-sm text-muted-foreground">No matches</div>
+              <div className="px-2 py-3 text-center text-sm text-muted-foreground">{t('till.noMatches')}</div>
             )}
           </div>
 
@@ -199,7 +201,7 @@ export default function CustomerSelect({
                 setNewName(query.trim());
               }}
             >
-              + New customer
+              + {t('till.newCustomer')}
             </button>
           ) : (
             <div className="space-y-2 p-1">
@@ -207,14 +209,14 @@ export default function CustomerSelect({
                 className="w-full rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Customer name"
+                placeholder={t('till.customerName')}
                 autoFocus
               />
               <input
                 className="w-full rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                placeholder="Phone (optional)"
+                placeholder={t('till.phoneOptional')}
               />
               <div className="flex gap-2">
                 <button
@@ -223,7 +225,7 @@ export default function CustomerSelect({
                   disabled={busy}
                   onClick={quickAdd}
                 >
-                  {busy ? 'Saving…' : 'Add & select'}
+                  {busy ? t('till.savingCustomer') : t('till.addSelect')}
                 </button>
                 <button
                   type="button"
@@ -233,7 +235,7 @@ export default function CustomerSelect({
                     setError(null);
                   }}
                 >
-                  Cancel
+{t('common.cancel')}
                 </button>
               </div>
             </div>

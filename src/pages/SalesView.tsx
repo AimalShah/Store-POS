@@ -19,6 +19,8 @@ import {
   X,
 } from 'lucide-react';
 import { api, Settings, Transaction, User } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
+import { uiLocale, Locale } from '../i18n/translations';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -86,15 +88,15 @@ type Props = {
 type DatePreset = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom';
 type SortOption = 'newest' | 'oldest' | 'highest' | 'lowest';
 
-function formatTxDate(dateStr: string) {
+function formatTxDate(dateStr: string, locale: Locale) {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return { day: dateStr, time: '' };
-  const day = d.toLocaleDateString('en-GB', {
+  const day = d.toLocaleDateString(uiLocale(locale), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
-  const time = d.toLocaleTimeString('en-US', {
+  const time = d.toLocaleTimeString(uiLocale(locale), {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
@@ -120,29 +122,30 @@ function getItemCount(row: Transaction) {
   return row.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 }
 
-function getStatusBadge(status: number) {
+function getStatusBadge(status: number, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (status === 1) {
     return (
       <Badge className="bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 font-semibold px-2 py-0.5 text-xs rounded-sm">
-        Paid
+        {t('sales.status.paid')}
       </Badge>
     );
   }
   if (status === 2) {
     return (
       <Badge variant="destructive" className="font-semibold px-2 py-0.5 text-xs rounded-sm">
-        Voided
+        {t('sales.status.voided')}
       </Badge>
     );
   }
   return (
     <Badge variant="secondary" className="font-semibold px-2 py-0.5 text-xs rounded-sm">
-      Open
+      {t('sales.status.open')}
     </Badge>
   );
 }
 
 export default function SalesView({ symbol, settings, onClose, initialStatus = 'all', initialUserId = 0, initialVoidFilter = false }: Props) {
+  const { t, locale } = useLocale();
   const [rows, setRows] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,7 +181,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       setRows(allTx);
       setUsers(allUsers);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load transactions');
+      setError(err instanceof Error ? err.message : t('sales.failedLoad'));
     } finally {
       setLoading(false);
     }
@@ -194,11 +197,11 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     setActionLoading(true);
     try {
       await api.request(`/api/transactions/${voidTx.id}/void`, { method: 'POST' });
-      toast.success('Sale voided successfully');
+      toast.success(t('sales.voidedSuccess'));
       setVoidTx(null);
       await loadData();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Void failed');
+      toast.error(err instanceof Error ? err.message : t('sales.voidFailed'));
     } finally {
       setActionLoading(false);
     }
@@ -210,11 +213,11 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     setActionLoading(true);
     try {
       await api.deleteTransaction(deleteTx.id);
-      toast.success('Transaction deleted');
+      toast.success(t('sales.deletedSuccess'));
       setDeleteTx(null);
       await loadData();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Delete failed');
+      toast.error(err instanceof Error ? err.message : t('common.deleteFailed'));
     } finally {
       setActionLoading(false);
     }
@@ -304,11 +307,11 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         pct: Math.round((amount / totalMethodAmount) * 100),
       }));
 
-    const topMethod = sortedMethods[0] || { name: 'Cash', pct: 0 };
+    const topMethod = sortedMethods[0] || { name: t('common.cash'), pct: 0 };
     const otherMethods = sortedMethods.slice(1);
     const splitText = otherMethods.length > 0
       ? otherMethods.map((m) => `${m.name} ${m.pct}%`).join(' · ')
-      : 'Card 0% · UPI 0%';
+      : t('sales.cardUpiFallback');
 
     return {
       total,
@@ -318,13 +321,13 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       topMethodPct: topMethod.pct,
       splitText,
     };
-  }, [filteredRows]);
+  }, [filteredRows, t]);
 
   // Column definitions for DataTable
   const columns = useMemo<ColumnDef<Transaction>[]>(() => [
     {
       id: 'invoice',
-      header: 'INVOICE',
+      header: t('sales.h.invoice'),
       accessorKey: 'id',
       cell: ({ row }) => {
         const r = row.original;
@@ -343,10 +346,10 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'date',
-      header: 'DATE',
+      header: t('sales.h.date'),
       accessorKey: 'date',
       cell: ({ row }) => {
-        const { day, time } = formatTxDate(row.original.date);
+        const { day, time } = formatTxDate(row.original.date, locale);
         return (
           <div>
             <div className="text-sm font-medium text-foreground leading-tight">{day}</div>
@@ -358,17 +361,17 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'customer',
-      header: 'CUSTOMER',
+      header: t('sales.h.customer'),
       accessorKey: 'customer_name',
       cell: ({ row }) => {
         const r = row.original;
         return (
           <div>
             <div className="font-semibold text-foreground text-sm leading-tight">
-              {r.customer_name || 'Walk-in Customer'}
+              {r.customer_name || t('common.walkinCustomer')}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 capitalize">
-              {r.fulfillment || 'Walk-in'}
+              {r.fulfillment || t('common.walkin')}
             </div>
           </div>
         );
@@ -377,17 +380,17 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'cashier',
-      header: 'STAFF',
+      header: t('sales.h.staff'),
       accessorKey: 'user',
       cell: ({ row }) => {
         const r = row.original;
         return (
           <div>
             <div className="text-sm font-medium text-foreground leading-tight">
-              {r.user || 'Administrator'}
+              {r.user || t('sales.trimmed')}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              Till {r.till || 1}
+              {t('sales.tillLabel', { till: r.till || 1 })}
             </div>
           </div>
         );
@@ -396,18 +399,18 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'order',
-      header: 'ORDER',
+      header: t('sales.h.order'),
       accessorKey: 'fulfillment',
       cell: ({ row }) => (
         <span className="text-sm capitalize text-muted-foreground">
-          {row.original.fulfillment || 'Walk-in'}
+          {row.original.fulfillment || t('common.walkin')}
         </span>
       ),
       meta: { align: 'left' },
     },
     {
       id: 'items',
-      header: 'ITEMS',
+      header: t('sales.h.items'),
       accessorKey: 'id',
       cell: ({ row }) => (
         <span className="text-sm font-medium text-foreground">
@@ -418,7 +421,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'total',
-      header: 'TOTAL',
+      header: t('common.total'),
       accessorKey: 'total',
       cell: ({ row }) => (
         <span className="text-sm font-bold text-foreground">
@@ -429,7 +432,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'payment',
-      header: 'PAYMENT',
+      header: t('sales.h.payment'),
       accessorKey: 'payment_type',
       cell: ({ row }) => {
         const r = row.original;
@@ -439,7 +442,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
               {getPaymentInfo(r)}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              {symbol}{Number(r.paid || 0).toFixed(2)} paid
+              {t('sales.paidSuffix', { amount: `${symbol}${Number(r.paid || 0).toFixed(2)}` })}
             </div>
           </div>
         );
@@ -448,14 +451,14 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
     },
     {
       id: 'status',
-      header: 'STATUS',
+      header: t('sales.h.status'),
       accessorKey: 'status',
-      cell: ({ row }) => getStatusBadge(row.original.status),
+      cell: ({ row }) => getStatusBadge(row.original.status, t),
       meta: { align: 'left' },
     },
     {
       id: 'actions',
-      header: 'ACTIONS',
+      header: t('sales.h.actions'),
       accessorKey: 'id',
       cell: ({ row }) => {
         const r = row.original;
@@ -467,13 +470,13 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                   variant="outline"
                   size="icon"
                   className="size-8 rounded-md"
-                  aria-label="View invoice"
+                  aria-label={t('sales.viewInvoice')}
                   onClick={() => setInvoice(r)}
                 >
                   <Eye className="size-3.5 text-muted-foreground" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>View invoice</TooltipContent>
+              <TooltipContent>{t('sales.viewInvoice')}</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -482,7 +485,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                   variant="outline"
                   size="icon"
                   className="size-8 rounded-md"
-                  aria-label="Print invoice"
+                  aria-label={t('sales.printInvoice')}
                   onClick={() =>
                     printReportPdf(buildInvoicePdf({ settings, tx: r }))
                   }
@@ -490,7 +493,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                   <Printer className="size-3.5 text-muted-foreground" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Print invoice</TooltipContent>
+              <TooltipContent>{t('sales.printInvoice')}</TooltipContent>
             </Tooltip>
 
             <DropdownMenu>
@@ -499,28 +502,28 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                   variant="outline"
                   size="icon"
                   className="size-8 rounded-md"
-                  aria-label="More actions"
+                  aria-label={t('sales.moreActions')}
                 >
                   <MoreHorizontal className="size-3.5 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => setInvoice(r)}>
-                  <Eye className="size-4 mr-2" /> View details
+                  <Eye className="size-4 mr-2" /> {t('sales.viewDetails')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() =>
                     printReportPdf(buildInvoicePdf({ settings, tx: r }))
                   }
                 >
-                  <Printer className="size-4 mr-2" /> Print receipt
+                  <Printer className="size-4 mr-2" /> {t('sales.printReceipt')}
                 </DropdownMenuItem>
                 {r.status === 1 && (
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={() => setVoidTx(r)}
                   >
-                    <Ban className="size-4 mr-2" /> Void sale
+                    <Ban className="size-4 mr-2" /> {t('sales.voidSale')}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -528,7 +531,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                   className="text-destructive focus:text-destructive"
                   onClick={() => setDeleteTx(r)}
                 >
-                  <Trash2 className="size-4 mr-2" /> Delete transaction
+                  <Trash2 className="size-4 mr-2" /> {t('sales.deleteTransaction')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -539,7 +542,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       enableFiltering: false,
       meta: { align: 'right', className: 'pr-4' },
     },
-  ], [symbol, settings]);
+  ], [symbol, settings, t, locale]);
 
   // Print handler (defined before toolbar to avoid temporal dead zone)
   const handlePrintReport = async () => {
@@ -561,7 +564,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         })
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate report');
+      toast.error(err instanceof Error ? err.message : t('sales.generateFailed'));
     }
   };
 
@@ -572,15 +575,15 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9 gap-2">
             <Upload className="size-4" />
-            <span>Export</span>
+            <span>{t('sales.export')}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onClick={() => handleExport('xlsx')}>
-            <FileSpreadsheet className="size-4 mr-2" /> Export to Excel (.xlsx)
+            <FileSpreadsheet className="size-4 mr-2" /> {t('sales.exportExcel')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleExport('csv')}>
-            <FileText className="size-4 mr-2" /> Export to CSV (.csv)
+            <FileText className="size-4 mr-2" /> {t('sales.exportCsv')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -592,47 +595,47 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         onClick={handlePrintReport}
       >
         <Printer className="size-4" />
-        <span>Print report</span>
+        <span>{t('sales.printReport')}</span>
       </Button>
     </div>
-  ), []);
+  ), [t]);
 
   // Summary cards
   const summaryCards = useMemo(() => (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="shadow-xs">
         <CardContent className="p-5">
-          <p className="text-xs font-medium text-muted-foreground">Total sales</p>
+          <p className="text-xs font-medium text-muted-foreground">{t('sales.totalSales')}</p>
           <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">
             {symbol}{summary.total.toFixed(2)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Across filtered results</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('sales.acrossFiltered')}</p>
         </CardContent>
       </Card>
 
       <Card className="shadow-xs">
         <CardContent className="p-5">
-          <p className="text-xs font-medium text-muted-foreground">Transactions</p>
+          <p className="text-xs font-medium text-muted-foreground">{t('sales.title')}</p>
           <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">
             {summary.count}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Completed orders</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('sales.completedOrders')}</p>
         </CardContent>
       </Card>
 
       <Card className="shadow-xs">
         <CardContent className="p-5">
-          <p className="text-xs font-medium text-muted-foreground">Average order</p>
+          <p className="text-xs font-medium text-muted-foreground">{t('sales.averageOrder')}</p>
           <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">
             {symbol}{summary.average.toFixed(2)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Per transaction</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('sales.perTransaction')}</p>
         </CardContent>
       </Card>
 
       <Card className="shadow-xs">
         <CardContent className="p-5">
-          <p className="text-xs font-medium text-muted-foreground">Payment split</p>
+          <p className="text-xs font-medium text-muted-foreground">{t('sales.paymentSplit')}</p>
           <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">
             {summary.topMethodLabel} {summary.topMethodPct}%
           </p>
@@ -640,14 +643,14 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         </CardContent>
       </Card>
     </div>
-  ), [summary, symbol]);
+  ), [summary, symbol, t]);
 
   // Export handlers
   const handleExport = async (format: 'xlsx' | 'csv') => {
     const targetRows = filteredRows;
 
     if (targetRows.length === 0) {
-      toast.error('No transactions to export');
+      toast.error(t('sales.noTransactions'));
       return;
     }
 
@@ -664,7 +667,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
           type: 'xlsx',
           data,
         });
-        toast.success(`Exported ${targetRows.length} transactions to Excel`);
+        toast.success(t('sales.exportedXlsx', { count: targetRows.length }));
       } else {
         const headers = Object.keys(exportData[0] || {});
         const csvRows = exportData.map((r) => headers.map((h) => r[h] ?? ''));
@@ -682,10 +685,10 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         } else {
           downloadCsv(`sales-export-${dateStamp}.csv`, headers, csvRows);
         }
-        toast.success(`Exported ${targetRows.length} transactions to CSV`);
+        toast.success(t('sales.exportedCsv', { count: targetRows.length }));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Export failed');
+      toast.error(err instanceof Error ? err.message : t('sales.exportFailed'));
     }
   };
 
@@ -717,10 +720,10 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         }}
       >
         <SelectTrigger className="w-[160px] h-9">
-          <SelectValue placeholder="All cashiers" />
+          <SelectValue placeholder={t('sales.allCashiers')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="0">All cashiers</SelectItem>
+          <SelectItem value="0">{t('sales.allCashiers')}</SelectItem>
           {users.map((u) => (
             <SelectItem key={u.id} value={String(u.id)}>
               {u.fullname}
@@ -737,13 +740,13 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         }}
       >
         <SelectTrigger className="w-[150px] h-9">
-          <SelectValue placeholder="All statuses" />
+          <SelectValue placeholder={t('sales.allStatuses')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
-          <SelectItem value="1">Paid</SelectItem>
-          <SelectItem value="0">Unpaid / Hold</SelectItem>
-          <SelectItem value="2">Voided</SelectItem>
+          <SelectItem value="all">{t('sales.allStatuses')}</SelectItem>
+          <SelectItem value="1">{t('sales.status.paid')}</SelectItem>
+          <SelectItem value="0">{t('sales.unpaidHold')}</SelectItem>
+          <SelectItem value="2">{t('sales.status.voided')}</SelectItem>
         </SelectContent>
       </Select>
 
@@ -762,29 +765,29 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         className="h-9 gap-1.5 text-muted-foreground hover:text-foreground"
       >
         <X className="size-4" />
-        <span>Clear</span>
+        <span>{t('payment.clear')}</span>
       </Button>
     </>
-  ), [userId, status, datePreset, dateValue, users]);
+  ), [userId, status, datePreset, dateValue, users, t]);
 
   // Date range trigger
   const dateTriggerLabel = useMemo(() => {
     if (datePreset === 'today') {
-      return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      return new Date().toLocaleDateString(uiLocale(locale), { day: 'numeric', month: 'short', year: 'numeric' });
     }
     if (datePreset === 'yesterday') {
       const y = new Date();
       y.setDate(y.getDate() - 1);
-      return y.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      return y.toLocaleDateString(uiLocale(locale), { day: 'numeric', month: 'short', year: 'numeric' });
     }
-    if (datePreset === '7d') return 'Last 7 days';
-    if (datePreset === '30d') return 'Last 30 days';
-    if (datePreset === 'month') return 'This month';
+    if (datePreset === '7d') return t('daterange.7d');
+    if (datePreset === '30d') return t('daterange.30d');
+    if (datePreset === 'month') return t('daterange.month');
     if (datePreset === 'custom' && customStart) {
-      return `${customStart} – ${customEnd || 'Now'}`;
+      return `${customStart} – ${customEnd || t('sales.now')}`;
     }
-    return 'All time';
-  }, [datePreset, customStart, customEnd]);
+    return t('daterange.all');
+  }, [datePreset, customStart, customEnd, t, locale]);
 
   return (
     <div className="space-y-5">
@@ -792,13 +795,13 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-foreground">
-            SALES HISTORY
+            {t('sales.header')}
           </p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-            Transactions
+            {t('sales.title')}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review, print, and manage every completed order.
+            {t('sales.headerDesc')}
           </p>
         </div>
 
@@ -812,7 +815,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         columns={columns}
         data={filteredRows}
         keyField="id"
-        searchPlaceholder="Search invoice, customer..."
+        searchPlaceholder={t('sales.searchPlaceholder')}
         pageSize={12}
         showSearch={true}
         showPagination={true}
@@ -820,7 +823,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
         showRowSelection={true}
         selectedIds={[]}
         loading={loading}
-        emptyMessage="No sales found for these dates."
+        emptyMessage={t('sales.empty')}
         // toolbar={toolbar}
         summary={summaryCards}
         additionalFilters={additionalFilters}
@@ -830,12 +833,12 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       <Dialog open={!!invoice} onOpenChange={(open) => !open && setInvoice(null)}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Invoice Details</DialogTitle>
+            <DialogTitle>{t('sales.invoiceDetails')}</DialogTitle>
           </DialogHeader>
           {invoice && <Invoice tx={invoice} settings={settings} symbol={symbol} />}
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setInvoice(null)}>
-              Close
+              {t('common.close')}
             </Button>
             <Button
               variant="default"
@@ -843,7 +846,7 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
                 invoice && printReportPdf(buildInvoicePdf({ settings, tx: invoice }))
               }
             >
-              <Printer className="size-4 mr-1.5" /> Print
+              <Printer className="size-4 mr-1.5" /> {t('till.print')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -853,20 +856,20 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       <AlertDialog open={!!voidTx} onOpenChange={(open) => !open && setVoidTx(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Void this transaction?</AlertDialogTitle>
+            <AlertDialogTitle>{t('sales.voidTxTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will refund the sale, restore product inventory, and mark transaction #{voidTx?.id} as voided. This action cannot be undone.
+              {t('sales.voidTxDesc', { id: voidTx?.id ?? 0 })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={actionLoading}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={actionLoading}
               onClick={confirmVoid}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {actionLoading ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-              Void Sale
+              {t('sales.voidSaleAction')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -876,20 +879,20 @@ export default function SalesView({ symbol, settings, onClose, initialStatus = '
       <AlertDialog open={!!deleteTx} onOpenChange={(open) => !open && setDeleteTx(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this transaction?</AlertDialogTitle>
+            <AlertDialogTitle>{t('sales.deleteTxTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes transaction #{deleteTx?.id} from the database. This action cannot be undone.
+              {t('sales.deleteTxDesc', { id: deleteTx?.id ?? 0 })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={actionLoading}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={actionLoading}
               onClick={confirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {actionLoading ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-              Delete
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

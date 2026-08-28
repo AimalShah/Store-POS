@@ -1,4 +1,5 @@
 import { Check, ChevronsUpDown, Store as StoreIcon } from 'lucide-react';
+import { useLocale } from '@/i18n/LocaleContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ export function StoreSwitcher({
   activeId: string;
   onSwitch?: (id: string) => void;
 }) {
+  const { t } = useLocale();
   const active = outlets.find((o) => o.id === activeId) ?? outlets[0];
 
   return (
@@ -34,7 +36,7 @@ export function StoreSwitcher({
         </div>
         <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
           <span className="truncate font-semibold">{active.name}</span>
-          <span className="truncate text-xs text-muted-foreground">Main outlet</span>
+          <span className="truncate text-xs text-muted-foreground">{t('store.mainOutlet')}</span>
         </div>
         <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
       </DropdownMenuTrigger>
@@ -44,7 +46,7 @@ export function StoreSwitcher({
         className="w-[--anchor-width] min-w-56"
       >
         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-          Outlets
+          {t('store.outlets')}
         </div>
         <DropdownMenuSeparator />
         {outlets.map((o) => (

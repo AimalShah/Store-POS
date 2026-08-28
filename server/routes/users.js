@@ -181,4 +181,28 @@ router.post('/change-password', authenticate, asyncHandler(async (req, res) => {
   res.json({ ok: true, message: 'Password changed successfully' });
 }));
 
+router.put('/profile', authenticate, asyncHandler(async (req, res) => {
+  const { locale } = req.body || {};
+  if (locale !== 'en' && locale !== 'ur') {
+    return res.status(400).json({ error: 'Invalid locale (must be en or ur)' });
+  }
+  const userId = req.user.id;
+  const db = getDb();
+  db.prepare('UPDATE users SET locale = ? WHERE id = ?').run(locale, userId);
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  res.json({ ok: true, user: mapUser(row) });
+}));
+
+router.post('/profile', authenticate, asyncHandler(async (req, res) => {
+  const { locale } = req.body || {};
+  if (locale !== 'en' && locale !== 'ur') {
+    return res.status(400).json({ error: 'Invalid locale (must be en or ur)' });
+  }
+  const userId = req.user.id;
+  const db = getDb();
+  db.prepare('UPDATE users SET locale = ? WHERE id = ?').run(locale, userId);
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  res.json({ ok: true, user: mapUser(row) });
+}));
+
 export default router;

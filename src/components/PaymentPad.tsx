@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { useLocale } from '@/i18n/LocaleContext';
 
 type Props = {
   value: string;
@@ -25,6 +26,7 @@ export default function PaymentPad({
 }: Props) {
   // After Exact / note pick, the next digit replaces instead of appending.
   const replaceNext = useRef(false);
+  const { t } = useLocale();
 
   const setAmount = (amount: number) => {
     onChange(formatAmount(amount));
@@ -77,8 +79,7 @@ export default function PaymentPad({
             onClick={() => setAmount(due)}
             className="rounded-md border-2 border-border bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-[3px_3px_0_0] shadow-black/20 transition-all hover:-translate-y-0.5 active:translate-y-0"
           >
-            Exact ({symbol}
-            {due.toFixed(2)})
+            {t('payment.exact', { symbol, amount: due.toFixed(2) })}
           </button>
           {SA_NOTES.map((note) => (
             <button
@@ -110,7 +111,7 @@ export default function PaymentPad({
             onClick={() => append('C')}
             className="col-span-3 flex h-11 items-center justify-center rounded-lg border-2 border-border bg-card text-sm font-semibold text-muted-foreground shadow-[3px_3px_0_0] shadow-black/15 transition-all hover:-translate-y-0.5 active:translate-y-0"
           >
-            Clear
+            {t('payment.clear')}
           </button>
         </div>
       )}

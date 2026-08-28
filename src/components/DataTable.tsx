@@ -44,6 +44,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/i18n/LocaleContext";
 
 interface ColumnDef<TData> {
   id: string;
@@ -90,7 +91,7 @@ export function DataTable<TData extends Record<string, unknown>>({
   data,
   keyField,
   searchKey,
-  searchPlaceholder = "Search...",
+  searchPlaceholder,
   pageSize: initialPageSize = 12,
   showSearch = true,
   showPagination = true,
@@ -99,16 +100,20 @@ export function DataTable<TData extends Record<string, unknown>>({
   onRowSelect,
   selectedIds = [],
   loading = false,
-  emptyMessage = "No data found.",
+  emptyMessage,
   className = "",
   dateRangeFilter,
   onDateRangeChange,
-  dateRangePlaceholder = "Select date range",
+  dateRangePlaceholder,
   additionalFilters,
   toolbar,
   summary,
   bordered = false,
 }: DataTableProps<TData>) {
+  const { t } = useLocale();
+  const searchPh = searchPlaceholder ?? t('dt.search');
+  const empty = emptyMessage ?? t('dt.empty');
+  const dateRangePh = dateRangePlaceholder ?? t('dt.dateRange');
   const columnHelper = useMemo(() => createColumnHelper<TData>(), []);
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -152,13 +157,13 @@ export function DataTable<TData extends Record<string, unknown>>({
               checked={table.getIsAllPageRowsSelected()}
               indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
               onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-              aria-label="Select all"
+              aria-label={t('dt.selectAll')}
             />,
           cell: ({ row }) =>
             <Checkbox
               checked={row.getIsSelected()}
               onCheckedChange={(value) => row.toggleSelected(!!value)}
-              aria-label={`Select row ${getRowId(row.original)}`}
+              aria-label={t('dt.selectRow', { id: getRowId(row.original) })}
             />,
           enableSorting: false,
           enableFiltering: false,
@@ -246,7 +251,7 @@ export function DataTable<TData extends Record<string, unknown>>({
           <div className="relative min-w-[220px] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder={searchPlaceholder}
+              placeholder={searchPh}
               value={globalFilter}
               onChange={(e) => setGlobalFilter(e.target.value)}
               className="h-9 pl-9 bg-background"
@@ -276,11 +281,11 @@ export function DataTable<TData extends Record<string, unknown>>({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-9 gap-2 ml-auto">
                 <Columns3 className="size-4 text-muted-foreground" />
-                <span>Columns</span>
+                <span>{t('dt.columns')}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="text-xs">Toggle columns</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs">{t('dt.toggleColumns')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {table
                 .getAllLeafColumns()
@@ -378,8 +383,11 @@ export function DataTable<TData extends Record<string, unknown>>({
         {showPagination && (
           <div className="flex items-center justify-between px-4 py-3 border-t bg-card text-xs text-muted-foreground">
             <div>
-              Showing {table.getRowModel().rows.length > 0 ? pagination.pageIndex * pagination.pageSize + 1 : 0}–
-              {Math.min((pagination.pageIndex + 1) * pagination.pageSize, table.getRowModel().rows.length)} of {table.getRowModel().rows.length}
+              {t('dt.showing', {
+                from: table.getRowModel().rows.length > 0 ? pagination.pageIndex * pagination.pageSize + 1 : 0,
+                to: Math.min((pagination.pageIndex + 1) * pagination.pageSize, table.getRowModel().rows.length),
+                total: table.getRowModel().rows.length,
+              })}
             </div>
 
             <div className="flex items-center gap-1">
@@ -389,7 +397,7 @@ export function DataTable<TData extends Record<string, unknown>>({
                 className="size-8 rounded"
                 disabled={pagination.pageIndex <= 0 || loading}
                 onClick={() => table.previousPage()}
-                aria-label="Previous page"
+                aria-label={t('dt.prevPage')}
               >
                 <ChevronLeft className="size-4" />
               </Button>
@@ -437,7 +445,7 @@ export function DataTable<TData extends Record<string, unknown>>({
                 className="size-8 rounded"
                 disabled={pagination.pageIndex >= table.getPageCount() - 1 || loading}
                 onClick={() => table.nextPage()}
-                aria-label="Next page"
+                aria-label={t('dt.nextPage')}
               >
                 <ChevronRight className="size-4" />
               </Button>

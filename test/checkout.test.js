@@ -25,7 +25,7 @@ function saleBody(overrides = {}) {
 let app;
 beforeEach(async () => {
   app = await bootApp();
-  await app.client.login();
+  await app.client.login('admin', 'admin', { openDrawer: true });
 });
 afterEach(async () => {
   await app.close();

@@ -44,6 +44,7 @@ export type User = {
   has_pin?: boolean;
   role: Role;
   status?: string;
+  locale?: 'en' | 'ur';
 };
 
 export type Product = {

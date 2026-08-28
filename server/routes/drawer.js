@@ -33,7 +33,7 @@ router.get('/open', asyncHandler(async (req, res) => {
     .prepare(`SELECT * FROM drawer_sessions WHERE till = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1`)
     .get(till);
   
-  res.json({ session });
+  res.json({ session: mapSession(session) });
 }));
 
 // Get all drawer sessions with filters (Staff+)
@@ -78,12 +78,12 @@ router.post('/open', requireStaff, asyncHandler(async (req, res) => {
 
   const openedAt = new Date().toISOString();
   const result = db.prepare(
-    `INSERT INTO drawer_sessions (user_id, user_name, till, float_amount, status, opened_at)
-     VALUES (?, ?, ?, ?, 'open', ?)`
-  ).run(userId, userName, till, floatAmount, openedAt);
+    `INSERT INTO drawer_sessions (user_id, user_name, till, float_amount, running_balance, status, opened_at)
+     VALUES (?, ?, ?, ?, ?, 'open', ?)`
+  ).run(userId, userName, till, floatAmount, floatAmount, openedAt);
 
   const session = db.prepare('SELECT * FROM drawer_sessions WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ session });
+  res.json({ session: mapSession(session) });
 }));
 
 // Close a drawer session (Staff+)
@@ -103,14 +103,14 @@ router.post('/:sessionId/close', requireStaff, asyncHandler(async (req, res) => 
   }
 
   const closedAt = new Date().toISOString();
-  const expectedVariance = session.float_amount + (session.counted_cash || 0) - countedCash;
+  const expectedVariance = session.running_balance - countedCash;
   
   db.prepare(
     `UPDATE drawer_sessions SET counted_cash = ?, status = 'closed', closed_at = ?, variance = ? WHERE id = ?`
   ).run(countedCash, closedAt, expectedVariance, sessionId);
 
   const updatedSession = db.prepare('SELECT * FROM drawer_sessions WHERE id = ?').get(sessionId);
-  res.json({ session: updatedSession });
+  res.json({ session: mapSession(updatedSession) });
 }));
 
 function mapSession(row) {
@@ -119,6 +119,7 @@ function mapSession(row) {
     id: row.id,
     till: row.till,
     floatAmount: row.float_amount,
+    runningBalance: row.running_balance,
     countedCash: row.counted_cash,
     variance: row.variance,
     status: row.status,
@@ -147,27 +148,15 @@ router.get('/summary', requireManager, asyncHandler(async (req, res) => {
     totalVar += session.variance || 0;
   }
 
-  // Live view of the open drawer: cash collected since it opened, on top of
-  // the opening float, is what should be in the drawer right now.
+  // The running balance is updated in the same transaction that completes a
+  // Sale, so this read remains correct even after historical records change.
   let live = null;
   if (openSession) {
-    const rows = db
-      .prepare(
-        `SELECT payment_breakdown_json FROM transactions WHERE till = ? AND status = 1 AND date >= ?`
-      )
-      .all(till, openSession.opened_at);
-    let cashSales = 0;
-    for (const row of rows) {
-      try {
-        const breakdown = JSON.parse(row.payment_breakdown_json || '[]');
-        for (const p of Array.isArray(breakdown) ? breakdown : []) {
-          if (String(p.method || '').toLowerCase() === 'cash') cashSales += Number(p.amount) || 0;
-        }
-      } catch {
-        // ignore malformed payment JSON
-      }
-    }
-    live = { cashSales, expectedCash: (openSession.float_amount || 0) + cashSales };
+    const expectedCash = Number(openSession.running_balance) || 0;
+    live = {
+      cashSales: expectedCash - (Number(openSession.float_amount) || 0),
+      expectedCash,
+    };
   }
 
   res.json({

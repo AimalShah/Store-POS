@@ -1,4 +1,4 @@
-import { printer as ThermalPrinter, types } from 'node-thermal-printer';
+import { characterSet, printer as ThermalPrinter, types } from 'node-thermal-printer';
 import { getDb } from '../server/db.js';
 import { PrinterManager } from './printer/PrinterManager.js';
 import { winSpoolDriver } from './printer/WinSpoolDriver.js';
@@ -10,7 +10,7 @@ const DEBUG_TAG = '[PRINTER-DEBUG-7f3c]';
 const THERMAL_NAME_HINTS = [
   'pos', 'thermal', 'receipt', 'tm-', 'tm ', 'epson tm', 'star', 'xprinter',
   'xp-', 'zjiang', 'gprinter', 'rongta', 'citizen', 'bixolon', 'sewoo',
-  '58mm', '80mm', 'ticket', 'kot',
+  '58mm', '80mm', 'ticket', 'kot', 'speedx', 'pos-80', 'pos80',
 ];
 
 export function isLikelyThermalPrinterName(name) {
@@ -23,6 +23,9 @@ export function listSystemPrinters() {
       ...p,
       likelyThermal: isLikelyThermalPrinterName(p.name),
   }));
+
+  console.log(printerManager.getPrinters());
+
   logger.info({ count: printers.length, printers }, `${DEBUG_TAG} System printers listed`);
   return printers;
 }
@@ -90,6 +93,7 @@ export function makePrinter(conf) {
     interface: uri,
     width: conf.width === 80 ? 48 : 32,
     lineCharacter: '=',
+    characterSet: 'PC47_USA',
   };
   if (conf.interface === 'usb' && process.platform === 'win32') {
     options.driver = winSpoolDriver;

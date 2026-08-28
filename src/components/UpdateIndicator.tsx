@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Download, RefreshCw, Loader2 } from 'lucide-react';
+import { useLocale } from '../i18n/LocaleContext';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
 import { getPosBridge } from '../bridge';
 import type { UpdaterState } from '../vite-env';
 
 export function UpdateIndicator() {
+  const { t } = useLocale();
   const [state, setState] = useState<UpdaterState>({ status: 'idle', version: null, error: null });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,11 @@ export function UpdateIndicator() {
         variant="outline"
         size="icon-sm"
         className="text-blue-600 hover:text-blue-700"
-        title={downloaded ? `Update ${state.version} ready — restart to apply` : `Update ${state.version} available`}
+        title={
+          downloaded
+            ? t('update.readyTitle', { version: state.version ?? '' })
+            : t('update.availableTitle', { version: state.version ?? '' })
+        }
         onClick={() => setDialogOpen(true)}
       >
         <Download className="size-4" />
@@ -59,27 +65,27 @@ export function UpdateIndicator() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update available</DialogTitle>
+            <DialogTitle>{t('update.available')}</DialogTitle>
             <DialogDescription>
-              Version {state.version} is available for Store POS.
+              {t('update.desc', { version: state.version ?? '' })}
             </DialogDescription>
           </DialogHeader>
 
           {state.status === 'downloading' && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
-              Downloading update…
+              {t('update.downloading')}
             </div>
           )}
           {downloaded && (
             <p className="text-sm text-muted-foreground">
-              The update has been downloaded. Restart the app to apply it.
+              {t('update.downloaded')}
             </p>
           )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Later
+              {t('update.later')}
             </Button>
             <Button onClick={primary} disabled={busy}>
               {busy ? (
@@ -89,7 +95,7 @@ export function UpdateIndicator() {
               ) : (
                 <Download className="size-4" />
               )}
-              {downloaded ? 'Restart now' : 'Download update'}
+              {downloaded ? t('update.restartNow') : t('update.download')}
             </Button>
           </DialogFooter>
         </DialogContent>

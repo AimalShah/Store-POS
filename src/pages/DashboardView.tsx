@@ -90,6 +90,8 @@ import {
   exportDashboardToXlsx,
 } from '../lib/dashboard';
 import { isLowStock, getStockQuantity, getLowStockThreshold } from '../lib/stock';
+import { useLocale } from '../i18n/LocaleContext';
+import { uiLocale } from '../i18n/translations';
 
 type StockSummary = { items: number; outOfStock: number; changesToday: number; stockWorth: number; spentTotal: number } | null;
 
@@ -123,19 +125,19 @@ type DashboardState = {
   error: string | null;
 };
 
-const RANGE_LABELS: Record<string, string> = {
-  today: 'Today',
-  '7d': 'Last 7 days',
-  '30d': 'Last 30 days',
-  '90d': 'Last 90 days',
-  custom: 'Custom range',
+const RANGE_KEYS: Record<string, string> = {
+  today: 'daterange.today',
+  '7d': 'daterange.7d',
+  '30d': 'daterange.30d',
+  '90d': 'daterange.90d',
+  custom: 'daterange.custom',
 };
 
 function getGreeting() {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return 'dash.goodMorning';
+  if (h < 18) return 'dash.goodAfternoon';
+  return 'dash.goodEvening';
 }
 
 function compactCurrency(n: number, symbol: string) {
@@ -165,6 +167,7 @@ export default function DashboardView({
   onDrawerClick?: () => void;
 }) {
   const { hasRole } = useAuth();
+  const { t, locale } = useLocale();
   const isManagerOrAdmin = hasRole('Manager', 'Admin');
   const [state, setState] = useState<DashboardState>({
     kpis: null,
@@ -185,16 +188,16 @@ export default function DashboardView({
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
   const symbol = settings?.symbol || 'Rs';
   const fmt = (n: number) => `${symbol}${Number(n).toFixed(2)}`;
-  const greeting = useMemo(() => getGreeting(), []);
+  const greeting = useMemo(() => t(getGreeting()), [t]);
   const fmtTooltip = (
     value: number | string | readonly (number | string)[] | undefined
   ) => fmt(Number(Array.isArray(value) ? value[0] : value));
 
   const trendConfig = {
-    total: { label: 'Sales', color: 'var(--chart-1)' },
-    previous: { label: 'Previous', color: 'var(--chart-4)' },
+    total: { label: t('dash.sales'), color: 'var(--chart-1)' },
+    previous: { label: t('dash.previous'), color: 'var(--chart-4)' },
   } satisfies ChartConfig;
-  const topConfig = { revenue: { label: 'Revenue', color: 'var(--chart-2)' } } satisfies ChartConfig;
+  const topConfig = { revenue: { label: t('common.revenue'), color: 'var(--chart-2)' } } satisfies ChartConfig;
   const categoryConfig = useMemo<ChartConfig>(() => {
     const cfg: ChartConfig = {};
     state.categorySlices.forEach((s, i) => {
@@ -289,11 +292,11 @@ export default function DashboardView({
       setState((s) => ({
         ...s,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to load dashboard',
+        error: err instanceof Error ? err.message : t('dash.loadFailed'),
       }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range?.start, range?.end, range?.preset, isManagerOrAdmin, settings?.till]);
+  }, [range?.start, range?.end, range?.preset, isManagerOrAdmin, settings?.till, t]);
 
   useEffect(() => {
     void loadData();
@@ -362,18 +365,18 @@ export default function DashboardView({
     return (
       <Card className="mx-auto mt-12 max-w-md">
         <CardHeader>
-          <CardTitle>Error</CardTitle>
+          <CardTitle>{t('common.error')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-destructive">{state.error}</p>
-          <Button onClick={loadData}>Retry</Button>
+          <Button onClick={loadData}>{t('common.retry')}</Button>
         </CardContent>
       </Card>
     );
   }
 
   const k = state.kpis;
-  const rangeLabel = RANGE_LABELS[range?.preset ?? 'today'];
+  const rangeLabel = t(RANGE_KEYS[range?.preset ?? 'today']);
 
   const activity = state.trend.map((p, i) => ({
     label: p.label,
@@ -385,10 +388,10 @@ export default function DashboardView({
   const cards: CardDef[] = k
     ? [
         {
-          title: "Today's Sales",
+          title: t('dash.todaySales'),
           value: fmt(k.sales),
           pct: k.salesDeltaPct,
-          hint: 'vs previous period',
+          hint: t('dash.vsPrevious'),
           icon: <DollarSign className="size-4 text-green-600" />,
           iconBg: 'bg-green-100',
           spark: state.trend.map((p) => p.total),
@@ -396,10 +399,10 @@ export default function DashboardView({
           onClick: onSalesClick,
         },
         {
-          title: 'Orders',
+          title: t('dash.orders'),
           value: String(k.orders),
           pct: k.ordersDeltaPct,
-          hint: 'completed sales',
+          hint: t('dash.completedSales'),
           icon: <ShoppingCart className="size-4 text-blue-600" />,
           iconBg: 'bg-blue-100',
           spark: state.trend.map((p) => p.orders),
@@ -407,9 +410,9 @@ export default function DashboardView({
           onClick: onSalesClick,
         },
         {
-          title: 'Profit',
+          title: t('dash.profit'),
           value: fmt(k.profit),
-          hint: `Margin ${(k.marginPct ?? 0).toFixed(1)}% of sales`,
+          hint: t('dash.marginOfSales', { pct: (k.marginPct ?? 0).toFixed(1) }),
           icon: <Wallet className="size-4 text-purple-600" />,
           iconBg: 'bg-purple-100',
           spark: state.trend.map((p) => p.profit),
@@ -423,15 +426,19 @@ export default function DashboardView({
               const expectedCash = ds.live?.expectedCash ?? open?.floatAmount ?? 0;
               return [
                 {
-                  title: 'Cash Drawer',
+                  title: t('dash.cashDrawer'),
                   value: fmt(expectedCash),
                   hint: open
-                    ? `Float ${fmt(open.floatAmount ?? 0)} · Cash sales ${fmt(ds.live?.cashSales ?? 0)} · Opened ${new Date(open.openedAt).toLocaleTimeString()}`
-                    : 'Drawer closed — start the day to open it',
+                    ? t('dash.floatCashOpened', {
+                        float: fmt(open.floatAmount ?? 0),
+                        cash: fmt(ds.live?.cashSales ?? 0),
+                        time: new Date(open.openedAt).toLocaleTimeString(uiLocale(locale)),
+                      })
+                    : t('dash.drawerClosedDesc'),
                   icon: <Wallet className="size-4 text-emerald-600" />,
                   iconBg: 'bg-emerald-100',
                   badge: {
-                    label: open ? 'Live' : 'Closed',
+                    label: open ? t('dash.live') : t('dash.closed'),
                     variant: open ? 'default' : 'outline',
                   },
                   spark: state.trend.map(() => 0),
@@ -453,7 +460,7 @@ export default function DashboardView({
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{greeting}</h1>
           <p className="text-sm text-muted-foreground">
-            {settings?.store || 'Store POS'} · {rangeLabel} overview
+            {t('dash.overview', { store: settings?.store || 'Store POS', range: rangeLabel })}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -461,38 +468,38 @@ export default function DashboardView({
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
           </span>
-          Live · updated {Math.round((Date.now() - updatedAt) / 1000)}s ago
+          {t('shell.updatedAgo', { seconds: Math.round((Date.now() - updatedAt) / 1000) })}
 <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button variant="outline" size="icon-sm" className="ml-1" aria-label="Refresh" onClick={loadData}>
+                  <Button variant="outline" size="icon-sm" className="ml-1" aria-label={t('dash.refresh')} onClick={loadData}>
                     <RefreshCw className="size-3.5" />
                   </Button>
                 }
               />
-              <TooltipContent>Refresh</TooltipContent>
+              <TooltipContent>{t('dash.refresh')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
                 render={
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon-sm" className="ml-1" aria-label="Export dashboard">
+                      <Button variant="outline" size="icon-sm" className="ml-1" aria-label={t('dash.exportDashboard')}>
                         <Download className="size-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-48">
                       <DropdownMenuItem onClick={() => handleExport('xlsx')}>
-                        <FileSpreadsheet className="size-4 mr-2" /> Export to Excel (.xlsx)
+                        <FileSpreadsheet className="size-4 mr-2" /> {t('sales.exportExcel')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleExport('csv')}>
-                        <FileText className="size-4 mr-2" /> Export to CSV (multiple files)
+                        <FileText className="size-4 mr-2" /> {t('dash.exportCsvMulti')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 }
               />
-              <TooltipContent>Export Dashboard</TooltipContent>
+              <TooltipContent>{t('dash.exportDashboard')}</TooltipContent>
             </Tooltip>
         </div>
       </header>
@@ -501,7 +508,7 @@ export default function DashboardView({
       {/* Performance */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Performance
+          {t('dash.performance')}
         </h2>
         {state.loading && !k ? (
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -530,17 +537,17 @@ export default function DashboardView({
       {/* Insights */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Insights
+          {t('dash.insights')}
         </h2>
         <div className="grid gap-3">
           {/* Sales Trend — full-width, the primary chart */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div>
-                <CardTitle>Sales by hour</CardTitle>
-                <p className="text-xs text-muted-foreground">{rangeLabel} vs previous period</p>
+                <CardTitle>{t('dash.salesByHour')}</CardTitle>
+                <p className="text-xs text-muted-foreground">{t('dash.vsPrevPeriod', { range: rangeLabel })}</p>
               </div>
-              <Badge variant="secondary">Sales and orders</Badge>
+              <Badge variant="secondary">{t('dash.salesAndOrders')}</Badge>
             </CardHeader>
             <CardContent>
               {state.loading ? (
@@ -548,8 +555,8 @@ export default function DashboardView({
               ) : state.trend.length === 0 ? (
                 <EmptyInline
                   icon={<BarChart3 className="size-6" />}
-                  title="No sales in this period"
-                  description="Completed sales will appear here as a trend against the previous period."
+                  title={t('dash.noSalesPeriod')}
+                  description={t('dash.noSalesPeriodDesc')}
                 />
               ) : (
                 <ChartContainer config={trendConfig} className="h-[280px] w-full">
@@ -613,7 +620,7 @@ export default function DashboardView({
             {/* Category donut with side legend */}
             <Card>
               <CardHeader>
-                <CardTitle>Sales by Category</CardTitle>
+                <CardTitle>{t('dash.salesByCategory')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {state.loading ? (
@@ -621,8 +628,8 @@ export default function DashboardView({
                 ) : state.categorySlices.length === 0 ? (
                   <EmptyInline
                     icon={<PieChartIcon className="size-6" />}
-                    title="No category data"
-                    description="Sales by product category will appear here."
+                    title={t('dash.noCategoryData')}
+                    description={t('dash.noCategoryDataDesc')}
                   />
                 ) : (
                   <div className="flex flex-col items-center gap-4 sm:flex-row">
@@ -678,8 +685,8 @@ export default function DashboardView({
             {/* Top products with revenue / quantity toggle */}
             <Card>
               <CardHeader>
-                <CardTitle>Best Sellers</CardTitle>
-                <p className="text-xs text-muted-foreground">Top 5 products · revenue vs quantity</p>
+                <CardTitle>{t('dash.bestSellers')}</CardTitle>
+                <p className="text-xs text-muted-foreground">{t('dash.bestSellersSub')}</p>
               </CardHeader>
               <CardContent>
                 {state.loading ? (
@@ -687,8 +694,8 @@ export default function DashboardView({
                 ) : state.topProducts.length === 0 ? (
                   <EmptyInline
                     icon={<Package className="size-6" />}
-                    title="No product sales yet"
-                    description="Your best sellers will appear here."
+                    title={t('dash.noProductSales')}
+                    description={t('dash.noProductSalesDesc')}
                   />
                 ) : (
                   <BestSellersChart
@@ -703,8 +710,8 @@ export default function DashboardView({
             {/* Fulfillment breakdown */}
             <Card>
               <CardHeader>
-                <CardTitle>Fulfillment Type</CardTitle>
-                <p className="text-xs text-muted-foreground">Sales split by order type</p>
+                <CardTitle>{t('dash.fulfillmentType')}</CardTitle>
+                <p className="text-xs text-muted-foreground">{t('dash.fulfillmentSub')}</p>
               </CardHeader>
               <CardContent>
                 {state.loading ? (
@@ -712,8 +719,8 @@ export default function DashboardView({
                 ) : state.fulfillmentSlices.length === 0 ? (
                   <EmptyInline
                     icon={<Package className="size-6" />}
-                    title="No fulfillment data"
-                    description="Sales by fulfillment type will appear here."
+                    title={t('dash.noFulfillment')}
+                    description={t('dash.noFulfillmentDesc')}
                   />
                 ) : (
                   <div className="flex flex-col items-center gap-4 sm:flex-row">
@@ -774,13 +781,13 @@ export default function DashboardView({
       {isManagerOrAdmin && state.cashierPerformance.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Team Performance
+            {t('dash.teamPerformance')}
           </h2>
           <Card>
             <CardHeader>
-              <CardTitle>Cashier KPIs</CardTitle>
+              <CardTitle>{t('dash.cashierKpis')}</CardTitle>
               <p className="text-xs text-muted-foreground">
-                {rangeLabel} · Click a row to view filtered sales
+                {t('dash.clickRow', { range: rangeLabel })}
               </p>
             </CardHeader>
             <CardContent className="p-0">
@@ -789,19 +796,19 @@ export default function DashboardView({
                   <TableHeader className="bg-muted/40">
                     <TableRow>
                       <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-4">
-                        CASHIER
+                        {t('dash.h.cashier')}
                       </TableHead>
                       <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
-                        SALES
+                        {t('dash.h.sales')}
                       </TableHead>
                       <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
-                        ORDERS
+                        {t('dash.h.orders')}
                       </TableHead>
                       <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
-                        AOV
+                        {t('dash.h.aov')}
                       </TableHead>
                       <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
-                        VOIDS
+                        {t('dash.h.voids')}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -838,7 +845,7 @@ export default function DashboardView({
       {/* Live + Inventory */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Operations
+          {t('dash.operations')}
         </h2>
         <div className="grid gap-3 lg:grid-cols-2">
           <TeamOverview team={state.teamOverview} symbol={symbol} onResumeHeld={onHeldClick} />
@@ -860,18 +867,19 @@ function TeamOverview({
   symbol: string;
   onResumeHeld?: (userId: number) => void;
 }) {
+  const { t } = useLocale();
   if (team.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="size-4" />
-            Team Overview
+            {t('dash.teamOverview')}
           </CardTitle>
-          <p className="text-xs text-muted-foreground">No active cashiers</p>
+          <p className="text-xs text-muted-foreground">{t('dash.noActiveCashiers')}</p>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground text-center py-4">No cashiers currently clocked in</p>
+          <p className="text-sm text-muted-foreground text-center py-4">{t('dash.noClockedIn')}</p>
         </CardContent>
       </Card>
     );
@@ -882,20 +890,20 @@ function TeamOverview({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users className="size-4" />
-          Team Overview
+          {t('dash.teamOverview')}
         </CardTitle>
-        <p className="text-xs text-muted-foreground">{team.length} cashier(s) clocked in</p>
+        <p className="text-xs text-muted-foreground">{t('dash.clockedIn', { count: team.length })}</p>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-4">CASHIER</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">HELD ORDERS</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">HELD TOTAL</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">SALES TODAY</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">ORDERS</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-4">{t('dash.h.cashier')}</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">{t('dash.h.heldOrders')}</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">{t('dash.h.heldTotal')}</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">{t('dash.h.salesToday')}</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-4">{t('dash.h.orders')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1005,14 +1013,15 @@ function BestSellersChart({
   symbol: string;
   config: ChartConfig;
 }) {
+  const { t } = useLocale();
   const [metric, setMetric] = useState<'revenue' | 'quantity'>('revenue');
   return (
     <div>
       <Tabs value={metric} onValueChange={(v) => setMetric(v as 'revenue' | 'quantity')} className="w-full">
         <div className="mb-2 flex justify-end">
           <TabsList className="h-7">
-            <TabsTrigger value="revenue" className="h-5 px-2 text-xs">Revenue</TabsTrigger>
-            <TabsTrigger value="quantity" className="h-5 px-2 text-xs">Quantity</TabsTrigger>
+            <TabsTrigger value="revenue" className="h-5 px-2 text-xs">{t('common.revenue')}</TabsTrigger>
+            <TabsTrigger value="quantity" className="h-5 px-2 text-xs">{t('dash.quantityTab')}</TabsTrigger>
           </TabsList>
         </div>
       </Tabs>
@@ -1044,7 +1053,7 @@ function BestSellersChart({
                 formatter={(value) =>
                   metric === 'revenue'
                     ? `${symbol}${Number(value).toFixed(2)}`
-                    : `${value} sold`
+                    : t('dash.sold', { value: String(value) })
                 }
               />
             }
@@ -1071,6 +1080,7 @@ function HourlyHeatmap({
   trend: TrendPoint[];
   symbol: string;
 }) {
+  const { t } = useLocale();
   const maxTotal = Math.max(1, ...trend.map((p) => p.total));
   const maxOrders = Math.max(1, ...trend.map((p) => p.orders));
   const [metric, setMetric] = useState<'total' | 'orders'>('total');
@@ -1087,15 +1097,15 @@ function HourlyHeatmap({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Sales intensity by hour (darker = busier)</p>
+        <p className="text-sm text-muted-foreground">{t('dash.heatmapSub')}</p>
         <Tabs value={metric} onValueChange={setMetric} className="w-auto">
           <TabsList className="h-7 bg-transparent">
-            <TabsTrigger value="total" className="h-6 px-2 text-xs">Revenue</TabsTrigger>
-            <TabsTrigger value="orders" className="h-6 px-2 text-xs">Orders</TabsTrigger>
+            <TabsTrigger value="total" className="h-6 px-2 text-xs">{t('common.revenue')}</TabsTrigger>
+            <TabsTrigger value="orders" className="h-6 px-2 text-xs">{t('dash.orders')}</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
-      <div className="grid grid-cols-12 gap-1" role="img" aria-label="Hourly sales heatmap">
+      <div className="grid grid-cols-12 gap-1" role="img" aria-label={t('dash.heatmapLabel')}>
         {trend.map((point, index) => {
           const value = metric === 'total' ? point.total : point.orders;
           const max = metric === 'total' ? maxTotal : maxOrders;
@@ -1103,7 +1113,7 @@ function HourlyHeatmap({
           const label = `${point.label}`;
           const displayValue = metric === 'total' 
             ? `${symbol}${Number(value).toFixed(2)}` 
-            : `${value} orders`;
+            : t('dash.ordersSuffix', { value: String(value) });
           
           return (
             <div
@@ -1123,7 +1133,7 @@ function HourlyHeatmap({
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-muted" />
-          <span>Quiet</span>
+          <span>{t('dash.quiet')}</span>
         </span>
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-primary/10" />
@@ -1136,7 +1146,7 @@ function HourlyHeatmap({
         </span>
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-primary" />
-          <span>Peak</span>
+          <span>{t('dash.peak')}</span>
         </span>
       </div>
     </div>

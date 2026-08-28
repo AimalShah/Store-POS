@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useLocale } from '@/i18n/LocaleContext';
 import {
   Command,
   CommandDialog,
@@ -31,6 +32,7 @@ export function CommandPalette({
   onOpenChange: (open: boolean) => void;
   commands: PaletteCommand[];
 }) {
+  const { t } = useLocale();
   const groups = React.useMemo(() => {
     const map = new Map<string, PaletteCommand[]>();
     for (const c of commands) {
@@ -44,9 +46,9 @@ export function CommandPalette({
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <Command>
-        <CommandInput placeholder="Search products, pages, actions…" />
+        <CommandInput placeholder={t('cmd.placeholder')} />
         <CommandList>
-          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandEmpty>{t('cmd.noResults')}</CommandEmpty>
           {groups.map(([group, items], i) => (
             <React.Fragment key={group}>
               {i > 0 && <CommandSeparator />}

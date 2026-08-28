@@ -1,5 +1,6 @@
 import React from 'react';
 import { getUploadsBase, Settings, Transaction, ProductComponent } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
 type Props = {
   tx: Transaction;
@@ -14,6 +15,7 @@ function orderNumber(tx: Transaction): string {
 }
 
 export default function Invoice({ tx, settings, symbol }: Props) {
+  const { t } = useLocale();
   const items = Array.isArray(tx.items) ? tx.items : [];
   const subtotal = Number(tx.subtotal ?? 0);
   const discount = Number(tx.discount ?? 0);
@@ -25,29 +27,31 @@ export default function Invoice({ tx, settings, symbol }: Props) {
   const isVoided = tx.status === 2;
 
   const meta: [string, string | number][] = [
-    ['Date', new Date(tx.date).toLocaleString()],
-    ['Cashier', tx.user || '-'],
-    ['Customer', tx.customer_name || 'Walk-in'],
+    [t('inv.date'), new Date(tx.date).toLocaleString()],
+    [t('inv.cashier'), tx.user || '-'],
+    [t('inv.customer'), tx.customer_name || t('inv.walkIn')],
   ];
 
-  const totals: Array<[string, string]> = [['Subtotal', `${symbol}${subtotal.toFixed(2)}`]];
-  if (discount > 0) totals.push(['Discount', `-${symbol}${discount.toFixed(2)}`]);
-  if (tax > 0) totals.push([settings?.tax || 'Tax', `${symbol}${tax.toFixed(2)}`]);
-  totals.push(['TOTAL', `${symbol}${total.toFixed(2)}`]);
+  const totalLabel = t('inv.total');
+
+  const totals: Array<[string, string]> = [[t('inv.subtotal'), `${symbol}${subtotal.toFixed(2)}`]];
+  if (discount > 0) totals.push([t('inv.discount'), `-${symbol}${discount.toFixed(2)}`]);
+  if (tax > 0) totals.push([settings?.tax || t('inv.tax'), `${symbol}${tax.toFixed(2)}`]);
+  totals.push([totalLabel, `${symbol}${total.toFixed(2)}`]);
   if (tx.payment_breakdown && tx.payment_breakdown.length > 0) {
     for (const pb of tx.payment_breakdown) {
       totals.push([pb.method, `${symbol}${Number(pb.amount).toFixed(2)}`]);
     }
   } else {
-    totals.push(['Paid', `${symbol}${paid.toFixed(2)}`]);
+    totals.push([t('inv.paid'), `${symbol}${paid.toFixed(2)}`]);
   }
-  totals.push(['Change', `${symbol}${change.toFixed(2)}`]);
+  totals.push([t('inv.change'), `${symbol}${change.toFixed(2)}`]);
 
   return (
     <div className="font-mono text-sm relative">
       {isVoided && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-4xl font-extrabold text-destructive/20 rotate-[-30deg] select-none">VOIDED</div>
+          <div className="text-4xl font-extrabold text-destructive/20 rotate-[-30deg] select-none">{t('inv.voided')}</div>
         </div>
       )}
       {logo ? <img className="mx-auto mb-2 h-16 w-auto object-contain" src={logo} alt="" /> : null}
@@ -62,7 +66,7 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         <div className="text-center text-xs text-muted-foreground">{settings.contact}</div>
       ) : null}
 
-      <div className="mt-2 text-center font-semibold tracking-widest">{`ORDER #${orderNumber(tx)}`}</div>
+      <div className="mt-2 text-center font-semibold tracking-widest">{t('inv.order', { number: orderNumber(tx) })}</div>
 
       <div className="mt-2 space-y-0.5">
         {meta.map(([label, value]) => (
@@ -76,26 +80,26 @@ export default function Invoice({ tx, settings, symbol }: Props) {
       {tx.fulfillment ? (
         <div className="mt-1 space-y-0.5">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Fulfillment</span>
+            <span className="text-muted-foreground">{t('inv.fulfillment')}</span>
             <span className="capitalize">{tx.fulfillment}</span>
           </div>
           {tx.fulfillment === 'delivery' && (
             <>
               {tx.delivery_name ? (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Name</span>
+                  <span className="text-muted-foreground">{t('inv.name')}</span>
                   <span>{tx.delivery_name}</span>
                 </div>
               ) : null}
               {tx.delivery_contact ? (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Contact</span>
+                  <span className="text-muted-foreground">{t('inv.contact')}</span>
                   <span>{tx.delivery_contact}</span>
                 </div>
               ) : null}
               {tx.delivery_address ? (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Address</span>
+                  <span className="text-muted-foreground">{t('inv.address')}</span>
                   <span>{tx.delivery_address}</span>
                 </div>
               ) : null}
@@ -109,9 +113,9 @@ export default function Invoice({ tx, settings, symbol }: Props) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-xs text-muted-foreground">
-            <th className="w-10 py-1 text-center">Qty</th>
-            <th className="py-1">Item</th>
-            <th className="py-1 text-right">Amount</th>
+            <th className="w-10 py-1 text-center">{t('inv.qty')}</th>
+            <th className="py-1">{t('inv.item')}</th>
+            <th className="py-1 text-right">{t('inv.amount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -180,7 +184,7 @@ export default function Invoice({ tx, settings, symbol }: Props) {
           <div
             key={label}
             className={`flex justify-between ${
-              label === 'TOTAL' ? 'font-bold' : 'text-muted-foreground'
+              label === totalLabel ? 'font-bold' : 'text-muted-foreground'
             }`}
           >
             <span className="capitalize">{label}</span>

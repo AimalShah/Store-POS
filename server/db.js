@@ -55,7 +55,8 @@ export async function initDatabase(filePath) {
       role TEXT NOT NULL DEFAULT 'Cashier',
       status TEXT NOT NULL DEFAULT '',
       force_password_change INTEGER NOT NULL DEFAULT 0,
-      last_login_at TEXT
+      last_login_at TEXT,
+      locale TEXT NOT NULL DEFAULT 'en'
     );
 
     CREATE TABLE IF NOT EXISTS categories (
@@ -363,6 +364,7 @@ logger.debug('db.exec() completed successfully');
           user_name TEXT NOT NULL DEFAULT '',
           till INTEGER NOT NULL DEFAULT 1,
           float_amount REAL NOT NULL DEFAULT 0,
+          running_balance REAL NOT NULL DEFAULT 0,
           counted_cash REAL,
           status TEXT NOT NULL DEFAULT 'open',
           opened_at TEXT NOT NULL,
@@ -412,6 +414,10 @@ logger.debug('db.exec() completed successfully');
     }
     if (!cols.some((c) => c.name === 'user_name')) {
       db.prepare("ALTER TABLE drawer_sessions ADD COLUMN user_name TEXT NOT NULL DEFAULT ''").run();
+    }
+    if (!cols.some((c) => c.name === 'running_balance')) {
+      db.prepare('ALTER TABLE drawer_sessions ADD COLUMN running_balance REAL NOT NULL DEFAULT 0').run();
+      db.prepare('UPDATE drawer_sessions SET running_balance = float_amount').run();
     }
   } catch {
     /* ignore */
@@ -587,6 +593,11 @@ logger.debug('db.exec() completed successfully');
     db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
   }
 
+  if (!cols.includes('locale')) {
+    logger.info('Adding locale column to users table');
+    db.exec("ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'");
+  }
+
   // Migration: replace flat permission booleans with a single Role (ADR-0006).
   // Existing users migrate sensibly: team/settings managers become Admin,
   // anyone with menu/till access becomes Manager, everyone else Cashier.
@@ -671,6 +682,7 @@ export function mapUser(row) {
     force_password_change: !!row.force_password_change,
     status: row.status,
     lastLoginAt: row.last_login_at || null,
+    locale: row.locale || 'en',
   };
 }
 

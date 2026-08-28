@@ -44,6 +44,7 @@ import {
   PrinterSettings,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useLocale } from '../i18n/LocaleContext';
 import Invoice from '../components/Invoice';
 import PaymentPad from '../components/PaymentPad';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -160,6 +161,7 @@ export default function TillView({
   loading = false,
 }: Props) {
   const { user, apiInfo } = useAuth();
+  const { t, locale } = useLocale();
   const scanRef = useRef<HTMLInputElement>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [query, setQuery] = useState('');
@@ -263,7 +265,7 @@ export default function TillView({
     if (!drawerSession) return;
     const cash = parseFloat(countedCash);
     if (isNaN(cash) || cash < 0) {
-      toast.error('Enter the total cash counted in the drawer.');
+      toast.error(t('till.countError'));
       return;
     }
     try {
@@ -272,9 +274,9 @@ export default function TillView({
       setCloseDrawerOpen(false);
       setCountedCash('');
       setDrawerWarningDismissed(false);
-      toast.success('Drawer closed for the day.');
+      toast.success(t('till.drawerClosedForDay'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not close the drawer.');
+      toast.error(err instanceof Error ? err.message : t('till.couldNotCloseDrawer'));
     }
   };
 
@@ -286,9 +288,9 @@ export default function TillView({
       setOpenDrawerDialog(false);
       setFloatAmount('');
       await loadDrawerSession();
-      toast.success('Drawer opened for the day.');
+      toast.success(t('till.drawerOpenedForDay'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not open the drawer.');
+      toast.error(err instanceof Error ? err.message : t('till.couldNotOpenDrawer'));
     }
   };
 
@@ -399,7 +401,7 @@ export default function TillView({
     if (!product) return;
     const sizes = product.sizes || [];
     if (sizes.length && selSize < 0) {
-      setError('Please choose a size');
+      setError(t('till.pleaseChooseSize'));
       return;
     }
     const selectedVariants: SelectedVariant[] = sizes.length
@@ -476,17 +478,17 @@ export default function TillView({
         setQuery('');
         scanRef.current?.focus();
       } else {
-        setError(`No product found for "${code}"`);
+        setError(t('till.noProductForCode', { code }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Scan failed');
+      setError(err instanceof Error ? err.message : t('till.scanFailed'));
     }
   };
 
   const openPay = () => {
     if (fulfillment === 'delivery' && !deliveryReady) {
       setError(
-        'Delivery needs a chosen customer or complete one-time details — tap the customer chip.'
+        t('till.deliveryNeedsDetails')
       );
       setCustomerDrawerOpen(true);
       return;
@@ -501,7 +503,7 @@ export default function TillView({
   const selectedCustomer = customers.find((c) => String(c.id) === customerId) || null;
   const chipLabel =
     selectedCustomer?.name ||
-    (oneTime && oneTime.name.trim() ? oneTime.name : 'Walk-in');
+    (oneTime && oneTime.name.trim() ? oneTime.name : t('common.walkin'));
   const deliveryReady =
     !!selectedCustomer ||
     !!(oneTime && oneTime.name.trim() && oneTime.phone.trim() && oneTime.address.trim());
@@ -545,9 +547,9 @@ export default function TillView({
       setNewName('');
       setNewPhone('');
       setCustomerDrawerOpen(false);
-      toast.success(`${name} saved to customers`);
+      toast.success(t('till.customerSaved', { name }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save customer');
+      setError(err instanceof Error ? err.message : t('till.couldNotSaveCustomer'));
     }
   };
 
@@ -639,7 +641,7 @@ export default function TillView({
       clearCart();
       await refreshHolds();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not hold order');
+      setError(err instanceof Error ? err.message : t('till.couldNotHold'));
     }
   };
 
@@ -658,7 +660,7 @@ export default function TillView({
 
     const linesTotal = currentLines.reduce((sum, l) => sum + l.amount, 0);
     if (linesTotal + 0.0001 < total) {
-      setError('Payment lines do not cover full order amount');
+      setError(t('till.paymentNotCovering'));
       return;
     }
 
@@ -737,7 +739,7 @@ export default function TillView({
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sale completion failed');
+      setError(err instanceof Error ? err.message : t('till.saleCompletionFailed'));
     }
   };
 
@@ -765,7 +767,7 @@ export default function TillView({
       await api.deleteTransaction(id);
       await refreshHolds();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not discard order');
+      setError(err instanceof Error ? err.message : t('till.couldNotDiscard'));
     }
   };
 
@@ -781,7 +783,7 @@ export default function TillView({
             className="ml-auto text-destructive-foreground hover:bg-destructive/80"
             onClick={() => setError(null)}
           >
-            Dismiss
+            {t('till.dismiss')}
           </Button>
         </div>
       )}
@@ -790,15 +792,15 @@ export default function TillView({
         <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
           <AlertCircle className="size-5 shrink-0 text-amber-600" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">Cash drawer is not open</p>
-            <p className="text-xs text-amber-600">Open the drawer before taking payments.</p>
+            <p className="text-sm font-medium text-amber-800">{t('till.drawerNotOpen')}</p>
+            <p className="text-xs text-amber-600">{t('till.openDrawerFirst')}</p>
           </div>
           <Button
             size="sm"
             className="bg-amber-600 text-white hover:bg-amber-700"
             onClick={() => setOpenDrawerDialog(true)}
           >
-            Open Drawer
+            {t('shell.openDrawer')}
           </Button>
           <Button
             variant="ghost"
@@ -806,7 +808,7 @@ export default function TillView({
             className="text-amber-600 hover:text-amber-800"
             onClick={() => setDrawerWarningDismissed(true)}
           >
-            Dismiss
+            {t('till.dismiss')}
           </Button>
         </div>
       )}
@@ -832,7 +834,7 @@ export default function TillView({
                 <span className="flex size-10 items-center justify-center rounded-lg bg-white/60">
                   <Search className="size-5" />
                 </span>
-                <span className="text-base font-bold leading-tight">Search</span>
+                <span className="text-base font-bold leading-tight">{t('till.tabSearch')}</span>
                 {categoryFilter === 'search' && (
                   <span className="absolute top-3 right-3 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
                     <Check className="size-3" />
@@ -881,7 +883,7 @@ export default function TillView({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onScan();
                 }}
-                placeholder="search all items — Enter to add"
+                placeholder={t('till.searchAllItems')}
                 className="pl-9 h-11 text-base"
                 autoFocus
               />
@@ -915,13 +917,13 @@ export default function TillView({
                     <h3 className="text-xl font-bold leading-tight capitalize md:text-xl">{p.name}</h3>
                     {(hasVariants || hasModifiers) && (
                       <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold leading-tight text-primary-foreground">
-                        Options
+                        {t('till.options')}
                       </span>
                     )}
                   </div>
                   {p.sizes && p.sizes.length > 0 ? (
                     <span className="font-extrabold text-primary text-base tabular-nums md:text-xs">
-                      From {symbol}
+                      {t('till.from')} {symbol}
                       {Math.min(...p.sizes.map((sz) => Number(sz.price) || 0)).toFixed(2)}
                     </span>
                   ) : (
@@ -936,7 +938,7 @@ export default function TillView({
             )}
             {!loading && !filteredProducts.length && (
               <div className="col-span-full py-16 text-center text-muted-foreground">
-                No products found matching your search.
+                {t('till.noProductsFound')}
               </div>
             )}
           </div>
@@ -953,7 +955,7 @@ export default function TillView({
                 data-testid="customer-chip"
                 onClick={openDrawer}
                 className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-                title="Choose customer"
+                title={t('till.chooseCustomer')}
               >
                 <span
                   className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
@@ -965,9 +967,9 @@ export default function TillView({
                   {chipLabel.slice(0, 2).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-medium">{chipLabel}</span>
-                {oneTime && <Badge variant="secondary" className="shrink-0">One-time</Badge>}
+                {oneTime && <Badge variant="secondary" className="shrink-0">{t('till.oneTime')}</Badge>}
                 {fulfillment === 'delivery' && !deliveryReady && (
-                  <Badge variant="destructive" className="shrink-0">Details needed</Badge>
+                  <Badge variant="destructive" className="shrink-0">{t('till.detailsNeeded')}</Badge>
                 )}
               </button>
             </div>
@@ -987,17 +989,17 @@ export default function TillView({
               <SelectContent>
                 <SelectItem value="dine-in">
                   <span className="flex items-center gap-2">
-                    <Utensils className="size-4" /> Dine-in
+                    <Utensils className="size-4" /> {t('till.dineIn')}
                   </span>
                 </SelectItem>
                 <SelectItem value="takeaway">
                   <span className="flex items-center gap-2">
-                    <ShoppingBag className="size-4" /> Takeaway
+                    <ShoppingBag className="size-4" /> {t('till.takeaway')}
                   </span>
                 </SelectItem>
                 <SelectItem value="delivery">
                   <span className="flex items-center gap-2">
-                    <Bike className="size-4" /> Delivery
+                    <Bike className="size-4" /> {t('till.delivery')}
                   </span>
                 </SelectItem>
               </SelectContent>
@@ -1008,7 +1010,7 @@ export default function TillView({
                 size="icon"
                 className="shrink-0"
                 onClick={() => setShowInvoice(true)}
-                title="Last Receipt"
+                title={t('till.lastReceipt')}
               >
                 <Receipt className="size-4" />
               </Button>
@@ -1020,7 +1022,7 @@ export default function TillView({
               className="relative h-10 shrink-0 gap-1.5 bg-blue-600 text-white shadow-[3px_3px_0_0] shadow-blue-600/40 transition-all hover:-translate-y-0.5 hover:bg-blue-700"
             >
               <Clock className="size-4" />
-              <span>Held</span>
+              <span>{t('till.held')}</span>
               {holdCount > 0 && (
                 <Badge variant="default" className="ml-1 bg-white/20 px-1.5 py-0.5 text-xs">
                   {holdCount}
@@ -1069,7 +1071,7 @@ export default function TillView({
                           size="icon"
                           className="size-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           onClick={() => setQty(item.id, item.quantity - 1)}
-                          aria-label="Decrease quantity"
+                          aria-label={t('till.decreaseQty')}
                         >
                           <Minus className="size-3.5" />
                         </Button>
@@ -1079,7 +1081,7 @@ export default function TillView({
                           size="icon"
                           className="size-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           onClick={() => setQty(item.id, item.quantity + 1)}
-                          aria-label="Increase quantity"
+                          aria-label={t('till.increaseQty')}
                         >
                           <Plus className="size-3.5" />
                         </Button>
@@ -1089,7 +1091,7 @@ export default function TillView({
                         size="icon"
                         className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => removeLine(item.id)}
-                        aria-label="Remove item"
+                        aria-label={t('till.removeItem')}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -1100,8 +1102,8 @@ export default function TillView({
               {!cart.length && (
                 <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-2">
                   <ShoppingBag className="size-10 text-muted-foreground/30" />
-                  <p className="text-sm font-medium">Cart is empty</p>
-                  <p className="text-xs text-muted-foreground">Scan a barcode or select products to start an order</p>
+                  <p className="text-sm font-medium">{t('till.cartEmpty')}</p>
+                  <p className="text-xs text-muted-foreground">{t('till.cartEmptyHint')}</p>
                 </div>
               )}
             </div>
@@ -1112,7 +1114,7 @@ export default function TillView({
         <CardFooter className="flex-col gap-3 border-t p-4 bg-muted/10">
           <div className="w-full space-y-2 text-sm">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Order Discount ({symbol})</span>
+              <span>{t('till.orderDiscount', { symbol })}</span>
               <Input
                 type="number"
                 min={0}
@@ -1121,9 +1123,9 @@ export default function TillView({
                 onChange={(e) => {
                   const val = Number(e.target.value);
                   if (val < 0) {
-                    setError('Discount cannot be negative');
+                    setError(t('till.discountNegative'));
                   } else {
-                    if (error === 'Discount cannot be negative') setError(null);
+                    if (error === t('till.discountNegative')) setError(null);
                     setDiscount(val);
                   }
                 }}
@@ -1133,7 +1135,7 @@ export default function TillView({
               />
             </div>
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'})</span>
+              <span>{t('till.subtotal', { count: itemCount, items: itemCount === 1 ? t('till.itemOne') : t('till.itemsMany') })}</span>
               <span data-testid="cart-subtotal">
                 {symbol}
                 {lineSubtotal.toFixed(2)}
@@ -1141,7 +1143,7 @@ export default function TillView({
             </div>
             {!!taxRate && (
               <div className="flex items-center justify-between text-muted-foreground">
-                <span>Tax ({taxRate}%)</span>
+                <span>{t('till.taxRow', { rate: taxRate })}</span>
                 <span>
                   {symbol}
                   {tax.toFixed(2)}
@@ -1149,7 +1151,7 @@ export default function TillView({
               </div>
             )}
             <div className="flex items-center justify-between text-lg font-bold pt-2 border-t text-foreground">
-              <span>Total</span>
+              <span>{t('common.total')}</span>
               <span className="text-primary text-xl" data-testid="cart-total">
                 {symbol}
                 {total.toFixed(2)}
@@ -1179,7 +1181,7 @@ export default function TillView({
               disabled={!cart.length || discount < 0}
               className="h-12 text-base font-semibold"
             >
-              Pay
+              {t('till.pay')}
             </Button>
           </div>
         </CardFooter>
@@ -1190,13 +1192,13 @@ export default function TillView({
       <Dialog open={closeDrawerOpen} onOpenChange={setCloseDrawerOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>End of Day — Close Drawer</DialogTitle>
+            <DialogTitle>{t('drawer.endDay')}</DialogTitle>
             <DialogDescription>
-              Count all the cash in the drawer and enter the total below.
+              {t('drawer.endDayDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="till-counted-cash">Total cash counted ({symbol})</Label>
+            <Label htmlFor="till-counted-cash">{t('drawer.counted', { symbol })}</Label>
             <Input
               id="till-counted-cash"
               type="number"
@@ -1210,10 +1212,10 @@ export default function TillView({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCloseDrawerOpen(false)}>
-              Not now
+              {t('drawer.notNow')}
             </Button>
             <Button onClick={confirmCloseDrawer} disabled={!countedCash.trim()}>
-              Close Drawer
+              {t('shell.closeDrawer')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1223,14 +1225,14 @@ export default function TillView({
       <Dialog open={openDrawerDialog} onOpenChange={setOpenDrawerDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Start Day — Open Drawer</DialogTitle>
+            <DialogTitle>{t('drawer.openTitle')}</DialogTitle>
             <DialogDescription>
-              How much cash are you putting in the drawer to start? You cannot take payments until the drawer is open.
+              {t('drawer.openDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="till-float-amount">Cash to start with ({symbol})</Label>
+              <Label htmlFor="till-float-amount">{t('drawer.start', { symbol })}</Label>
               <Input
                 id="till-float-amount"
                 type="number"
@@ -1243,15 +1245,15 @@ export default function TillView({
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              This is the money in the drawer before any sales.
+              {t('drawer.openHelper')}
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenDrawerDialog(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleOpenDrawer} disabled={!floatAmount.trim()}>
-              Open Drawer
+              {t('shell.openDrawer')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1261,7 +1263,7 @@ export default function TillView({
       <Dialog open={showHolds} onOpenChange={setShowHolds}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Held Orders</DialogTitle>
+            <DialogTitle>{t('till.heldOrders')}</DialogTitle>
             <DialogDescription>
               Select a parked order to resume or discard it.
             </DialogDescription>
@@ -1270,12 +1272,12 @@ export default function TillView({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Ref</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t('till.ref')}</TableHead>
+                  <TableHead>{t('till.customer')}</TableHead>
+                  <TableHead>{t('common.items')}</TableHead>
+                  <TableHead>{t('common.total')}</TableHead>
+                  <TableHead>{t('till.time')}</TableHead>
+                  <TableHead className="text-right">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1292,10 +1294,10 @@ export default function TillView({
                     </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button size="sm" onClick={() => restoreHold(h)}>
-                        Resume
+                        {t('till.resume')}
                       </Button>
                       <Button size="sm" variant="destructive" onClick={() => discardHold(h.id)}>
-                        Discard
+                        {t('till.discard')}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -1303,7 +1305,7 @@ export default function TillView({
                 {!holds.length && (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No held orders found.
+                      {t('till.noHeldOrders')}
                     </TableCell>
                   </TableRow>
                 )}
@@ -1312,7 +1314,7 @@ export default function TillView({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowHolds(false)}>
-              Close
+              {t('common.close')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1322,14 +1324,14 @@ export default function TillView({
       <Dialog open={showVoid} onOpenChange={setShowVoid}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Void this order?</DialogTitle>
+            <DialogTitle>{t('till.voidTitle')}</DialogTitle>
             <DialogDescription>
-              This discards the entire current order. It cannot be undone.
+              {t('till.voidDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setShowVoid(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -1338,7 +1340,7 @@ export default function TillView({
                 setShowVoid(false);
               }}
             >
-              Void Order
+              {t('till.voidOrder')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1359,14 +1361,14 @@ export default function TillView({
             <DialogTitle>{popupProduct?.name}</DialogTitle>
             <DialogDescription>
               {symbol}
-              {popupProduct ? Number(popupProduct.price).toFixed(2) : '0.00'} base
+              {popupProduct ? Number(popupProduct.price).toFixed(2) : '0.00'} {t('till.base')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[50vh] overflow-auto pr-1">
             {(popupProduct?.sizes || []).length > 0 && (
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">
-                  Size <span className="text-xs font-normal text-muted-foreground">(choose one)</span>
+                  {t('till.size')} <span className="text-xs font-normal text-muted-foreground">{t('till.chooseOne')}</span>
                 </Label>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {(popupProduct?.sizes || []).map((s, si) => (
@@ -1392,7 +1394,7 @@ export default function TillView({
             {(popupProduct?.modifiers || []).map((group, gi) => (
               <div key={gi} className="space-y-2">
                 <Label className="text-sm font-semibold">
-                  {group.name} <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                  {group.name} <span className="text-xs font-normal text-muted-foreground">{t('till.optional')}</span>
                 </Label>
                 <div className="grid gap-1">
                   {group.options.map((opt, oi) => (
@@ -1429,11 +1431,10 @@ export default function TillView({
           )}
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => { setPopupProduct(null); setError(null); }}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={confirmVariantPopup} className="px-8 font-semibold">
-              Add · {symbol}
-              {popupUnitPrice().toFixed(2)}
+              {t('till.addToOrder', { price: `${symbol}${popupUnitPrice().toFixed(2)}` })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1443,9 +1444,9 @@ export default function TillView({
       <Dialog open={showPay} onOpenChange={setShowPay}>
         <DialogContent className="sm:max-w-7xl">
           <DialogHeader>
-            <DialogTitle>Checkout</DialogTitle>
+            <DialogTitle>{t('till.checkout')}</DialogTitle>
             <DialogDescription>
-              Total to pay: <span className="font-bold text-foreground">{symbol}{total.toFixed(2)}</span>
+              {t('till.totalToPay')} <span className="font-bold text-foreground">{symbol}{total.toFixed(2)}</span>
             </DialogDescription>
           </DialogHeader>
 
@@ -1459,7 +1460,7 @@ export default function TillView({
                 className="flex flex-col gap-1 h-14"
               >
                 <Banknote className="size-5" />
-                <span className="text-xs">Cash</span>
+                <span className="text-xs">{t('till.method.cash')}</span>
               </Button>
               <Button
                 type="button"
@@ -1468,7 +1469,7 @@ export default function TillView({
                 className="flex flex-col gap-1 h-14"
               >
                 <CreditCard className="size-5" />
-                <span className="text-xs">Card</span>
+                <span className="text-xs">{t('till.method.card')}</span>
               </Button>
               <Button
                 type="button"
@@ -1477,7 +1478,7 @@ export default function TillView({
                 className="flex flex-col gap-1 h-14"
               >
                 <Smartphone className="size-5" />
-                <span className="text-xs">Mobile Wallet</span>
+                <span className="text-xs">{t('till.method.mobile')}</span>
               </Button>
             </div>
 
@@ -1486,24 +1487,24 @@ export default function TillView({
               <div className="space-y-4">
                 {/* Input & Add Line */}
                 <div className="grid gap-2">
-                  <Label>Amount paid ({symbol})</Label>
+                  <Label>{t('till.amountPaid', { symbol })}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={amountInput}
                       onChange={(e) => setAmountInput(e.target.value.replace(/[^\d.]/g, ''))}
-                      placeholder={`Amount still owed: ${symbol}${remainingDue.toFixed(2)}`}
+                      placeholder={t('till.amountOwed', { amount: `${symbol}${remainingDue.toFixed(2)}` })}
                       className="h-11 font-mono text-base text-right"
                       autoFocus
                       data-testid="pay-amount"
                     />
                     <Button type="button" onClick={addPaymentLine} className="h-11 px-4">
-                      Add
+                      {t('till.add')}
                     </Button>
                   </div>
                 </div>
 
                 {selectedMethod === 'cash' && (
-                  <ErrorBoundary fallbackTitle="The keypad hit an error">
+                  <ErrorBoundary fallbackTitle={t('till.keypadFallback')}>
                     <PaymentPad
                       value={amountInput}
                       onChange={setAmountInput}
@@ -1517,14 +1518,14 @@ export default function TillView({
                 {/* Added Payment Lines */}
                 {paymentLines.length > 0 && (
                   <div className="space-y-2 border rounded-md p-3 bg-muted/20">
-                    <Label className="text-xs font-semibold text-muted-foreground">Payments added</Label>
+                    <Label className="text-xs font-semibold text-muted-foreground">{t('till.paymentsAdded')}</Label>
                     {paymentLines.map((line, idx) => (
                       <div key={idx} className="flex items-center justify-between text-sm py-1 border-b last:border-b-0">
                         <span className="capitalize font-medium">{line.method}</span>
                         <div className="flex items-center gap-2">
                           <span>
                             {symbol}{line.amount.toFixed(2)}
-                            {line.tendered && line.tendered > line.amount ? ` (Tendered: ${symbol}${line.tendered.toFixed(2)})` : ''}
+                            {line.tendered && line.tendered > line.amount ? ` ${t('till.tendered', { amount: `${symbol}${line.tendered.toFixed(2)}` })}` : ''}
                           </span>
                           <Button
                             variant="ghost"
@@ -1543,13 +1544,13 @@ export default function TillView({
                 {/* Summary */}
                 <div className="flex flex-col gap-1 rounded-lg border p-3 bg-muted/40 text-sm">
                   <div className="flex justify-between">
-                    <span>Still owed:</span>
+                    <span>{t('till.stillOwed')}</span>
                     <span className={`font-bold ${remainingDue > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                       {symbol}{remainingDue.toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Change back:</span>
+                    <span>{t('till.changeBack')}</span>
                     <span>{symbol}{totalChange.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1558,7 +1559,7 @@ export default function TillView({
               {/* Right: number pad */}
               {selectedMethod === 'cash' && (
                 <div>
-                  <ErrorBoundary fallbackTitle="The keypad hit an error">
+                  <ErrorBoundary fallbackTitle={t('till.keypadFallback')}>
                     <PaymentPad
                       value={amountInput}
                       onChange={setAmountInput}
@@ -1574,7 +1575,7 @@ export default function TillView({
 
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setShowPay(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={completeSale}
@@ -1582,7 +1583,7 @@ export default function TillView({
               className="flex-1 font-semibold"
               data-testid="pay-now"
             >
-              Pay Now
+              {t('till.payNow')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1592,18 +1593,18 @@ export default function TillView({
       <Dialog open={showInvoice} onOpenChange={setShowInvoice}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Sale Complete &amp; Receipt</DialogTitle>
+            <DialogTitle>{t('till.saleComplete')}</DialogTitle>
           </DialogHeader>
           <div id="printable-receipt" className="border p-4 rounded-md bg-white text-black">
             {invoice && (
-              <ErrorBoundary fallbackTitle="The receipt failed to render">
+              <ErrorBoundary fallbackTitle={t('till.receiptFailed')}>
                 <Invoice tx={invoice} settings={settings} symbol={symbol} />
               </ErrorBoundary>
             )}
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setShowInvoice(false)}>
-              Close
+              {t('common.close')}
             </Button>
             {printerSettings?.kotInterface && (
               <Button
@@ -1613,7 +1614,7 @@ export default function TillView({
                 onClick={() => invoice && void printKot(invoice)}
               >
                 <Printer className="size-3.5 mr-1.5" />
-                Reprint Kitchen Ticket
+                {t('till.reprintKot')}
               </Button>
             )}
             <Button
@@ -1621,7 +1622,7 @@ export default function TillView({
               onClick={() => (invoice ? void printReceipt(invoice, settings, false) : window.print())}
             >
               <Printer className="size-4" />
-              Print
+              {t('till.print')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1629,15 +1630,15 @@ export default function TillView({
 <Sheet open={customerDrawerOpen} onOpenChange={(o) => { if (!o) setCustomerDrawerOpen(false); }}>
         <SheetContent side="right" className="flex w-full flex-col gap-5 overflow-y-auto sm:max-w-md p-4">
           <div className="flex flex-col gap-1 border-b border-border">
-            <h2 className="font-heading font-medium text-foreground">Customer</h2>
-            <p className="text-sm text-muted-foreground">Attach a customer to this order, or keep it a walk-in.</p>
+            <h2 className="font-heading font-medium text-foreground">{t('till.customer')}</h2>
+            <p className="text-sm text-muted-foreground">{t('till.customerSheetDesc')}</p>
           </div>
 
           {selectedCustomer || oneTime && oneTime.name.trim() ? (
             <div className="w-full rounded-full bg-primary/10 p-2.5">
               <Avatar
                 className="size-6 bg-primary p-1"
-                aria-label="customer avatar"
+                aria-label={t('till.customerAvatar')}
               >
                 <div className="size-4 rounded-full bg-primary/20">
                   {(selectedCustomer?.name || oneTime?.name || '')
@@ -1670,13 +1671,13 @@ export default function TillView({
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-3 rounded-lg bg-muted p-1.5">
               <TabsTrigger value="search" className="text-sm font-medium">
-                Search
+                {t('till.tabSearch')}
               </TabsTrigger>
               <TabsTrigger value="new" className="text-sm font-medium">
-                New
+                {t('till.tabNew')}
               </TabsTrigger>
               <TabsTrigger value="one-time" className="text-sm font-medium">
-                One-time
+                {t('till.oneTime')}
               </TabsTrigger>
             </TabsList>
 
@@ -1685,13 +1686,13 @@ export default function TillView({
                 id="drawer-search"
                 value={drawerQuery}
                 onChange={(e) => setDrawerQuery(e.target.value)}
-                placeholder="Name or phone…"
+                placeholder={t('till.nameOrPhone')}
                 autoFocus
               />
               {drawerQuery.trim() && (
                 <div className="rounded-md border max-h-48 overflow-y-auto">
                   {drawerResults.length === 0 ? (
-                    <p className="p-3 text-center text-sm text-muted-foreground">No customers match that search.</p>
+                    <p className="p-3 text-center text-sm text-muted-foreground">{t('till.noCustomers')}</p>
                   ) : (
                     drawerResults.map((c) => (
                       <button
@@ -1711,31 +1712,31 @@ export default function TillView({
 
             <TabsContent value="new" className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Saved to the customers book for next time.
+                {t('till.newCustomerHint')}
               </p>
               <div className="space-y-2">
                 <Input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Name"
+                  placeholder={t('common.name')}
                 />
                 <Input
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="Phone"
+                  placeholder={t('till.phone')}
                   inputMode="tel"
                 />
                 <Input
                   value={deliveryAddress}
                   onChange={(e) => setDeliveryAddress(e.target.value)}
-                  placeholder="Address"
+                  placeholder={t('till.address')}
                   className="w-full"
                 />
                 <Button
                   type="button"
                   onClick={() => {
                     if (!newName.trim()) {
-                      setError('Name is required');
+                      setError(t('common.nameRequired'));
                       return;
                     }
                     setError(null);
@@ -1743,7 +1744,7 @@ export default function TillView({
                   }}
                   className="w-full"
                 >
-                  Save & attach
+                  {t('till.saveAttach')}
                 </Button>
                 {error && (
                   <p className="mt-1 text-xs text-destructive">{error}</p>
@@ -1753,30 +1754,30 @@ export default function TillView({
 
             <TabsContent value="one-time" className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Used for this order only. Never saved to the customers book.
+                {t('till.oneTimeHint')}
               </p>
               <div className="space-y-2">
                 <Input
                   value={draftOneTime.name}
                   onChange={(e) => setDraftOneTime((d) => ({ ...d, name: e.target.value }))}
-                  placeholder="Name"
+                  placeholder={t('common.name')}
                 />
                 <Input
                   value={draftOneTime.phone}
                   onChange={(e) => setDraftOneTime((d) => ({ ...d, phone: e.target.value }))}
-                  placeholder="Phone"
+                  placeholder={t('till.phone')}
                   inputMode="tel"
                 />
                 <Input
                   value={draftOneTime.address}
                   onChange={(e) => setDraftOneTime((d) => ({ ...d, address: e.target.value }))}
-                  placeholder="Address"
+                  placeholder={t('till.address')}
                 />
                 <Button
                   type="button"
                   onClick={() => {
                     if (!draftOneTime.name.trim()) {
-                      setError('Name is required');
+                      setError(t('common.nameRequired'));
                       return;
                     }
                     setError(null);
@@ -1784,7 +1785,7 @@ export default function TillView({
                   }}
                   className="w-full"
                 >
-                  Attach to this order
+                  {t('till.attachToOrder')}
                 </Button>
                 {error && (
                   <p className="mt-1 text-xs text-destructive">{error}</p>
@@ -1805,9 +1806,9 @@ export default function TillView({
                 setCustomerDrawerOpen(false);
               }}
             >
-              Keep as walk-in
+              {t('till.keepWalkin')}
             </Button>
-            <Button type="button">Done</Button>
+            <Button type="button">{t('till.done')}</Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

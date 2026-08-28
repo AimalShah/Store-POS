@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { type DateRange as RdpRange } from 'react-day-picker';
 import { CalendarRange, ChevronDown } from 'lucide-react';
+import { useLocale } from '@/i18n/LocaleContext';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
@@ -15,11 +16,11 @@ import {
 
 export type PickerValue = { preset: RangePreset | 'custom'; range: DateRange };
 
-const PRESETS: { value: RangePreset; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
+const PRESETS: { value: RangePreset }[] = [
+  { value: 'today' },
+  { value: '7d' },
+  { value: '30d' },
+  { value: '90d' },
 ];
 
 function formatCustom(range: DateRange): string {
@@ -42,6 +43,7 @@ export function DateRangePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RangeDraft | undefined>(undefined);
+  const { t } = useLocale();
 
   useEffect(() => {
     if (!open) setDraft(undefined);
@@ -53,7 +55,9 @@ export function DateRangePicker({
   const selected: RdpRange | undefined = draft ?? rdp;
 
   const label =
-    value.preset === 'custom' ? formatCustom(value.range) : PRESETS.find((p) => p.value === value.preset)?.label;
+    value.preset === 'custom'
+      ? formatCustom(value.range)
+      : t(`daterange.${value.preset}`);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -83,7 +87,7 @@ export function DateRangePicker({
                   value.preset === p.value && 'bg-accent font-medium text-accent-foreground'
                 )}
               >
-                {p.label}
+                {t(`daterange.${p.value}`)}
               </button>
             ))}
           </div>

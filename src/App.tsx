@@ -2,6 +2,7 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import FirstRunWizard from './pages/FirstRunWizard';
 import AppShell from './layout/AppShell';
+import { LocaleProvider } from './i18n/LocaleContext';
 
 export default function App() {
   const { ready, user, firstRun } = useAuth();
@@ -21,5 +22,9 @@ export default function App() {
     return <LoginPage />;
   }
 
-  return <AppShell />;
+  return (
+    <LocaleProvider initialLocale={user.locale || 'en'}>
+      <AppShell />
+    </LocaleProvider>
+  );
 }
