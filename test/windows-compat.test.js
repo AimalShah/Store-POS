@@ -52,5 +52,6 @@ describe('Windows packaging configuration', () => {
 
   test('better-sqlite3 is unpacked so the native module loads on Windows', () => {
     expect(pkg.build?.asarUnpack).toContain('**/node_modules/better-sqlite3/**');
+    expect(pkg.build?.asarUnpack).toContain('**/node_modules/@koromix/koffi-win32-x64/**');
   });
 });

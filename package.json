@@ -46,7 +46,8 @@
       "package.json"
     ],
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**"
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/@koromix/koffi-win32-x64/**"
     ],
     "win": {
       "target": [
