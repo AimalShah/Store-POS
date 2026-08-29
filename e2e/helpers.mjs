@@ -36,7 +36,10 @@ export async function ensurePastFirstRun(page) {
 }
 
 export async function signInAsAdmin(page) {
-  await page.getByText('Sign in with password instead').click();
+  const passwordInstead = page.getByText('Sign in with password instead');
+  if (await passwordInstead.count()) {
+    await passwordInstead.click();
+  }
   await page.locator('#username').fill('admin');
   await page.locator('#password').fill('admin');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -135,6 +138,7 @@ export async function seedTillData(page) {
     });
 
     await postJson('/shifts/open', { floatAmount: 0, till: 1 });
+    await postJson('/drawer/open', { floatAmount: 0, till: 1 });
   });
 }
 
@@ -154,4 +158,8 @@ export async function setupTill(page) {
 
   await page.getByText('Till', { exact: false }).first().click();
   await expect(page.getByText('Cart is empty')).toBeVisible({ timeout: 20_000 });
+
+  // A fresh order starts on the fulfillment gate; pick Takeaway so the menu renders.
+  await page.getByTestId('fulfillment-choice-takeaway').click();
+  await expect(page.getByTestId('cat-tab-search')).toBeVisible({ timeout: 10_000 });
 }

@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   CalendarRange,
-  Check,
-  ChevronsUpDown,
   Download,
   Home,
   LayoutDashboard,
@@ -137,7 +135,7 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function ModeSwitcher({
+function ModeTabs({
   mode,
   onSelect,
 }: {
@@ -145,30 +143,31 @@ function ModeSwitcher({
   onSelect: (m: Mode) => void;
 }) {
   const { t } = useLocale();
-  const current =
-    mode === 'till'
-      ? { label: t('mode.till'), icon: <ShoppingCart className="size-4" /> }
-      : { label: t('mode.dashboard'), icon: <LayoutDashboard className="size-4" /> };
+  const tabs: { value: Mode; label: string; icon: React.ReactNode }[] = [
+    { value: 'till', label: t('mode.till'), icon: <ShoppingCart className="size-4" /> },
+    { value: 'dashboard', label: t('mode.dashboard'), icon: <LayoutDashboard className="size-4" /> },
+  ];
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="flex h-9 items-center gap-2 rounded-md border bg-background px-2.5 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-muted">
-        {current.icon}
-        <span>{current.label}</span>
-        <ChevronsUpDown className="size-4 text-muted-foreground" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuItem onClick={() => onSelect('till')}>
-          <ShoppingCart className="size-4" />
-          <span>{t('mode.till')}</span>
-          {mode === 'till' && <Check className="ml-auto size-4 text-primary" />}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSelect('dashboard')}>
-          <LayoutDashboard className="size-4" />
-          <span>{t('mode.dashboard')}</span>
-          {mode === 'dashboard' && <Check className="ml-auto size-4 text-primary" />}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex items-center gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label={t('mode.switch')}>
+      {tabs.map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          role="tab"
+          aria-selected={mode === tab.value}
+          data-testid={`mode-tab-${tab.value}`}
+          onClick={() => onSelect(tab.value)}
+          className={`flex h-10 items-center gap-2 rounded-md px-5 text-base font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+            mode === tab.value
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {tab.icon}
+          {tab.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -724,19 +723,22 @@ export default function AppShell() {
   function TopBar() {
     const { t } = useLocale();
     return (
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
-        {mode === 'dashboard' && <SidebarTrigger />}
+      <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          {mode === 'dashboard' && <SidebarTrigger />}
+          <div className="flex min-w-0 items-center gap-2" data-testid="topbar-brand">
+            {logoUrl && (
+              <img src={logoUrl} alt="" className="size-7 rounded object-contain" />
+            )}
+            <span className="truncate text-sm font-semibold">{storeName}</span>
+          </div>
+        </div>
 
-        <ModeSwitcher mode={mode} onSelect={switchMode} />
+        <ModeTabs mode={mode} onSelect={switchMode} />
 
-        {mode === 'dashboard' && (
-          <>
-            <Separator orientation="vertical" className="h-5" />
-            <DateRangePicker value={date} onChange={setDate} />
-          </>
-        )}
+        <div className="flex items-center justify-end gap-1.5">
+          {mode === 'dashboard' && <DateRangePicker value={date} onChange={setDate} />}
 
-        <div className="ml-auto flex items-center gap-1.5">
           <Button
             variant="outline"
             size="sm"

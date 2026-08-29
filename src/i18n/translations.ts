@@ -33,6 +33,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     'shell.till.desc': 'Start a sale and take payments at the counter.',
     'mode.till': 'Till',
     'mode.dashboard': 'Dashboard',
+    'mode.switch': 'Switch mode',
 
     // Top bar
     'shell.search': 'Search',
@@ -249,6 +250,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     'till.dineIn': 'Dine-in',
     'till.takeaway': 'Takeaway',
     'till.delivery': 'Delivery',
+    'till.changeFulfillment': 'Change how this order is fulfilled',
+    'till.fulfillmentGateTitle': 'How will this order be fulfilled?',
+    'till.fulfillmentGateDesc': 'Choose how the customer receives their order.',
+    'till.fulfillmentPickerTitle': 'Change fulfillment',
     'till.lastReceipt': 'Last Receipt',
     'till.held': 'Held',
     'till.heldOrders': 'Held Orders',
@@ -677,6 +682,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     'shell.till.desc': 'کاؤنٹر پر فروخت شروع کریں اور ادائیگیاں وصول کریں۔',
     'mode.till': 'کاؤنٹر',
     'mode.dashboard': 'ڈیش بورڈ',
+    'mode.switch': 'موڈ تبدیل کریں',
 
     // Top bar
     'shell.search': 'تلاش',
@@ -891,6 +897,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     'till.dineIn': 'ڈائن اِن',
     'till.takeaway': 'ٹیک اوے',
     'till.delivery': 'ڈیلیوری',
+    'till.changeFulfillment': 'آرڈر کی فراہمی کا طریقہ تبدیل کریں',
+    'till.fulfillmentGateTitle': 'یہ آرڈر کیسے پورا ہوگا؟',
+    'till.fulfillmentGateDesc': 'منتخب کریں کہ کسٹمر اپنا آرڈر کیسے حاصل کرے گا۔',
+    'till.fulfillmentPickerTitle': 'فراہمی کا طریقہ تبدیل کریں',
     'till.lastReceipt': 'آخری رسید',
     'till.held': 'ہولڈ',
     'till.heldOrders': 'ہولڈ آرڈرز',

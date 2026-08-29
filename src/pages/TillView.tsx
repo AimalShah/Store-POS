@@ -6,6 +6,7 @@ import {
   Bike,
   Check,
   ChefHat,
+  ChevronDown,
   Clock,
   Cookie,
   CreditCard,
@@ -173,9 +174,12 @@ export default function TillView({
   const [activeTab, setActiveTab] = useState<'search' | 'new' | 'one-time'>('search');
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [newAddress, setNewAddress] = useState('');
   const [draftOneTime, setDraftOneTime] = useState({ name: '', phone: '', address: '' });
   const [discount, setDiscount] = useState(0);
   const [fulfillment, setFulfillment] = useState<'takeaway' | 'dine-in' | 'delivery'>('takeaway');
+  const [fulfillmentChosen, setFulfillmentChosen] = useState(false);
+  const [fulfillmentPickerOpen, setFulfillmentPickerOpen] = useState(false);
   const [deliveryName, setDeliveryName] = useState('');
   const [deliveryContact, setDeliveryContact] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -451,12 +455,23 @@ export default function TillView({
     setDiscount(0);
     setActiveHoldId(null);
     setCustomerId('0');
+    setOneTime(null);
     setFulfillment('takeaway');
+    setFulfillmentChosen(false);
     setDeliveryName('');
     setDeliveryContact('');
     setDeliveryAddress('');
     setError(null);
     scanRef.current?.focus();
+  };
+
+  const chooseFulfillment = (next: 'takeaway' | 'dine-in' | 'delivery') => {
+    setFulfillment(next);
+    setFulfillmentChosen(true);
+    setFulfillmentPickerOpen(false);
+    if (next === 'delivery' && customerId === '0' && !oneTime) {
+      setCustomerDrawerOpen(true);
+    }
   };
 
   const onScan = async () => {
@@ -533,7 +548,7 @@ export default function TillView({
     const name = newName.trim();
     if (!name) return;
     try {
-      await api.saveCustomer({ name, phone: newPhone.trim(), email: '', address: '' });
+      await api.saveCustomer({ name, phone: newPhone.trim(), email: '', address: newAddress.trim() });
       await onRefresh();
       const refreshed = await api.getCustomers();
       const created = refreshed.filter((c) => c.name === name).sort((a, b) => b.id - a.id)[0];
@@ -546,6 +561,7 @@ export default function TillView({
       }
       setNewName('');
       setNewPhone('');
+      setNewAddress('');
       setCustomerDrawerOpen(false);
       toast.success(t('till.customerSaved', { name }));
     } catch (err) {
@@ -592,6 +608,26 @@ export default function TillView({
       ]);
     }
     setAmountInput('');
+  };
+
+  // Refocus the amount field (with its text selected) after a payment line is
+  // added or the method changes. Query the live DOM fresh (instead of the ref)
+  // because the input node is recreated when the dialog re-renders, which
+  // detaches the ref before the timer fires.
+  useEffect(() => {
+    if (!showPay) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        '[data-testid="pay-amount"]',
+      );
+      el?.focus();
+      el?.select();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [paymentLines, selectedMethod, showPay]);
+
+  const switchPaymentMethod = (method: 'cash' | 'card' | 'mobile') => {
+    setSelectedMethod(method);
   };
 
   const removePaymentLine = (index: number) => {
@@ -676,7 +712,8 @@ export default function TillView({
     const body = {
       ref_number: '',
       customer: customerId,
-      customer_name: customer?.name || 'Walk-in Customer',
+      customer_name:
+        customer?.name || (oneTime?.name.trim() ? oneTime.name : 'Walk-in Customer'),
       status: 1,
       user_id: user?._id || 0,
       user: user?.fullname || '',
@@ -753,8 +790,21 @@ export default function TillView({
     setCustomerId(String(order.customer || '0'));
     setDiscount(order.discount || 0);
     setActiveHoldId(order.id);
-    setOneTime(null);
+    if (order.fulfillment !== 'delivery' || (order.customer && order.customer !== '0')) {
+      setOneTime(null);
+    } else if (order.fulfillment === 'delivery') {
+      setOneTime(
+        order.delivery_name || order.delivery_contact || order.delivery_address
+          ? {
+              name: order.delivery_name || '',
+              phone: order.delivery_contact || '',
+              address: order.delivery_address || '',
+            }
+          : null
+      );
+    }
     setFulfillment((order.fulfillment as 'takeaway' | 'dine-in' | 'delivery') || 'takeaway');
+    setFulfillmentChosen(true);
     setDeliveryName(order.delivery_name || '');
     setDeliveryContact(order.delivery_contact || '');
     setDeliveryAddress(order.delivery_address || '');
@@ -774,7 +824,7 @@ export default function TillView({
   return (
     <div className="flex h-full flex-col gap-3 p-3 overflow-hidden bg-muted/20">
       {error && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-md bg-destructive px-4 py-3 text-destructive-foreground shadow-md">
+        <div className="fixed top-4 right-4 z-[100] flex items-center gap-2 rounded-md bg-destructive px-4 py-3 text-destructive-foreground shadow-md">
           <AlertCircle className="size-5 shrink-0" />
           <span className="text-sm font-medium">{error}</span>
           <Button
@@ -817,6 +867,47 @@ export default function TillView({
 
       {/* Menu surface: search + tabs + grid in one panel */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
+        {!fulfillmentChosen ? (
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 p-6"
+            data-testid="fulfillment-gate"
+          >
+            <div className="text-center">
+              <h2 className="text-2xl font-bold">{t('till.fulfillmentGateTitle')}</h2>
+              <p className="mt-1 text-muted-foreground">{t('till.fulfillmentGateDesc')}</p>
+            </div>
+            <div className="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
+              <button
+                type="button"
+                data-testid="fulfillment-choice-dine-in"
+                onClick={() => chooseFulfillment('dine-in')}
+                className="flex h-40 flex-col items-center justify-center gap-3 rounded-xl border-2 border-border bg-card p-6 text-center transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Utensils className="size-8" />
+                <span className="text-lg font-bold">{t('till.dineIn')}</span>
+              </button>
+              <button
+                type="button"
+                data-testid="fulfillment-choice-takeaway"
+                onClick={() => chooseFulfillment('takeaway')}
+                className="flex h-40 flex-col items-center justify-center gap-3 rounded-xl border-2 border-border bg-card p-6 text-center transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ShoppingBag className="size-8" />
+                <span className="text-lg font-bold">{t('till.takeaway')}</span>
+              </button>
+              <button
+                type="button"
+                data-testid="fulfillment-choice-delivery"
+                onClick={() => chooseFulfillment('delivery')}
+                className="flex h-40 flex-col items-center justify-center gap-3 rounded-xl border-2 border-border bg-card p-6 text-center transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Bike className="size-8" />
+                <span className="text-lg font-bold">{t('till.delivery')}</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="flex flex-col gap-2 border-b p-3">
           <ScrollArea className="w-full">
             <div className="flex flex-wrap overflow-y-scroll gap-2 pb-1">
@@ -943,6 +1034,8 @@ export default function TillView({
             )}
           </div>
         </ScrollArea>
+        </>
+        )}
       </div>
 
       {/* Right Panel: Cart Card */}
@@ -973,37 +1066,29 @@ export default function TillView({
                 )}
               </button>
             </div>
-            <Select
-              value={fulfillment}
-              onValueChange={(v) => {
-                const next = v as 'takeaway' | 'dine-in' | 'delivery';
-                setFulfillment(next);
-                if (next === 'delivery' && customerId === '0' && !oneTime) {
-                  setCustomerDrawerOpen(true);
-                }
-              }}
+            <button
+              type="button"
+              data-testid="fulfillment-chip"
+              onClick={() => setFulfillmentPickerOpen(true)}
+              className="flex h-10 shrink-0 items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              title={t('till.changeFulfillment')}
             >
-              <SelectTrigger className="h-10 w-44 shrink-0" data-testid="fulfillment-trigger">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dine-in">
-                  <span className="flex items-center gap-2">
-                    <Utensils className="size-4" /> {t('till.dineIn')}
-                  </span>
-                </SelectItem>
-                <SelectItem value="takeaway">
-                  <span className="flex items-center gap-2">
-                    <ShoppingBag className="size-4" /> {t('till.takeaway')}
-                  </span>
-                </SelectItem>
-                <SelectItem value="delivery">
-                  <span className="flex items-center gap-2">
-                    <Bike className="size-4" /> {t('till.delivery')}
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+              {fulfillment === 'dine-in' ? (
+                <Utensils className="size-4" />
+              ) : fulfillment === 'delivery' ? (
+                <Bike className="size-4" />
+              ) : (
+                <ShoppingBag className="size-4" />
+              )}
+              <span>
+                {fulfillment === 'dine-in'
+                  ? t('till.dineIn')
+                  : fulfillment === 'delivery'
+                    ? t('till.delivery')
+                    : t('till.takeaway')}
+              </span>
+              <ChevronDown className="size-4 text-muted-foreground" />
+            </button>
             {invoice && (
               <Button
                 variant="ghost"
@@ -1443,6 +1528,12 @@ export default function TillView({
       {/* Multi-method Split Checkout Dialog */}
       <Dialog open={showPay} onOpenChange={setShowPay}>
         <DialogContent className="sm:max-w-7xl">
+          {error && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive bg-destructive px-4 py-3 text-destructive-foreground shadow-sm" data-testid="checkout-error">
+              <AlertCircle className="size-5 shrink-0" />
+              <span className="text-sm font-medium">{error}</span>
+            </div>
+          )}
           <DialogHeader>
             <DialogTitle>{t('till.checkout')}</DialogTitle>
             <DialogDescription>
@@ -1456,7 +1547,7 @@ export default function TillView({
               <Button
                 type="button"
                 variant={selectedMethod === 'cash' ? 'default' : 'outline'}
-                onClick={() => setSelectedMethod('cash')}
+                onClick={() => switchPaymentMethod('cash')}
                 className="flex flex-col gap-1 h-14"
               >
                 <Banknote className="size-5" />
@@ -1465,7 +1556,7 @@ export default function TillView({
               <Button
                 type="button"
                 variant={selectedMethod === 'card' ? 'default' : 'outline'}
-                onClick={() => setSelectedMethod('card')}
+                onClick={() => switchPaymentMethod('card')}
                 className="flex flex-col gap-1 h-14"
               >
                 <CreditCard className="size-5" />
@@ -1474,7 +1565,7 @@ export default function TillView({
               <Button
                 type="button"
                 variant={selectedMethod === 'mobile' ? 'default' : 'outline'}
-                onClick={() => setSelectedMethod('mobile')}
+                onClick={() => switchPaymentMethod('mobile')}
                 className="flex flex-col gap-1 h-14"
               >
                 <Smartphone className="size-5" />
@@ -1492,12 +1583,22 @@ export default function TillView({
                     <Input
                       value={amountInput}
                       onChange={(e) => setAmountInput(e.target.value.replace(/[^\d.]/g, ''))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addPaymentLine();
+                        }
+                      }}
                       placeholder={t('till.amountOwed', { amount: `${symbol}${remainingDue.toFixed(2)}` })}
-                      className="h-11 font-mono text-base text-right"
+                      className="h-12 font-mono text-xl font-bold text-right"
                       autoFocus
                       data-testid="pay-amount"
                     />
-                    <Button type="button" onClick={addPaymentLine} className="h-11 px-4">
+                    <Button
+                      type="button"
+                      onClick={addPaymentLine}
+                      className="h-12 px-4"
+                    >
                       {t('till.add')}
                     </Button>
                   </div>
@@ -1549,10 +1650,14 @@ export default function TillView({
                       {symbol}{remainingDue.toFixed(2)}
                     </span>
                   </div>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{t('till.changeBack')}</span>
-                    <span>{symbol}{totalChange.toFixed(2)}</span>
-                  </div>
+                  {totalChange > 0 && (
+                    <div className="mt-1 flex items-center justify-between rounded-md bg-accent px-3 py-2">
+                      <span className="font-bold">{t('till.changeBack')}</span>
+                      <span className="text-2xl font-extrabold tabular-nums text-primary" data-testid="change-amount">
+                        {symbol}{totalChange.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1627,6 +1732,53 @@ export default function TillView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Fulfillment re-picker dialog */}
+      <Dialog open={fulfillmentPickerOpen} onOpenChange={setFulfillmentPickerOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('till.fulfillmentPickerTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('till.fulfillmentGateDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              data-testid="fulfillment-repick-dine-in"
+              onClick={() => chooseFulfillment('dine-in')}
+              className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-card text-center transition-colors hover:border-primary hover:bg-accent"
+            >
+              <Utensils className="size-7" />
+              <span className="font-bold">{t('till.dineIn')}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="fulfillment-repick-takeaway"
+              onClick={() => chooseFulfillment('takeaway')}
+              className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-card text-center transition-colors hover:border-primary hover:bg-accent"
+            >
+              <ShoppingBag className="size-7" />
+              <span className="font-bold">{t('till.takeaway')}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="fulfillment-repick-delivery"
+              onClick={() => chooseFulfillment('delivery')}
+              className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-card text-center transition-colors hover:border-primary hover:bg-accent"
+            >
+              <Bike className="size-7" />
+              <span className="font-bold">{t('till.delivery')}</span>
+            </button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFulfillmentPickerOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 <Sheet open={customerDrawerOpen} onOpenChange={(o) => { if (!o) setCustomerDrawerOpen(false); }}>
         <SheetContent side="right" className="flex w-full flex-col gap-5 overflow-y-auto sm:max-w-md p-4">
           <div className="flex flex-col gap-1 border-b border-border">
@@ -1727,8 +1879,8 @@ export default function TillView({
                   inputMode="tel"
                 />
                 <Input
-                  value={deliveryAddress}
-                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  value={newAddress}
+                  onChange={(e) => setNewAddress(e.target.value)}
                   placeholder={t('till.address')}
                   className="w-full"
                 />

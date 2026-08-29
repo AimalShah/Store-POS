@@ -141,22 +141,27 @@ test('fulfillment can be switched and delivery captures address', async () => {
     const page = await app.firstWindow();
     await setupTill(page);
 
-    // Default is takeaway (the Base UI select shows the raw value).
-    await expect(page.getByTestId('fulfillment-trigger')).toContainText('takeaway');
+    // setupTill chose Takeaway via the gate; the chip shows the current choice.
+    await expect(page.getByTestId('fulfillment-chip')).toContainText('Takeaway');
 
-    await page.getByTestId('fulfillment-trigger').click();
-    await page.getByRole('option', { name: 'Dine-in' }).click();
-    await expect(page.getByTestId('fulfillment-trigger')).toContainText('dine-in');
+    // Clicking the chip opens the re-picker dialog with the 3 options.
+    await page.getByTestId('fulfillment-chip').click();
+    await expect(page.getByText('Change fulfillment')).toBeVisible();
+    await page.getByTestId('fulfillment-repick-dine-in').click();
 
-    await page.getByTestId('fulfillment-trigger').click();
-    await page.getByRole('option', { name: 'Delivery' }).click();
-    await expect(page.getByTestId('fulfillment-trigger')).toContainText('delivery');
-    await expect(page.getByPlaceholder('Customer name')).toBeVisible();
-    await expect(page.getByPlaceholder('Contact number')).toBeVisible();
-    await expect(page.getByPlaceholder('Delivery address')).toBeVisible();
+    // Selecting updates immediately and reflects on the chip.
+    await expect(page.getByTestId('fulfillment-chip')).toContainText('Dine-in');
 
-    await page.getByTestId('fulfillment-trigger').click();
-    await page.getByRole('option', { name: 'Takeaway' }).click();
+    // Switching to Delivery auto-opens the customer drawer (no customer set).
+    await page.getByTestId('fulfillment-chip').click();
+    await page.getByTestId('fulfillment-repick-delivery').click();
+    await expect(page.getByRole('heading', { name: 'Customer' })).toBeVisible({ timeout: 10_000 });
+
+    // Close the drawer and switch back to Takeaway.
+    await page.getByRole('button', { name: 'Keep as walk-in' }).click();
+    await page.getByTestId('fulfillment-chip').click();
+    await page.getByTestId('fulfillment-repick-takeaway').click();
+    await expect(page.getByTestId('fulfillment-chip')).toContainText('Takeaway');
   } finally {
     await app.close();
   }
