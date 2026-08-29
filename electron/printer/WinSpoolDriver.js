@@ -7,6 +7,9 @@ const DEBUG_TAG = '[PRINTER-DEBUG-7f3c]';
 const PRINTER_ENUM_LOCAL = 0x00000080;
 const PRINTER_ENUM_CONNECTIONS = 0x00000004;
 const PRINTER_INFO_2_SIZE = 136;
+// PRINTER_INFO_4W: pPrinterName (8) + pServerName (8) + Attributes (4, padded
+// to 8 for array alignment) = 24 bytes on 64-bit Windows.
+const PRINTER_INFO_4_SIZE = 24;
 
 let EnumPrintersW, GetDefaultPrinterW, OpenPrinterW, ClosePrinter;
 let StartDocPrinterW, StartPagePrinter, WritePrinter, EndPagePrinter, EndDocPrinter;
@@ -87,6 +90,27 @@ export function decodePrinterInfo2(buffer, count, bufferAddress) {
   return printers;
 }
 
+// PRINTER_INFO_4W only carries name/server/attributes, so the spooler can
+// answer without opening a handle to each individual printer. Level 2
+// (PRINTER_INFO_2) requires opening every printer to fill in the extra
+// fields, and silently drops any printer the caller's process token doesn't
+// have Administer rights on — that lookup failure never surfaces as a
+// EnumPrintersW error, it just vanishes from the results (success + empty
+// buffer). Level 4 is the level Windows itself uses for cheap name listing,
+// so it's the reliable one to enumerate with.
+function decodePrinterInfo4(buffer, count, bufferAddress) {
+  const printers = [];
+  for (let i = 0; i < count; i++) {
+    const base = i * PRINTER_INFO_4_SIZE;
+    const namePointer = buffer.readBigUInt64LE(base);
+    const nameOffset = Number(namePointer - bufferAddress);
+    const name = readUtf16Str(buffer, nameOffset);
+    if (!name) continue;
+    printers.push({ name, status: 0, isDefault: false });
+  }
+  return printers;
+}
+
 function getPrinters() {
   if (!isWin) return [];
 
@@ -94,7 +118,7 @@ function getPrinters() {
   const returned = new Uint32Array(1);
 
   const flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
-  const sized = EnumPrintersW(flags, null, 2, null, 0, bytesNeeded, returned);
+  const sized = EnumPrintersW(flags, null, 4, null, 0, bytesNeeded, returned);
   logger.debug({ flags, sized, bytesNeeded: bytesNeeded[0], returned: returned[0], win32Error: lastError() },
     `${DEBUG_TAG} EnumPrintersW buffer-size query completed`);
   if (bytesNeeded[0] === 0) {
@@ -105,7 +129,7 @@ function getPrinters() {
   const buf = Buffer.alloc(bytesNeeded[0]);
   const ok = EnumPrintersW(
     flags,
-    null, 2, buf, bytesNeeded[0], bytesNeeded, returned
+    null, 4, buf, bytesNeeded[0], bytesNeeded, returned
   );
   if (!ok) {
     spoolerError('EnumPrintersW', 'Failed to enumerate Windows printer queues');
@@ -113,7 +137,7 @@ function getPrinters() {
   }
 
   const defaultName = getDefaultPrinterName();
-  const printers = decodePrinterInfo2(buf, returned[0], koffi.address(buf)).map((printer) => ({
+  const printers = decodePrinterInfo4(buf, returned[0], koffi.address(buf)).map((printer) => ({
     ...printer,
     isDefault: printer.name === defaultName,
   }));
