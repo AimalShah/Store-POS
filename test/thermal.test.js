@@ -59,6 +59,12 @@ function fakePrinter() {
     newLine: recorder('newLine'),
     cut: recorder('cut'),
     text: recorder('text'),
+    setTextSize: recorder('setTextSize'),
+    setTextNormal: recorder('setTextNormal'),
+    printImage: async (logoPath) => {
+      calls.push(['printImage', logoPath]);
+      return Buffer.from([]);
+    },
     execute: async () => {},
   };
 }
@@ -165,6 +171,35 @@ describe('Thermal: receipt and KOT formatting', () => {
     expect(printed).toContain('Extra cheese');
   });
 
+  test('writeReceipt prints negative variant deltas as a minus sign, not +-', async () => {
+    const p = fakePrinter();
+    await writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-002',
+        date: '2024-01-01T12:00:00Z',
+        items: [
+          {
+            quantity: 1,
+            name: 'Burger',
+            price: 5,
+            selectedVariants: [{ group: 'Size', name: 'Junior', priceDelta: -2 }],
+          },
+        ],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 5 }],
+      },
+      { store: 'Burger Bar', symbol: '$' }
+    );
+    const printed = p.calls.map((c) => c[1]).join(' ');
+    expect(printed).toContain('- Junior (-$2.00)');
+    expect(printed).not.toContain('+-');
+  });
+
   test('writeReceipt falls back to a Paid line when there is no payment breakdown', () => {
     const p = fakePrinter();
     writeReceipt(
@@ -208,6 +243,125 @@ describe('Thermal: receipt and KOT formatting', () => {
     expect(printed).toContain('VOIDED');
   });
 
+  test('writeReceipt prints deal/comb components under each item (matches the on-screen invoice)', () => {
+    const p = fakePrinter();
+    writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-005',
+        date: '2024-01-01T12:00:00Z',
+        items: [
+          {
+            quantity: 2,
+            name: 'Family Deal',
+            price: 20,
+            components: [
+              { name: 'Chicken Burger', quantity: 1 },
+              { name: 'Fries', quantity: 2 },
+              { name: 'Cola', quantity: 2 },
+            ],
+          },
+        ],
+        subtotal: 40,
+        discount: 0,
+        tax: 0,
+        total: 40,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 40 }],
+      },
+      { store: 'Burger Bar', symbol: '$' }
+    );
+    const printed = p.calls.map((c) => c[1]).join(' ');
+    expect(printed).toContain('2x Family Deal');
+    expect(printed).toContain('- Chicken Burger x1');
+    expect(printed).toContain('- Fries x2');
+    expect(printed).toContain('- Cola x2');
+  });
+
+  test('writeReceipt prints a thank-you footer by default and the store footer when set', () => {
+    const defaultP = fakePrinter();
+    writeReceipt(
+      defaultP,
+      {
+        ref_number: 'INV-20240101-005',
+        date: '2024-01-01T12:00:00Z',
+        items: [{ quantity: 1, name: 'Burger', price: 5 }],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 5 }],
+      },
+      { store: 'Burger Bar', symbol: '$' }
+    );
+    const defaultFooter = defaultP.calls.map((c) => c[1]).join(' ');
+    expect(defaultFooter).toContain('Thank you for your visit!');
+    expect(defaultFooter).toContain('Hope to serve you again soon.');
+
+    const customP = fakePrinter();
+    writeReceipt(
+      customP,
+      {
+        ref_number: 'INV-20240101-005',
+        date: '2024-01-01T12:00:00Z',
+        items: [{ quantity: 1, name: 'Burger', price: 5 }],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 5 }],
+      },
+      { store: 'Burger Bar', symbol: '$', footer: 'Come again!' }
+    );
+    const customFooter = customP.calls.map((c) => c[1]).join(' ');
+    expect(customFooter).toContain('Come again!');
+    expect(customFooter).not.toContain('Thank you for your visit!');
+  });
+
+  test('writeReceipt prints the store logo image when a path is provided', async () => {
+    const p = fakePrinter();
+    await writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-006',
+        date: '2024-01-01T12:00:00Z',
+        items: [{ quantity: 1, name: 'Burger', price: 5 }],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 5 }],
+      },
+      { store: 'Burger Bar', symbol: '$', img: 'logo.png' },
+      { logoPath: '/tmp/opencode/pos-logo.png' }
+    );
+    const imageCall = p.calls.find((c) => c[0] === 'printImage');
+    expect(imageCall).toEqual(['printImage', '/tmp/opencode/pos-logo.png']);
+  });
+
+  test('writeReceipt skips the logo image quietly when no path is provided', async () => {
+    const p = fakePrinter();
+    await writeReceipt(
+      p,
+      {
+        ref_number: 'INV-20240101-007',
+        date: '2024-01-01T12:00:00Z',
+        items: [{ quantity: 1, name: 'Burger', price: 5 }],
+        subtotal: 5,
+        discount: 0,
+        tax: 0,
+        total: 5,
+        change: 0,
+        payment_breakdown: [{ method: 'cash', amount: 5 }],
+      },
+      { store: 'Burger Bar', symbol: '$', img: 'logo.png' }
+    );
+    expect(p.calls.some((c) => c[0] === 'printImage')).toBe(false);
+  });
+
   test('writeKot prints a kitchen ticket with item lines and notes, no prices', () => {
     const p = fakePrinter();
     writeKot(p, {
@@ -219,6 +373,20 @@ describe('Thermal: receipt and KOT formatting', () => {
     expect(printed).toContain('KITCHEN ORDER');
     expect(printed).toContain('Pizza');
     expect(printed).toContain('extra cheese');
+  });
+
+  test('writeKot prints the short ORDER # at double size, like the receipt', () => {
+    const p = fakePrinter();
+    writeKot(p, {
+      ref_number: 'INV-40211',
+      date: '2024-01-01T12:00:00Z',
+      items: [{ quantity: 1, name: 'Pizza', components: [] }],
+    });
+    const printed = p.calls.map((c) => c[1]).join('');
+    expect(printed).toContain('ORDER #211');
+    const sizeCall = p.calls.find((c) => c[0] === 'setTextSize');
+    expect(sizeCall).toEqual(['setTextSize', 2, 2]);
+    expect(p.calls.some((c) => c[0] === 'setTextNormal')).toBe(true);
   });
 });
 

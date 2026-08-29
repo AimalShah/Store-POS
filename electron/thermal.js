@@ -123,65 +123,185 @@ function centered(printer, text) {
   printer.alignLeft();
 }
 
-export function writeReceipt(printer, tx, settings) {
+function priceDeltaText(delta, symbol) {
+  const d = Number(delta) || 0;
+  if (d === 0) return '';
+  return ` (${d > 0 ? '+' : '-'}${money(Math.abs(d), symbol)})`;
+}
+
+export async function writeReceipt(printer, tx, settings, { logoPath } = {}) {
   const symbol = settings?.symbol || 'Rs';
   const isVoided = Number(tx.status) === 2;
-  printer.bold(true);
+
+  // ─────────────────────────────────────────────
+  // HEADER
+  // ─────────────────────────────────────────────
+
+  if (logoPath) {
+    try {
+      printer.alignCenter();
+      await printer.printImage(logoPath);
+      printer.newLine();
+    } catch (err) {
+      logger.warn({ err: err.message, logoPath }, `${DEBUG_TAG} Store logo image skipped`);
+    }
+  }
+
   printer.alignCenter();
-  printer.println(settings?.store || 'Store POS');
+  printer.bold(true);
+  printer.println(settings?.store || 'STORE POS');
   printer.bold(false);
-  printer.alignLeft();
-  if (settings?.address_one) centered(printer, settings.address_one);
-  if (settings?.address_two) centered(printer, settings.address_two);
-  if (settings?.contact) centered(printer, settings.contact);
+
+  if (settings?.address_one) {
+    printer.println(settings.address_one);
+  }
+
+  if (settings?.address_two) {
+    printer.println(settings.address_two);
+  }
+
+  if (settings?.contact) {
+    printer.println(settings.contact);
+  }
+
   printer.newLine();
+
+  // ─────────────────────────────────────────────
+  // ORDER HEADER
+  // ─────────────────────────────────────────────
+
   printer.drawLine();
+
   printer.bold(true);
-  printer.alignCenter();
   printer.println(`ORDER #${orderNumber(tx)}`);
   printer.bold(false);
-  printer.alignLeft();
+
   if (isVoided) {
     printer.bold(true);
-    printer.alignCenter();
     printer.println('*** VOIDED ***');
     printer.bold(false);
-    printer.alignLeft();
   }
-  centered(printer, new Date(tx.date).toLocaleString());
-  centered(printer, `Cashier: ${tx.user || '-'}`);
-  centered(printer, `Customer: ${tx.customer_name || 'Walk-in'}`);
-  if (tx.fulfillment) centered(printer, `Fulfillment: ${cap(tx.fulfillment)}`);
+
+  printer.drawLine();
+
+  // ─────────────────────────────────────────────
+  // ORDER INFORMATION
+  // ─────────────────────────────────────────────
+
+  printer.alignLeft();
+
+  printer.println(`Date      : ${new Date(tx.date).toLocaleString()}`);
+  printer.println(`Cashier   : ${tx.user || '-'}`);
+  printer.println(`Customer  : ${tx.customer_name || 'Walk-in'}`);
+
+  if (tx.fulfillment) {
+    printer.println(`Fulfillment: ${cap(tx.fulfillment)}`);
+  }
+
   if (tx.fulfillment === 'delivery') {
-    if (tx.delivery_name) centered(printer, `Name: ${tx.delivery_name}`);
-    if (tx.delivery_contact) centered(printer, `Contact: ${tx.delivery_contact}`);
-    if (tx.delivery_address) centered(printer, `Address: ${tx.delivery_address}`);
+    if (tx.delivery_name) printer.println(`Name      : ${tx.delivery_name}`);
+    if (tx.delivery_contact) printer.println(`Contact   : ${tx.delivery_contact}`);
+    if (tx.delivery_address) printer.println(`Address   : ${tx.delivery_address}`);
   }
+
   printer.newLine();
+
+  // ─────────────────────────────────────────────
+  // ITEMS
+  // ─────────────────────────────────────────────
+
   printer.drawLine();
-  for (const item of tx.items || []) {
-    printer.println(`${item.quantity}x ${item.name}`);
-    if (item.note) printer.println(`   ${item.note}`);
-    for (const v of item.selectedVariants || []) {
-      printer.println(
-        `   ${v.name}${v.priceDelta ? ` (+${money(v.priceDelta, symbol)})` : ''}`
-      );
-    }
-    for (const m of item.selectedModifiers || []) {
-      printer.println(
-        `   + ${m.name}${m.priceDelta ? ` (+${money(m.priceDelta, symbol)})` : ''}`
-      );
-    }
-    printer.leftRight('', money(Number(item.price) * Number(item.quantity), symbol));
-  }
-  printer.newLine();
-  printer.drawLine();
-  printer.leftRight('Subtotal', money(tx.subtotal, symbol));
-  if (Number(tx.discount) > 0) printer.leftRight('Discount', `-${money(tx.discount, symbol)}`);
-  if (Number(tx.tax) > 0) printer.leftRight(settings?.tax || 'Tax', money(tx.tax, symbol));
+
   printer.bold(true);
-  printer.leftRight('TOTAL', money(tx.total, symbol));
+  printer.println('ITEMS');
   printer.bold(false);
+
+  printer.newLine();
+
+  for (const item of tx.items || []) {
+    const quantity = Number(item.quantity) || 0;
+    const price = Number(item.price) || 0;
+    const total = price * quantity;
+
+    // Item name
+    printer.bold(true);
+    printer.println(`${quantity}x ${item.name}`);
+    printer.bold(false);
+
+    // Item price per unit and line total
+    printer.leftRight(`  ${money(price, symbol)} each`, money(total, symbol));
+
+    // ─────────────────────────────────────────
+    // NOTE
+    // ─────────────────────────────────────────
+
+    if (item.note) {
+      printer.println(`  Note: ${item.note}`);
+    }
+
+    // ─────────────────────────────────────────
+    // COMPONENTS
+    // ─────────────────────────────────────────
+
+    for (const comp of item.components || []) {
+      printer.println(`  - ${comp.name} x${comp.quantity}`);
+    }
+
+    // ─────────────────────────────────────────
+    // VARIANTS
+    // ─────────────────────────────────────────
+
+    for (const v of item.selectedVariants || []) {
+      printer.println(`  - ${v.name}${priceDeltaText(v.priceDelta, symbol)}`);
+    }
+
+    // ─────────────────────────────────────────
+    // MODIFIERS
+    // ─────────────────────────────────────────
+
+    for (const m of item.selectedModifiers || []) {
+      printer.println(`  + ${m.name}${priceDeltaText(m.priceDelta, symbol)}`);
+    }
+
+    printer.newLine();
+  }
+
+  // ─────────────────────────────────────────────
+  // TOTALS
+  // ─────────────────────────────────────────────
+
+  printer.drawLine();
+
+  printer.leftRight('Subtotal', money(tx.subtotal, symbol));
+
+  if (Number(tx.discount) > 0) {
+    printer.leftRight('Discount', `-${money(tx.discount, symbol)}`);
+  }
+
+  if (Number(tx.tax) > 0) {
+    printer.leftRight(settings?.tax || 'Tax', money(tx.tax, symbol));
+  }
+
+  printer.newLine();
+
+  printer.bold(true);
+
+  printer.leftRight('TOTAL', money(tx.total, symbol));
+
+  printer.bold(false);
+
+  printer.newLine();
+
+  // ─────────────────────────────────────────────
+  // PAYMENT
+  // ─────────────────────────────────────────────
+
+  printer.drawLine();
+
+  printer.bold(true);
+  printer.println('PAYMENT');
+  printer.bold(false);
+
   if (tx.payment_breakdown && tx.payment_breakdown.length > 0) {
     for (const pb of tx.payment_breakdown) {
       printer.leftRight(pb.method, money(pb.amount, symbol));
@@ -190,15 +310,33 @@ export function writeReceipt(printer, tx, settings) {
     const paid = tx.paid != null ? Number(tx.paid) : Number(tx.total) + Number(tx.change || 0);
     printer.leftRight('Paid', money(paid, symbol));
   }
+
   printer.leftRight('Change', money(tx.change, symbol));
+
+  // ─────────────────────────────────────────────
+  // FOOTER
+  // ─────────────────────────────────────────────
+
   printer.newLine();
-  if (settings?.footer) {
-    printer.drawLine();
-    printer.alignCenter();
-    printer.println(settings.footer);
-    printer.alignLeft();
-  }
+
+  printer.drawLine();
+
+  printer.alignCenter();
+
+  printer.bold(true);
+  printer.println('THANK YOU!');
+  printer.bold(false);
+
+  const footer = settings?.footer || 'Thank you for your visit!\nHope to serve you again soon.';
+
+  for (const line of footer.split('\n')) printer.println(line);
+
   printer.newLine();
+
+  // ─────────────────────────────────────────────
+  // CUT
+  // ─────────────────────────────────────────────
+
   printer.cut();
 }
 
@@ -209,9 +347,13 @@ export function writeKot(printer, tx) {
   printer.bold(false);
   printer.alignLeft();
   printer.drawLine();
+  printer.alignCenter();
+  printer.setTextSize(2, 2);
   printer.bold(true);
-  printer.println(`Order: ${tx.ref_number || tx.id}`);
+  printer.println(`ORDER #${orderNumber(tx)}`);
+  printer.setTextNormal();
   printer.bold(false);
+  printer.alignLeft();
   centered(printer, new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   printer.newLine();
   printer.drawLine();
@@ -228,9 +370,9 @@ export function writeKot(printer, tx) {
   printer.cut();
 }
 
-export async function printReceiptJob(tx, settings, config, { printKot = false } = {}) {
+export async function printReceiptJob(tx, settings, config, { printKot = false, logoPath = null } = {}) {
   const startedAt = Date.now();
-  logger.info({ order: tx.ref_number || tx.id, itemCount: tx.items?.length || 0, receipt: config.receipt, printKot },
+  logger.info({ order: tx.ref_number || tx.id, itemCount: tx.items?.length || 0, receipt: config.receipt, printKot, hasLogo: !!logoPath },
     `${DEBUG_TAG} Receipt print requested`);
   const printer = makePrinter(config.receipt);
   if (!printer) {
@@ -238,7 +380,7 @@ export async function printReceiptJob(tx, settings, config, { printKot = false }
     return { printed: false, fallback: true, kotPrinted: false };
   }
   try {
-    writeReceipt(printer, tx, settings);
+    await writeReceipt(printer, tx, settings, { logoPath });
     logger.debug({ order: tx.ref_number || tx.id }, `${DEBUG_TAG} Receipt ESC/POS content generated`);
     await printer.execute();
   } catch (err) {

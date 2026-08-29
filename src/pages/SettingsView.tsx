@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, RotateCcw, AlertTriangle } from 'lucide-react';
 import { api, Settings } from '../api/client';
 import PhotoPicker from '../components/PhotoPicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -8,6 +8,17 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
 import { Checkbox } from '../components/ui/checkbox';
+import { Separator } from '../components/ui/separator';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import { applyTheme, isThemeId, DEFAULT_THEME, THEME_IDS, THEME_LABELS } from '../lib/theme';
 
 type Props = {
@@ -31,6 +42,9 @@ export default function SettingsView({ settings, onSaved }: Props) {
   });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     setForm({
@@ -65,6 +79,20 @@ export default function SettingsView({ settings, onSaved }: Props) {
       await onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
+    }
+  };
+
+  const resetAllData = async () => {
+    setResetting(true);
+    setResetError(null);
+    try {
+      await api.resetAllData();
+      localStorage.clear();
+      window.location.reload();
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Reset failed');
+      setResetting(false);
+      setResetOpen(false);
     }
   };
 
@@ -208,6 +236,54 @@ export default function SettingsView({ settings, onSaved }: Props) {
         </div>
 
         <Button onClick={save}>Save settings</Button>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-5 text-destructive" />
+            <h3 className="text-lg font-semibold text-destructive">Start as new</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Writes a CSV backup of every sale, product, category, customer, shift,
+            drawer session, stock record and audit entry to this computer's backup
+            folder, then deletes all of that data. Store details, printer setup and
+            user accounts are kept — you will just be signed out.
+          </p>
+          {resetError && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+              {resetError}
+            </div>
+          )}
+          <Button variant="destructive" onClick={() => setResetOpen(true)}>
+            <RotateCcw className="size-4" />
+            Start as new
+          </Button>
+        </div>
+
+        <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Start as new?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This deletes all sales, products, categories, customers, shifts,
+                drawer sessions, stock and media forever. A CSV backup of
+                everything is written to the backup folder first. Store details,
+                printer config and user logins are kept. You will be signed out.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={resetAllData}
+                disabled={resetting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {resetting ? 'Starting…' : 'Start as new'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

@@ -509,6 +509,12 @@ export const api = {
       body: form,
     }),
 
+  resetAllData: () =>
+    request<{ ok: boolean; backupDir: string; tables: { table: string; rows: number }[] }>(
+      '/settings/reset',
+      { method: 'POST', body: JSON.stringify({ confirm: true }) }
+    ),
+
   getOnHold: () => request<Transaction[]>('/on-hold'),
 
   getAllTransactions: () => request<Transaction[]>('/all'),

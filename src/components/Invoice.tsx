@@ -193,12 +193,15 @@ export default function Invoice({ tx, settings, symbol }: Props) {
         ))}
       </div>
 
-      {settings?.footer ? (
-        <>
-          <div className="my-2 border-t" />
-          <div className="text-center text-xs text-muted-foreground">{settings.footer}</div>
-        </>
-      ) : null}
+      <div className="my-2 border-t" />
+      <div className="text-center text-xs text-muted-foreground">
+        {settings?.footer || (
+          <>
+            <div>{t('inv.thankYou1')}</div>
+            <div>{t('inv.thankYou2')}</div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

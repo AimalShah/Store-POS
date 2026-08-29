@@ -159,7 +159,7 @@ function ModeTabs({
           onClick={() => onSelect(tab.value)}
           className={`flex h-10 items-center gap-2 rounded-md px-5 text-base font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
             mode === tab.value
-              ? 'bg-background text-foreground shadow-sm'
+              ? 'bg-primary text-primary-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -726,19 +726,12 @@ export default function AppShell() {
       <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b px-4">
         <div className="flex min-w-0 items-center gap-2">
           {mode === 'dashboard' && <SidebarTrigger />}
-          <div className="flex min-w-0 items-center gap-2" data-testid="topbar-brand">
-            {logoUrl && (
-              <img src={logoUrl} alt="" className="size-7 rounded object-contain" />
-            )}
-            <span className="truncate text-sm font-semibold">{storeName}</span>
-          </div>
+          <DateRangePicker value={date} onChange={setDate} />
         </div>
 
         <ModeTabs mode={mode} onSelect={switchMode} />
 
         <div className="flex items-center justify-end gap-1.5">
-          {mode === 'dashboard' && <DateRangePicker value={date} onChange={setDate} />}
-
           <Button
             variant="outline"
             size="sm"

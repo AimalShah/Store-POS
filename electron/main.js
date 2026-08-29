@@ -21,6 +21,7 @@ const PORT = 8001;
 
 let mainWindow = null;
 let stopServer = null;
+let uploadsPath = null;
 
 function getUserDataPaths() {
   const root = path.join(app.getPath('userData'), 'POS');
@@ -115,7 +116,12 @@ ipcMain.handle('print-receipt', async (_event, payload) => {
     receipt: config.receipt,
     printKot: !!payload.printKot,
   });
-  return printReceiptJob(payload.tx, payload.settings, config, { printKot: !!payload.printKot });
+  const logoPath =
+    uploadsPath && payload.settings?.img ? path.join(uploadsPath, payload.settings.img) : null;
+  return printReceiptJob(payload.tx, payload.settings, config, {
+    printKot: !!payload.printKot,
+    logoPath,
+  });
 });
 
 ipcMain.handle('print-kot', async (_event, payload) => {
@@ -303,6 +309,7 @@ ipcMain.handle('updater:restart', () => {
 app.whenReady().then(async () => {
   const paths = getUserDataPaths();
   ensureDirs(paths);
+  uploadsPath = paths.uploads;
 
   try {
     stopServer = await startApiServer(paths);
