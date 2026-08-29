@@ -93,7 +93,7 @@ export function makePrinter(conf) {
     interface: uri,
     width: conf.width === 80 ? 48 : 32,
     lineCharacter: '=',
-    characterSet: 'PC47_USA',
+    characterSet: 'PC437_USA',
   };
   if (conf.interface === 'usb' && process.platform === 'win32') {
     options.driver = winSpoolDriver;
