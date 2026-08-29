@@ -4,8 +4,9 @@ import logger from '../../server/logger.js';
 const isWin = process.platform === 'win32';
 const DEBUG_TAG = '[PRINTER-DEBUG-7f3c]';
 
-const PRINTER_ENUM_LOCAL = 0x00000080;
 const PRINTER_ENUM_CONNECTIONS = 0x00000004;
+const PRINTER_ENUM_NAME = 0x00000008;
+const PRINTER_ENUM_LOCAL = 0x00000080;
 const PRINTER_INFO_2_SIZE = 136;
 // PRINTER_INFO_4W: pPrinterName (8) + pServerName (8) + Attributes (4, padded
 // to 8 for array alignment) = 24 bytes on 64-bit Windows.
@@ -117,7 +118,14 @@ function getPrinters() {
   const bytesNeeded = new Uint32Array(1);
   const returned = new Uint32Array(1);
 
-  const flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
+  // PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS alone returns an empty
+  // list on some Windows 11 builds/driver setups, even for printers that
+  // are genuinely installed and working (confirmed via direct spooler
+  // testing). Adding PRINTER_ENUM_NAME with a NULL name reliably surfaces
+  // them there. Keep all three combined so this stays correct on machines
+  // where the original flags did work too (getPrinters() dedupes by name
+  // below in case a printer gets reported more than once).
+  const flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS | PRINTER_ENUM_NAME;
   const sized = EnumPrintersW(flags, null, 4, null, 0, bytesNeeded, returned);
   logger.debug({ flags, sized, bytesNeeded: bytesNeeded[0], returned: returned[0], win32Error: lastError() },
     `${DEBUG_TAG} EnumPrintersW buffer-size query completed`);
@@ -137,10 +145,17 @@ function getPrinters() {
   }
 
   const defaultName = getDefaultPrinterName();
-  const printers = decodePrinterInfo4(buf, returned[0], koffi.address(buf)).map((printer) => ({
-    ...printer,
-    isDefault: printer.name === defaultName,
-  }));
+  const seen = new Set();
+  const printers = decodePrinterInfo4(buf, returned[0], koffi.address(buf))
+    .filter((printer) => {
+      if (seen.has(printer.name)) return false;
+      seen.add(printer.name);
+      return true;
+    })
+    .map((printer) => ({
+      ...printer,
+      isDefault: printer.name === defaultName,
+    }));
   logger.info({ count: printers.length, defaultName, printers }, `${DEBUG_TAG} Windows printer queues enumerated`);
   return printers;
 }
